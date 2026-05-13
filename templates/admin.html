@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理者設定 — ABダイエット Bカウンター</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+      background: #F7F4EF; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .card {
+      background: #fff; border-radius: 20px; padding: 36px 32px;
+      max-width: 420px; width: 100%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.1);
+    }
+    h1 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+    .sub { font-size: 13px; color: #6B7280; line-height: 1.7; margin-bottom: 24px; }
+    label { font-size: 13px; font-weight: 700; display: block; margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 12px 14px; border-radius: 10px;
+      border: 1.5px solid #E5E7EB; font-size: 14px; font-family: monospace;
+      outline: none; transition: border-color 0.2s;
+    }
+    input:focus { border-color: #FF6B35; }
+    .hint { font-size: 11px; color: #9CA3AF; margin-top: 6px; line-height: 1.6; }
+    #status-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 20px;
+      font-size: 12px; font-weight: 700; margin-bottom: 20px;
+    }
+    .badge-ok { background: #D1FAE5; color: #065F46; }
+    .badge-ng { background: #FEE2E2; color: #991B1B; }
+    #error { margin-top: 10px; padding: 10px 14px; background: #FEF2F2; border-radius: 8px; font-size: 13px; color: #DC2626; display: none; }
+    #success { margin-top: 10px; padding: 10px 14px; background: #D1FAE5; border-radius: 8px; font-size: 13px; color: #065F46; display: none; }
+    button {
+      width: 100%; margin-top: 20px; padding: 14px; border-radius: 12px; border: none;
+      cursor: pointer; background: linear-gradient(135deg, #FF6B35, #FF4500);
+      color: white; font-size: 15px; font-weight: 700; transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .back { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #6B7280; text-decoration: none; }
+    .back:hover { color: #FF6B35; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🔑 管理者設定</h1>
+  <p class="sub">このページはアプリの管理者専用です。<br>一般ユーザーには共有しないでください。</p>
+
+  <div id="status-badge">確認中…</div>
+
+  <label for="key-input">Anthropic APIキー</label>
+  <input type="password" id="key-input" placeholder="sk-ant-..." autocomplete="off">
+  <div class="hint">console.anthropic.com → API Keys から発行できます。</div>
+
+  <div id="error"></div>
+  <div id="success"></div>
+
+  <button id="save-btn" onclick="save()">保存する</button>
+  <a href="/" class="back">← アプリに戻る</a>
+</div>
+<script>
+  async function checkStatus() {
+    const res = await fetch("/api/status");
+    const data = await res.json();
+    const badge = document.getElementById("status-badge");
+    if (data.configured) {
+      badge.textContent = "✓ APIキー設定済み";
+      badge.className = "status-badge badge-ok";
+    } else {
+      badge.textContent = "✗ APIキー未設定";
+      badge.className = "status-badge badge-ng";
+    }
+  }
+  checkStatus();
+
+  document.getElementById("key-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") save();
+  });
+
+  async function save() {
+    const key = document.getElementById("key-input").value.trim();
+    const errEl = document.getElementById("error");
+    const okEl = document.getElementById("success");
+    const btn = document.getElementById("save-btn");
+    errEl.style.display = "none";
+    okEl.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "保存中…";
+
+    const res = await fetch("/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: key }),
+    });
+    const data = await res.json();
+    btn.disabled = false;
+    btn.textContent = "保存する";
+
+    if (data.error) {
+      errEl.textContent = data.error;
+      errEl.style.display = "block";
+    } else {
+      okEl.textContent = "✓ 保存しました！アプリが使えるようになりました。";
+      okEl.style.display = "block";
+      document.getElementById("key-input").value = "";
+      checkStatus();
+    }
+  }
+</script>
+</body>
+</html>
