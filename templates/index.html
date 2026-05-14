@@ -117,15 +117,14 @@
     .chevron { transition: transform 0.2s; display: inline-block; }
     .chevron.open { transform: rotate(180deg); }
 
-    /* Warmup banner */
+    /* Warmup banner — hidden by default, shown by JS only when slow */
     #warmup-banner {
-      display: none;
+      display: none;   /* JS sets display:flex when needed */
       background: #FFF8E7; border: 1px solid #FCD34D;
       border-radius: var(--radius); padding: 14px 20px;
       font-size: 13px; color: #92400E; margin-bottom: 16px;
-      display: flex; align-items: center; gap: 10px;
+      align-items: center; gap: 10px;
     }
-    #warmup-banner.hidden { display: none !important; }
     .warmup-spinner {
       width: 18px; height: 18px; border: 2px solid #FCD34D;
       border-top-color: #D97706; border-radius: 50%;
@@ -142,7 +141,7 @@
 
 <div class="container">
 
-  <div id="warmup-banner" class="hidden">
+  <div id="warmup-banner">
     <div class="warmup-spinner"></div>
     <span>サーバー起動中です… 初回のみ30秒ほどかかります ☕</span>
   </div>
@@ -216,31 +215,24 @@
 </div>
 
 <script>
-  // ── Warmup: ping server on load, show banner if slow ──
+  // ── Warmup: ping server on load, show banner only if slow ──
   (function warmup() {
     const banner = document.getElementById("warmup-banner");
-    const start = Date.now();
-    // Show banner after 2 seconds if server hasn't responded
-    const showTimer = setTimeout(() => banner.classList.remove("hidden"), 2000);
+    // 2秒以内にサーバーが返事すればバナーは出さない
+    const showTimer = setTimeout(() => { banner.style.display = "flex"; }, 2000);
 
-    fetch("/api/status")
-      .then(r => r.json())
-      .then(() => {
-        clearTimeout(showTimer);
-        banner.classList.add("hidden");
-      })
-      .catch(() => {
-        // Keep retrying every 5 seconds until alive
-        const retry = setInterval(() => {
-          fetch("/api/status")
-            .then(r => r.json())
-            .then(() => {
-              clearInterval(retry);
-              banner.classList.add("hidden");
-            })
-            .catch(() => {});
-        }, 5000);
-      });
+    function ping() {
+      fetch("/api/status")
+        .then(r => r.json())
+        .then(() => {
+          clearTimeout(showTimer);
+          banner.style.display = "none";
+        })
+        .catch(() => {
+          setTimeout(ping, 5000); // 失敗したら5秒後に再試行
+        });
+    }
+    ping();
   })();
 
   let selectedFile = null;
