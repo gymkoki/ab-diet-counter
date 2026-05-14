@@ -112,6 +112,21 @@
     .rules-body h4 { font-size: 12px; font-weight: 700; color: var(--text); margin: 12px 0 4px; }
     .chevron { transition: transform 0.2s; display: inline-block; }
     .chevron.open { transform: rotate(180deg); }
+
+    /* Warmup banner */
+    #warmup-banner {
+      display: none;
+      background: #FFF8E7; border: 1px solid #FCD34D;
+      border-radius: var(--radius); padding: 14px 20px;
+      font-size: 13px; color: #92400E; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    #warmup-banner.hidden { display: none !important; }
+    .warmup-spinner {
+      width: 18px; height: 18px; border: 2px solid #FCD34D;
+      border-top-color: #D97706; border-radius: 50%;
+      animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -123,6 +138,11 @@
 </header>
 
 <div class="container">
+
+  <div id="warmup-banner" class="hidden">
+    <div class="warmup-spinner"></div>
+    <span>サーバー起動中です… 初回のみ30秒ほどかかります ☕</span>
+  </div>
 
   <div class="upload-card" id="upload-card">
     <div class="upload-area" id="upload-area">
@@ -190,6 +210,33 @@
 </div>
 
 <script>
+  // ── Warmup: ping server on load, show banner if slow ──
+  (function warmup() {
+    const banner = document.getElementById("warmup-banner");
+    const start = Date.now();
+    // Show banner after 2 seconds if server hasn't responded
+    const showTimer = setTimeout(() => banner.classList.remove("hidden"), 2000);
+
+    fetch("/api/status")
+      .then(r => r.json())
+      .then(() => {
+        clearTimeout(showTimer);
+        banner.classList.add("hidden");
+      })
+      .catch(() => {
+        // Keep retrying every 5 seconds until alive
+        const retry = setInterval(() => {
+          fetch("/api/status")
+            .then(r => r.json())
+            .then(() => {
+              clearInterval(retry);
+              banner.classList.add("hidden");
+            })
+            .catch(() => {});
+        }, 5000);
+      });
+  })();
+
   let selectedFile = null;
   const fileInput = document.getElementById("file-input");
   const uploadArea = document.getElementById("upload-area");
