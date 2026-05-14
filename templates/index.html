@@ -245,6 +245,38 @@
   const analyzeBtn = document.getElementById("analyze-btn");
   const retakeBtn = document.getElementById("retake-btn");
 
+  // ── 画像を4MB以下に自動圧縮 ──
+  function compressImage(file) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1568; // Claude推奨最大サイズ
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+          else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+
+        let quality = 0.85;
+        const tryBlob = () => {
+          canvas.toBlob((blob) => {
+            if (blob.size > 4 * 1024 * 1024 && quality > 0.3) {
+              quality = Math.round((quality - 0.1) * 10) / 10;
+              tryBlob();
+            } else {
+              resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+            }
+          }, "image/jpeg", quality);
+        };
+        tryBlob();
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   fileInput.addEventListener("change", (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
   uploadArea.addEventListener("dragover", (e) => { e.preventDefault(); uploadArea.classList.add("drag-over"); });
   uploadArea.addEventListener("dragleave", () => uploadArea.classList.remove("drag-over"));
@@ -254,8 +286,10 @@
     if (f && f.type.startsWith("image/")) handleFile(f);
   });
 
-  function handleFile(file) {
-    selectedFile = file;
+  async function handleFile(file) {
+    analyzeBtn.disabled = true;
+    // 圧縮してからプレビュー表示
+    selectedFile = await compressImage(file);
     const reader = new FileReader();
     reader.onload = (e) => {
       previewImg.src = e.target.result;
