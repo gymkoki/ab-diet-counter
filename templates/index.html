@@ -12,6 +12,7 @@
     :root {
       --primary: #FF6B35;
       --primary-dark: #FF4500;
+      --pink: #FF6B9D;
       --bg: #F7F4EF;
       --surface: #FFFFFF;
       --text: #1A1A2E;
@@ -34,6 +35,16 @@
     }
     header h1 { font-size: 22px; font-weight: 800; }
     header p { margin-top: 4px; font-size: 12px; opacity: 0.85; }
+
+    /* ── Warmup banner ── */
+    #warmup-banner {
+      display: none; margin: 12px 16px 0;
+      background: #FFF8E7; border: 1px solid #FCD34D;
+      border-radius: 10px; padding: 12px 16px;
+      font-size: 12px; color: #92400E;
+      align-items: center; gap: 10px;
+    }
+    .ws { width: 16px; height: 16px; border: 2px solid #FCD34D; border-top-color: #D97706; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
 
     /* ── Daily total ── */
     .daily-card {
@@ -62,6 +73,19 @@
     .meal-chip.done { border-color: var(--primary); color: var(--primary); background: #FFF5F0; }
     .meal-chip .chip-count { font-size: 13px; font-weight: 900; }
 
+    /* ── まとめて分析ボタン ── */
+    .analyze-all-wrap { padding: 12px 16px 0; }
+    .btn-analyze-all {
+      width: 100%; display: flex; align-items: center; justify-content: center;
+      gap: 10px; padding: 16px; border-radius: 14px; font-size: 15px;
+      font-weight: 800; border: none; cursor: pointer;
+      background: linear-gradient(135deg, var(--pink), #e05580);
+      color: white; box-shadow: 0 4px 16px rgba(255,107,157,0.4);
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-analyze-all:active { transform: scale(0.97); }
+    .btn-analyze-all:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+
     /* ── Tabs ── */
     .tabs { display: flex; padding: 12px 16px 0; gap: 6px; }
     .tab {
@@ -76,7 +100,8 @@
       background: var(--a-color); display: inline-block;
       margin-left: 4px; vertical-align: middle; display: none;
     }
-    .tab.done .tab-dot { display: inline-block; }
+    .tab.has-photo .tab-dot { display: inline-block; background: #FCD34D; }
+    .tab.done .tab-dot { display: inline-block; background: var(--a-color); }
 
     /* ── Tab panel ── */
     .container { padding: 0 16px 48px; }
@@ -105,16 +130,6 @@
       border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 700;
       cursor: pointer;
     }
-
-    .btn-row { padding: 0 16px 16px; }
-    .btn {
-      width: 100%; display: flex; align-items: center; justify-content: center;
-      gap: 8px; padding: 13px; border-radius: 12px; font-size: 14px;
-      font-weight: 700; border: none; cursor: pointer; transition: opacity 0.2s, transform 0.1s;
-    }
-    .btn:active { transform: scale(0.97); }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; }
 
     /* ── Loading ── */
     .meal-loading { display: none; text-align: center; padding: 24px 16px; }
@@ -168,16 +183,6 @@
     .rules-body h4 { font-size: 12px; font-weight: 700; color: var(--text); margin: 10px 0 3px; }
     .chevron { transition: transform 0.2s; }
     .chevron.open { transform: rotate(180deg); }
-
-    /* ── Warmup banner ── */
-    #warmup-banner {
-      display: none; margin: 12px 16px 0;
-      background: #FFF8E7; border: 1px solid #FCD34D;
-      border-radius: 10px; padding: 12px 16px;
-      font-size: 12px; color: #92400E;
-      align-items: center; gap: 10px;
-    }
-    .ws { width: 16px; height: 16px; border: 2px solid #FCD34D; border-top-color: #D97706; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -210,6 +215,13 @@
   <div class="meal-chip" id="chip-lunch"><span>☀️ 昼食</span><span class="chip-count" id="chip-b-lunch"></span></div>
   <div class="meal-chip" id="chip-dinner"><span>🌙 夕食</span><span class="chip-count" id="chip-b-dinner"></span></div>
   <div class="meal-chip" id="chip-snack"><span>🍪 間食</span><span class="chip-count" id="chip-b-snack"></span></div>
+</div>
+
+<!-- まとめて分析ボタン -->
+<div class="analyze-all-wrap">
+  <button class="btn-analyze-all" id="btn-all" disabled onclick="analyzeAll()">
+    ✨ まとめて分析する
+  </button>
 </div>
 
 <!-- タブ -->
@@ -280,11 +292,6 @@ function buildPanel(m) {
       <button class="preview-retake" onclick="retake('${m.id}')">↩ 撮り直す</button>
     </div>
     <div class="meal-error" id="err-${m.id}"></div>
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-${m.id}" disabled onclick="analyze('${m.id}')">
-        🔍 ${m.label}を分析する
-      </button>
-    </div>
     <div class="meal-loading" id="ld-${m.id}">
       <div class="spinner"></div>
       <p>AIが食材を分析中…</p>
@@ -325,7 +332,10 @@ async function handleFile(mealId, file) {
     const pw = document.getElementById(`pw-${mealId}`);
     pw.style.display = 'block';
     document.getElementById(`pi-${mealId}`).src = e.target.result;
-    document.getElementById(`btn-${mealId}`).disabled = false;
+    // タブにドット表示
+    const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
+    if (!tab.classList.contains('done')) tab.classList.add('has-photo');
+    updateAnalyzeAllBtn();
   };
   reader.readAsDataURL(compressed);
 }
@@ -335,18 +345,40 @@ function retake(mealId) {
   state[mealId].previewSrc = null;
   document.getElementById(`ua-${mealId}`).style.display = 'flex';
   document.getElementById(`pw-${mealId}`).style.display = 'none';
-  document.getElementById(`btn-${mealId}`).disabled = true;
   document.getElementById(`err-${mealId}`).style.display = 'none';
+  const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
+  tab.classList.remove('has-photo');
+  updateAnalyzeAllBtn();
 }
 
-// ── Analyze ──
-async function analyze(mealId) {
+// ── まとめて分析 ──
+function updateAnalyzeAllBtn() {
+  const hasAny = MEALS.some(m => state[m.id].file && !state[m.id].result);
+  document.getElementById('btn-all').disabled = !hasAny;
+}
+
+async function analyzeAll() {
+  const targets = MEALS.filter(m => state[m.id].file && !state[m.id].result);
+  if (targets.length === 0) return;
+
+  const btn = document.getElementById('btn-all');
+  btn.disabled = true;
+  btn.textContent = '⏳ 分析中…';
+
+  // 全食事を並行して分析
+  await Promise.all(targets.map(m => analyzeMeal(m.id)));
+
+  btn.textContent = '✨ まとめて分析する';
+  updateAnalyzeAllBtn();
+  updateDaily();
+}
+
+async function analyzeMeal(mealId) {
   const s = state[mealId];
   if (!s.file) return;
 
   document.getElementById(`ld-${mealId}`).style.display = 'block';
   document.getElementById(`res-${mealId}`).style.display = 'none';
-  document.getElementById(`btn-${mealId}`).disabled = true;
   document.getElementById(`err-${mealId}`).style.display = 'none';
 
   const formData = new FormData();
@@ -359,7 +391,6 @@ async function analyze(mealId) {
     if (data.error) { showError(mealId, data.error); return; }
     s.result = data;
     renderMealResult(mealId, data);
-    updateDaily();
   } catch (e) {
     document.getElementById(`ld-${mealId}`).style.display = 'none';
     showError(mealId, '通信エラーが発生しました。再度お試しください。');
@@ -370,7 +401,6 @@ function showError(mealId, msg) {
   const el = document.getElementById(`err-${mealId}`);
   el.textContent = '⚠️ ' + msg;
   el.style.display = 'block';
-  document.getElementById(`btn-${mealId}`).disabled = false;
 }
 
 function renderMealResult(mealId, data) {
@@ -416,19 +446,22 @@ function renderMealResult(mealId, data) {
   `;
   resEl.style.display = 'block';
 
-  // Mark tab as done
-  document.querySelector(`.tab[data-meal="${mealId}"]`).classList.add('done');
+  // タブをdone状態に
+  const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
+  tab.classList.remove('has-photo');
+  tab.classList.add('done');
 }
 
 function resetMeal(mealId) {
   state[mealId] = { file: null, previewSrc: null, result: null };
   document.getElementById(`ua-${mealId}`).style.display = 'flex';
   document.getElementById(`pw-${mealId}`).style.display = 'none';
-  document.getElementById(`btn-${mealId}`).disabled = true;
   document.getElementById(`res-${mealId}`).style.display = 'none';
   document.getElementById(`res-${mealId}`).innerHTML = '';
   document.getElementById(`err-${mealId}`).style.display = 'none';
-  document.querySelector(`.tab[data-meal="${mealId}"]`).classList.remove('done');
+  const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
+  tab.classList.remove('done', 'has-photo');
+  updateAnalyzeAllBtn();
   updateDaily();
 }
 
