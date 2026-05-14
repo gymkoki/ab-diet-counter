@@ -163,6 +163,7 @@
     .food-meta { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
     .food-badge { display: inline-flex; padding: 1px 6px; border-radius: 20px; font-size: 10px; font-weight: 700; margin-right: 3px; }
     .badge-b { background: #FFF0EB; color: var(--b-color); }
+    .badge-good-b { background: #FFF8E7; color: #D97706; }
     .badge-a { background: #E8F9F8; color: var(--a-color); }
     .food-cnt { text-align: right; }
     .food-cnt .n { font-size: 18px; font-weight: 800; color: var(--b-color); line-height: 1; }
@@ -249,15 +250,15 @@
       <span class="chevron">▼</span>
     </button>
     <div class="rules-body">
-      <h4>B食材（1人前120kcal以上）</h4>
-      ご飯・パン・麺類、卵・乳製品、揚げ物・炒め物、チーズ・バター、スイーツ・お菓子、アルコール<br>
-      脂の多い魚：サバ・サーモン・ブリ・サンマ・ウナギ／鶏肉（皮付き）
-      <h4>A食材（1人前120kcal未満）</h4>
+      <h4>🟢 A食材（1人前120kcal未満）→ Bカウントなし</h4>
       野菜全般・果物・きのこ・海藻、豆腐・こんにゃく、魚介（脂の少ないもの）、鶏肉（皮なし）、プロテイン単体
+      <h4>🟡 グッドB食材（1人前120〜200kcal未満）→ 1人前につき0.5カウント</h4>
+      脂の少ない主食・軽い乳製品など。半人前なら0.25、大盛りなら1カウント
+      <h4>🔴 B食材（1人前200kcal以上）→ 1人前につき1カウント</h4>
+      ご飯・パン・麺類、揚げ物、チーズ・バター、スイーツ・お菓子、アルコール<br>
+      脂の多い魚：サバ・サーモン・ブリ・サンマ・ウナギ／鶏肉（皮付き）
       <h4>牛乳のルール</h4>
-      400ml＝1カウント（200mlなら0.5カウント）
-      <h4>Bカウント計算</h4>
-      極少量：0 ／ 半人前：0.5 ／ 1人前：1 ／ 大盛り〜2人前：2
+      B食材（1人前=400ml）。200mlなら0.5カウント、量に比例して計算
     </div>
   </div>
 
@@ -410,20 +411,24 @@ function renderMealResult(mealId, data) {
 
   let foodRows = (data.foods || []).map(food => {
     const isB = food.category === 'B';
-    const fc = food.b_count % 1 === 0 ? food.b_count.toString() : food.b_count.toFixed(1);
+    const isGoodB = food.category === 'グッドB';
+    const hasCount = isB || isGoodB;
+    const fc = food.b_count % 1 === 0 ? food.b_count.toString() : food.b_count.toFixed(2).replace(/\.?0+$/, '');
+    const badgeClass = isB ? 'badge-b' : isGoodB ? 'badge-good-b' : 'badge-a';
+    const badgeLabel = isB ? 'B食材' : isGoodB ? 'グッドB' : 'A食材';
     return `
       <div class="food-row">
         <div>
           <div class="food-name">${esc(food.name)}</div>
           <div class="food-meta">
-            <span class="food-badge ${isB ? 'badge-b' : 'badge-a'}">${food.category}食材</span>
+            <span class="food-badge ${badgeClass}">${badgeLabel}</span>
             約${food.kcal_per_serving}kcal ・ ${esc(food.amount)}
           </div>
           <div class="food-meta">${esc(food.reason)}</div>
         </div>
         <div class="food-cnt">
-          <div class="n ${food.b_count === 0 ? 'zero' : ''}">${isB ? fc : '−'}</div>
-          <div class="u">${isB ? 'Bカウント' : 'A食材'}</div>
+          <div class="n ${!hasCount ? 'zero' : ''}">${hasCount ? fc : '−'}</div>
+          <div class="u">${isB ? 'Bカウント' : isGoodB ? 'グッドB' : 'A食材'}</div>
         </div>
       </div>`;
   }).join('');
