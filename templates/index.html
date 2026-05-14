@@ -58,177 +58,182 @@
     .daily-count { font-size: 52px; font-weight: 900; line-height: 1; }
     .daily-unit  { font-size: 13px; font-weight: 600; opacity: 0.85; }
 
-    /* ── Chips ── */
-    .meal-summary { display:flex; gap:6px; padding:10px 16px 0; overflow-x:auto; scrollbar-width:none; }
-    .meal-summary::-webkit-scrollbar { display:none; }
-    .meal-chip {
-      flex-shrink:0; padding:5px 12px; border-radius:20px;
-      font-size:11px; font-weight:700; background:var(--surface);
-      border:1.5px solid var(--border); color:var(--text-muted);
-      display:flex; align-items:center; gap:5px;
+    /* ── Chips + reset row ── */
+    .chips-reset-row {
+      display: flex; align-items: center; padding: 10px 16px 0; gap: 6px;
     }
-    .meal-chip.done { border-color:var(--primary); color:var(--primary); background:#FFF5F0; }
-    .meal-chip .chip-count { font-size:13px; font-weight:900; }
+    .meal-summary {
+      display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex: 1;
+    }
+    .meal-summary::-webkit-scrollbar { display: none; }
+    .meal-chip {
+      flex-shrink: 0; padding: 5px 12px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; background: var(--surface);
+      border: 1.5px solid var(--border); color: var(--text-muted);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .meal-chip.done { border-color: var(--primary); color: var(--primary); background: #FFF5F0; }
+    .meal-chip .chip-count { font-size: 13px; font-weight: 900; }
+
+    /* ── Reset button ── */
+    .btn-reset {
+      flex-shrink: 0; padding: 6px 12px; border-radius: 20px;
+      font-size: 11px; font-weight: 700;
+      background: none; border: 1.5px solid #FECACA;
+      color: #DC2626; cursor: pointer; transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-reset:hover { background: #FEF2F2; }
+
+    /* ── Reset confirm overlay ── */
+    #reset-overlay {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.45); align-items: center; justify-content: center;
+    }
+    #reset-overlay.show { display: flex; }
+    .reset-dialog {
+      background: var(--surface); border-radius: 18px; padding: 28px 24px;
+      max-width: 320px; width: 88%; text-align: center; box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+    }
+    .reset-dialog h3 { font-size: 17px; font-weight: 800; margin-bottom: 10px; }
+    .reset-dialog p  { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px; }
+    .reset-btns { display: flex; gap: 10px; }
+    .reset-btns button { flex: 1; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: 700; border: none; cursor: pointer; }
+    .reset-cancel  { background: var(--bg); color: var(--text-muted); }
+    .reset-confirm { background: #DC2626; color: white; }
 
     /* ── まとめて分析ボタン ── */
-    .analyze-all-wrap { padding:12px 16px 0; }
+    .analyze-all-wrap { padding: 12px 16px 0; }
     .btn-analyze-all {
-      width:100%; display:flex; align-items:center; justify-content:center;
-      gap:10px; padding:16px; border-radius:14px; font-size:15px;
-      font-weight:800; border:none; cursor:pointer;
-      background:linear-gradient(135deg, var(--pink), #e05580);
-      color:white; box-shadow:0 4px 16px rgba(255,107,157,0.4);
-      transition:opacity 0.2s, transform 0.1s;
+      width: 100%; display: flex; align-items: center; justify-content: center;
+      gap: 10px; padding: 16px; border-radius: 14px; font-size: 15px;
+      font-weight: 800; border: none; cursor: pointer;
+      background: linear-gradient(135deg, var(--pink), #e05580);
+      color: white; box-shadow: 0 4px 16px rgba(255,107,157,0.4);
+      transition: opacity 0.2s, transform 0.1s;
     }
-    .btn-analyze-all:active   { transform:scale(0.97); }
-    .btn-analyze-all:disabled { opacity:0.35; cursor:not-allowed; box-shadow:none; }
+    .btn-analyze-all:active   { transform: scale(0.97); }
+    .btn-analyze-all:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
     /* ── Tabs ── */
-    .tabs { display:flex; padding:12px 16px 0; gap:6px; }
+    .tabs { display: flex; padding: 12px 16px 0; gap: 6px; }
     .tab {
-      flex:1; padding:10px 6px; border-radius:12px 12px 0 0;
-      border:none; background:var(--border); color:var(--text-muted);
-      font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; position:relative;
+      flex: 1; padding: 10px 6px; border-radius: 12px 12px 0 0;
+      border: none; background: var(--border); color: var(--text-muted);
+      font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; position: relative;
     }
-    .tab.active { background:var(--surface); color:var(--primary); box-shadow:0 -2px 8px rgba(0,0,0,0.06); }
-    .tab .tab-dot { width:6px; height:6px; border-radius:50%; display:inline-block; margin-left:4px; vertical-align:middle; display:none; }
-    .tab.has-photo .tab-dot { display:inline-block; background:#FCD34D; }
-    .tab.done      .tab-dot { display:inline-block; background:var(--a-color); }
+    .tab.active { background: var(--surface); color: var(--primary); box-shadow: 0 -2px 8px rgba(0,0,0,0.06); }
+    .tab .tab-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-left: 4px; vertical-align: middle; display: none; }
+    .tab.has-photo .tab-dot { display: inline-block; background: #FCD34D; }
+    .tab.done      .tab-dot { display: inline-block; background: var(--a-color); }
 
     /* ── Tab panels ── */
-    .container  { padding:0 16px 48px; }
-    .tab-panel  { display:none; background:var(--surface); border-radius:0 0 var(--radius) var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
-    .tab-panel.active { display:block; }
+    .container  { padding: 0 16px 48px; }
+    .tab-panel  { display: none; background: var(--surface); border-radius: 0 0 var(--radius) var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px; }
+    .tab-panel.active { display: block; }
 
     /* ── Upload area ── */
     .upload-area {
-      display:flex; flex-direction:column; align-items:center;
-      justify-content:center; gap:10px; padding:28px 20px;
-      cursor:pointer; border:2px dashed var(--border);
-      border-radius:12px; margin:16px; transition:border-color 0.2s, background 0.2s; position:relative;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 10px; padding: 28px 20px;
+      cursor: pointer; border: 2px dashed var(--border);
+      border-radius: 12px; margin: 16px; transition: border-color 0.2s, background 0.2s; position: relative;
     }
-    .upload-area:hover, .upload-area.drag-over { border-color:var(--primary); background:#FFF5F0; }
-    .upload-area input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
-    .upload-icon { width:48px; height:48px; background:#FFF5F0; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:22px; }
-    .upload-area h3 { font-size:14px; font-weight:700; }
-    .upload-area p  { font-size:11px; color:var(--text-muted); text-align:center; }
+    .upload-area:hover, .upload-area.drag-over { border-color: var(--primary); background: #FFF5F0; }
+    .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .upload-icon { width: 48px; height: 48px; background: #FFF5F0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .upload-area h3 { font-size: 14px; font-weight: 700; }
+    .upload-area p  { font-size: 11px; color: var(--text-muted); text-align: center; }
 
-    /* ── Single meal preview ── */
-    .preview-wrap { position:relative; margin:0 16px 12px; }
-    .preview-wrap img { width:100%; border-radius:12px; max-height:240px; object-fit:cover; display:block; }
+    /* ── Single preview ── */
+    .preview-wrap { position: relative; margin: 0 16px 12px; }
+    .preview-wrap img { width: 100%; border-radius: 12px; max-height: 240px; object-fit: cover; display: block; }
     .preview-retake {
-      position:absolute; top:8px; right:8px;
-      background:rgba(0,0,0,0.55); color:white; border:none;
-      border-radius:8px; padding:6px 10px; font-size:11px; font-weight:700; cursor:pointer;
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(0,0,0,0.55); color: white; border: none;
+      border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
     }
 
-    /* ── Snack: thumbnail strip ── */
-    .snack-strip {
-      display:flex; gap:10px; padding:14px 16px 4px; overflow-x:auto; scrollbar-width:none;
-      flex-wrap:wrap;
-    }
-    .snack-strip::-webkit-scrollbar { display:none; }
-    .snack-thumb {
-      position:relative; width:88px; height:88px; flex-shrink:0;
-      border-radius:12px; overflow:hidden; background:var(--bg);
-      border:2px solid var(--border);
-    }
-    .snack-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-    .snack-thumb .sn-remove {
-      position:absolute; top:4px; right:4px;
-      width:22px; height:22px; border-radius:50%;
-      background:rgba(0,0,0,0.6); color:white; border:none;
-      font-size:13px; line-height:22px; text-align:center; cursor:pointer;
-      display:flex; align-items:center; justify-content:center;
-    }
-    .snack-thumb .sn-badge {
-      position:absolute; bottom:4px; left:4px; right:4px;
-      background:rgba(255,107,53,0.88); color:white;
-      font-size:10px; font-weight:800; border-radius:6px;
-      padding:2px 4px; text-align:center;
-    }
-    .snack-thumb .sn-badge.good { background:rgba(217,119,6,0.88); }
-    .snack-thumb .sn-spinner {
-      position:absolute; inset:0; background:rgba(255,255,255,0.75);
-      display:flex; align-items:center; justify-content:center;
-    }
-    .sn-spin { width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
+    /* ── Snack strip ── */
+    .snack-strip { display: flex; gap: 10px; padding: 14px 16px 4px; overflow-x: auto; scrollbar-width: none; flex-wrap: wrap; }
+    .snack-strip::-webkit-scrollbar { display: none; }
+    .snack-thumb { position: relative; width: 88px; height: 88px; flex-shrink: 0; border-radius: 12px; overflow: hidden; background: var(--bg); border: 2px solid var(--border); }
+    .snack-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .snack-thumb .sn-remove { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; border: none; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .snack-thumb .sn-badge { position: absolute; bottom: 4px; left: 4px; right: 4px; background: rgba(255,107,53,0.88); color: white; font-size: 10px; font-weight: 800; border-radius: 6px; padding: 2px 4px; text-align: center; }
+    .snack-thumb .sn-badge.good { background: rgba(217,119,6,0.88); }
+    .snack-thumb .sn-spinner { position: absolute; inset: 0; background: rgba(255,255,255,0.75); display: flex; align-items: center; justify-content: center; }
+    .sn-spin { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
-    /* ── Snack add-more button ── */
+    /* ── Snack add ── */
     .snack-add {
-      display:flex; flex-direction:column; align-items:center;
-      justify-content:center; gap:6px; padding:20px 20px;
-      cursor:pointer; border:2px dashed var(--border);
-      border-radius:12px; margin:10px 16px 4px; transition:border-color 0.2s, background 0.2s; position:relative;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 6px; padding: 20px;
+      cursor: pointer; border: 2px dashed var(--border);
+      border-radius: 12px; margin: 10px 16px 4px; transition: border-color 0.2s, background 0.2s; position: relative;
     }
-    .snack-add:hover { border-color:var(--primary); background:#FFF5F0; }
-    .snack-add input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
-    .snack-add-icon { font-size:20px; }
-    .snack-add h3 { font-size:13px; font-weight:700; }
-    .snack-add p  { font-size:11px; color:var(--text-muted); }
+    .snack-add:hover { border-color: var(--primary); background: #FFF5F0; }
+    .snack-add input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .snack-add-icon { font-size: 20px; }
+    .snack-add h3 { font-size: 13px; font-weight: 700; }
+    .snack-add p  { font-size: 11px; color: var(--text-muted); }
 
     /* ── Loading ── */
-    .meal-loading { display:none; text-align:center; padding:24px 16px; }
-    .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 12px; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .meal-loading p { color:var(--text-muted); font-size:13px; }
+    .meal-loading { display: none; text-align: center; padding: 24px 16px; }
+    .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .meal-loading p { color: var(--text-muted); font-size: 13px; }
 
     /* ── Result ── */
-    .meal-result { display:none; padding:0 16px 16px; }
+    .meal-result { display: none; padding: 0 16px 16px; }
     .meal-b-count {
-      background:#FFF5F0; border-radius:12px; padding:14px 16px;
-      display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;
+      background: #FFF5F0; border-radius: 12px; padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
     }
-    .meal-b-count .label { font-size:12px; font-weight:700; color:var(--text-muted); }
-    .meal-b-count .count { font-size:36px; font-weight:900; color:var(--primary); line-height:1; }
-    .meal-b-count .unit  { font-size:12px; font-weight:600; color:var(--primary); }
+    .meal-b-count .label { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+    .meal-b-count .count { font-size: 36px; font-weight: 900; color: var(--primary); line-height: 1; }
+    .meal-b-count .unit  { font-size: 12px; font-weight: 600; color: var(--primary); }
 
-    .result-photo { width:100%; border-radius:10px; max-height:200px; object-fit:cover; display:block; margin-bottom:12px; }
+    .result-photo { width: 100%; border-radius: 10px; max-height: 200px; object-fit: cover; display: block; margin-bottom: 12px; }
 
-    .advice-row { display:flex; gap:8px; align-items:flex-start; background:var(--bg); border-radius:10px; padding:12px; margin-bottom:12px; }
-    .advice-row .icon { font-size:16px; flex-shrink:0; }
-    .advice-row p { font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .advice-row { display: flex; gap: 8px; align-items: flex-start; background: var(--bg); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+    .advice-row .icon { font-size: 16px; flex-shrink: 0; }
+    .advice-row p { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
 
-    .food-list-wrap { border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-    .food-list-header { padding:10px 14px; background:var(--bg); font-size:12px; font-weight:700; border-bottom:1px solid var(--border); }
-    .food-row { display:grid; grid-template-columns:1fr auto; gap:6px; padding:10px 14px; border-bottom:1px solid var(--border); align-items:start; }
-    .food-row:last-child { border-bottom:none; }
-    .food-name { font-size:13px; font-weight:600; margin-bottom:2px; }
-    .food-meta { font-size:10px; color:var(--text-muted); line-height:1.4; }
-    .food-badge { display:inline-flex; padding:1px 6px; border-radius:20px; font-size:10px; font-weight:700; margin-right:3px; }
-    .badge-b      { background:#FFF0EB; color:var(--b-color); }
-    .badge-good-b { background:#FFF8E7; color:#D97706; }
-    .badge-a      { background:#E8F9F8; color:var(--a-color); }
-    .food-cnt { text-align:right; }
-    .food-cnt .n { font-size:18px; font-weight:800; color:var(--b-color); line-height:1; }
-    .food-cnt .n.zero { color:var(--a-color); }
-    .food-cnt .u { font-size:9px; color:var(--text-muted); }
+    .food-list-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .food-list-header { padding: 10px 14px; background: var(--bg); font-size: 12px; font-weight: 700; border-bottom: 1px solid var(--border); }
+    .food-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); align-items: start; }
+    .food-row:last-child { border-bottom: none; }
+    .food-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .food-meta { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
+    .food-badge { display: inline-flex; padding: 1px 6px; border-radius: 20px; font-size: 10px; font-weight: 700; margin-right: 3px; }
+    .badge-b      { background: #FFF0EB; color: var(--b-color); }
+    .badge-good-b { background: #FFF8E7; color: #D97706; }
+    .badge-a      { background: #E8F9F8; color: var(--a-color); }
+    .food-cnt { text-align: right; }
+    .food-cnt .n { font-size: 18px; font-weight: 800; color: var(--b-color); line-height: 1; }
+    .food-cnt .n.zero { color: var(--a-color); }
+    .food-cnt .u { font-size: 9px; color: var(--text-muted); }
 
     /* ── Snack result cards ── */
-    .snack-result-card {
-      border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:12px;
-    }
-    .snack-result-header {
-      display:flex; align-items:center; justify-content:space-between;
-      padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border);
-      font-size:12px; font-weight:700;
-    }
-    .snack-result-header .sn-cnt { color:var(--primary); font-size:14px; font-weight:900; }
+    .snack-result-card { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+    .snack-result-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; }
+    .snack-result-header .sn-cnt { color: var(--primary); font-size: 14px; font-weight: 900; }
 
-    .re-analyze { width:100%; margin-top:10px; padding:10px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; }
-    .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
+    .re-analyze { width: 100%; margin-top: 10px; padding: 10px; border-radius: 10px; background: none; border: 1.5px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text-muted); cursor: pointer; }
+    .re-analyze:hover { border-color: var(--primary); color: var(--primary); }
 
     /* ── Error ── */
-    .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:12px; color:#DC2626; }
+    .meal-error { display: none; margin: 0 16px 16px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; padding: 12px 14px; font-size: 12px; color: #DC2626; }
 
     /* ── Rules ── */
-    .rules-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-top:8px; }
-    .rules-toggle { width:100%; padding:14px 20px; background:none; border:none; text-align:left; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
-    .rules-body { display:none; padding:0 20px 16px; font-size:12px; color:var(--text-muted); line-height:1.8; border-top:1px solid var(--border); }
-    .rules-body.open { display:block; }
-    .rules-body h4 { font-size:12px; font-weight:700; color:var(--text); margin:10px 0 3px; }
-    .chevron { transition:transform 0.2s; }
-    .chevron.open { transform:rotate(180deg); }
+    .rules-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-top: 8px; }
+    .rules-toggle { width: 100%; padding: 14px 20px; background: none; border: none; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+    .rules-body { display: none; padding: 0 20px 16px; font-size: 12px; color: var(--text-muted); line-height: 1.8; border-top: 1px solid var(--border); }
+    .rules-body.open { display: block; }
+    .rules-body h4 { font-size: 12px; font-weight: 700; color: var(--text); margin: 10px 0 3px; }
+    .chevron { transition: transform 0.2s; }
+    .chevron.open { transform: rotate(180deg); }
   </style>
 </head>
 <body>
@@ -254,11 +259,27 @@
   </div>
 </div>
 
-<div class="meal-summary">
-  <div class="meal-chip" id="chip-breakfast"><span>🌅 朝食</span><span class="chip-count" id="chip-b-breakfast"></span></div>
-  <div class="meal-chip" id="chip-lunch"    ><span>☀️ 昼食</span><span class="chip-count" id="chip-b-lunch"    ></span></div>
-  <div class="meal-chip" id="chip-dinner"   ><span>🌙 夕食</span><span class="chip-count" id="chip-b-dinner"   ></span></div>
-  <div class="meal-chip" id="chip-snack"    ><span>🍪 間食</span><span class="chip-count" id="chip-b-snack"    ></span></div>
+<!-- チップ + リセットボタン -->
+<div class="chips-reset-row">
+  <div class="meal-summary">
+    <div class="meal-chip" id="chip-breakfast"><span>🌅 朝食</span><span class="chip-count" id="chip-b-breakfast"></span></div>
+    <div class="meal-chip" id="chip-lunch"    ><span>☀️ 昼食</span><span class="chip-count" id="chip-b-lunch"    ></span></div>
+    <div class="meal-chip" id="chip-dinner"   ><span>🌙 夕食</span><span class="chip-count" id="chip-b-dinner"   ></span></div>
+    <div class="meal-chip" id="chip-snack"    ><span>🍪 間食</span><span class="chip-count" id="chip-b-snack"    ></span></div>
+  </div>
+  <button class="btn-reset" onclick="confirmReset()">🔄 リセット</button>
+</div>
+
+<!-- リセット確認ダイアログ -->
+<div id="reset-overlay">
+  <div class="reset-dialog">
+    <h3>1日のデータをリセット</h3>
+    <p>朝食・昼食・夕食・間食のデータがすべて消去されます。<br>よろしいですか？</p>
+    <div class="reset-btns">
+      <button class="reset-cancel"  onclick="closeReset()">キャンセル</button>
+      <button class="reset-confirm" onclick="doReset()">リセットする</button>
+    </div>
+  </div>
 </div>
 
 <div class="analyze-all-wrap">
@@ -312,8 +333,6 @@ const MEALS = [
   { id:'snack',     label:'間食', emoji:'🍪' },
 ];
 
-// 朝食/昼食/夕食: { file, previewSrc, result }
-// 間食:           { items: [{id, file, previewSrc, result, loading, error}] }
 const state = {
   breakfast: { file:null, previewSrc:null, result:null },
   lunch:     { file:null, previewSrc:null, result:null },
@@ -321,13 +340,85 @@ const state = {
   snack:     { items:[] },
 };
 let snackIdSeq = 0;
+const STORAGE_KEY = 'ab-diet-state-v2';
+
+// ═══════════════════════════════════════════
+//  LocalStorage: save / load
+// ═══════════════════════════════════════════
+function saveState() {
+  try {
+    const data = {
+      savedAt: Date.now(),
+      breakfast: { previewSrc: state.breakfast.previewSrc, result: state.breakfast.result },
+      lunch:     { previewSrc: state.lunch.previewSrc,     result: state.lunch.result },
+      dinner:    { previewSrc: state.dinner.previewSrc,    result: state.dinner.result },
+      snack: {
+        items: state.snack.items
+          .filter(i => i.result)
+          .map(i => ({ id: i.id, previewSrc: i.previewSrc, result: i.result })),
+      },
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch(e) {
+    console.warn('localStorage save failed:', e);
+  }
+}
+
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+
+    ['breakfast','lunch','dinner'].forEach(id => {
+      if (data[id] && data[id].result) {
+        state[id].previewSrc = data[id].previewSrc;
+        state[id].result     = data[id].result;
+      }
+    });
+
+    if (data.snack && data.snack.items && data.snack.items.length) {
+      state.snack.items = data.snack.items.map(i => ({
+        ...i, file: null, loading: false, error: null,
+      }));
+      snackIdSeq = Math.max(0, ...state.snack.items.map(i => i.id));
+    }
+  } catch(e) {
+    console.warn('localStorage load failed:', e);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Reset
+// ═══════════════════════════════════════════
+function confirmReset() {
+  document.getElementById('reset-overlay').classList.add('show');
+}
+function closeReset() {
+  document.getElementById('reset-overlay').classList.remove('show');
+}
+function doReset() {
+  closeReset();
+  // Clear state
+  ['breakfast','lunch','dinner'].forEach(id => {
+    state[id] = { file:null, previewSrc:null, result:null };
+  });
+  state.snack.items = [];
+  snackIdSeq = 0;
+  localStorage.removeItem(STORAGE_KEY);
+
+  // Re-build all panels
+  ['breakfast','lunch','dinner'].forEach(id => buildSinglePanel(MEALS.find(m=>m.id===id)));
+  buildSnackPanel();
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('done','has-photo'));
+  switchTab('breakfast');
+  updateAnalyzeAllBtn();
+  updateDaily();
+}
 
 // ═══════════════════════════════════════════
 //  Build panels
 // ═══════════════════════════════════════════
-['breakfast','lunch','dinner'].forEach(id => buildSinglePanel(MEALS.find(m=>m.id===id)));
-buildSnackPanel();
-
 function buildSinglePanel(m) {
   const panel = document.getElementById(`panel-${m.id}`);
   panel.innerHTML = `
@@ -353,6 +444,11 @@ function buildSinglePanel(m) {
     const f = e.dataTransfer.files[0];
     if (f && f.type.startsWith('image/')) handleSingleFile(m.id, f);
   });
+
+  // Restore from saved state
+  if (state[m.id].result) {
+    renderSingleResult(m.id, state[m.id].result, false);
+  }
 }
 
 function buildSnackPanel() {
@@ -376,6 +472,13 @@ function buildSnackPanel() {
     const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
     if (files.length) addSnackFiles(files);
   });
+
+  // Restore from saved state
+  if (state.snack.items.length > 0) {
+    renderSnackStrip();
+    renderSnackResults();
+    updateSnackTabDot();
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -396,29 +499,29 @@ function onFileChange(mealId, input) {
 }
 
 async function handleSingleFile(mealId, file) {
-  const compressed = await compressImage(file);
-  const reader = new FileReader();
-  reader.onload = e => {
-    state[mealId].file = compressed;
-    state[mealId].previewSrc = e.target.result;
-    document.getElementById(`ua-${mealId}`).style.display = 'none';
-    document.getElementById(`pw-${mealId}`).style.display = 'block';
-    document.getElementById(`pi-${mealId}`).src = e.target.result;
-    const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
-    if (!tab.classList.contains('done')) tab.classList.add('has-photo');
-    updateAnalyzeAllBtn();
-  };
-  reader.readAsDataURL(compressed);
+  const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
+  state[mealId].file       = compressed;
+  state[mealId].previewSrc = thumb;
+  document.getElementById(`ua-${mealId}`).style.display = 'none';
+  document.getElementById(`pw-${mealId}`).style.display = 'block';
+  document.getElementById(`pi-${mealId}`).src = thumb;
+  const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
+  if (!tab.classList.contains('done')) tab.classList.add('has-photo');
+  updateAnalyzeAllBtn();
 }
 
 function retake(mealId) {
-  state[mealId].file = null;
+  state[mealId].file       = null;
   state[mealId].previewSrc = null;
-  document.getElementById(`ua-${mealId}`).style.display = 'flex';
-  document.getElementById(`pw-${mealId}`).style.display = 'none';
-  document.getElementById(`err-${mealId}`).style.display = 'none';
-  document.querySelector(`.tab[data-meal="${mealId}"]`).classList.remove('has-photo');
+  state[mealId].result     = null;
+  document.getElementById(`ua-${mealId}`).style.display   = 'flex';
+  document.getElementById(`pw-${mealId}`).style.display   = 'none';
+  document.getElementById(`res-${mealId}`).style.display  = 'none';
+  document.getElementById(`res-${mealId}`).innerHTML      = '';
+  document.getElementById(`err-${mealId}`).style.display  = 'none';
+  document.querySelector(`.tab[data-meal="${mealId}"]`).classList.remove('has-photo','done');
   updateAnalyzeAllBtn();
+  updateDaily();
 }
 
 // ═══════════════════════════════════════════
@@ -435,12 +538,11 @@ async function addSnackFiles(files) {
     const id = ++snackIdSeq;
     const item = { id, file:null, previewSrc:null, result:null, loading:false, error:null };
     state.snack.items.push(item);
-    renderSnackStrip();  // show placeholder immediately
+    renderSnackStrip();
 
-    const compressed = await compressImage(file);
-    const src = await fileToDataURL(compressed);
-    item.file = compressed;
-    item.previewSrc = src;
+    const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
+    item.file       = compressed;
+    item.previewSrc = thumb;
     renderSnackStrip();
     updateSnackTabDot();
     updateAnalyzeAllBtn();
@@ -467,15 +569,12 @@ function renderSnackStrip() {
       <div class="snack-thumb" id="snack-thumb-${item.id}">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="間食">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">🍪</div>`
-        }
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">🍪</div>`}
         ${item.loading ? `<div class="sn-spinner"><div class="sn-spin"></div></div>` : ''}
         ${!item.result && !item.loading
-          ? `<button class="sn-remove" onclick="removeSnackItem(${item.id})">✕</button>`
-          : ''}
+          ? `<button class="sn-remove" onclick="removeSnackItem(${item.id})">✕</button>` : ''}
         ${cnt !== null
-          ? `<div class="sn-badge${isGoodOnly?' good':''}">B ${cnt}</div>`
-          : ''}
+          ? `<div class="sn-badge${isGoodOnly?' good':''}">B ${cnt}</div>` : ''}
       </div>`;
   }).join('');
 }
@@ -486,34 +585,31 @@ function renderSnackResults() {
   const done = state.snack.items.filter(i => i.result);
   if (done.length === 0) { resEl.style.display = 'none'; resEl.innerHTML = ''; return; }
 
-  const totalB = done.reduce((s, i) => s + i.result.total_b_count, 0);
-  const totalStr = fmtCount(totalB);
-
-  const cards = done.map((item, idx) => {
-    const cnt = fmtCount(item.result.total_b_count);
-    const rows = buildFoodRows(item.result.foods);
-    return `
-      <div class="snack-result-card">
-        <div class="snack-result-header">
-          <span>🍪 間食 ${idx+1}</span>
-          <span class="sn-cnt">B ${cnt}</span>
+  const totalB   = done.reduce((s,i) => s + i.result.total_b_count, 0);
+  const cards    = done.map((item, idx) => `
+    <div class="snack-result-card">
+      <div class="snack-result-header">
+        <span>🍪 間食 ${idx+1}</span>
+        <span class="sn-cnt">B ${fmtCount(item.result.total_b_count)}</span>
+      </div>
+      <div style="padding:10px 14px 14px">
+        <img class="result-photo" src="${item.previewSrc}" alt="間食${idx+1}">
+        <div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice||'')}</p></div>
+        <div class="food-list-wrap">
+          <div class="food-list-header">食材の内訳</div>
+          ${buildFoodRows(item.result.foods)}
         </div>
-        <div style="padding:10px 14px 14px">
-          <img class="result-photo" src="${item.previewSrc}" alt="間食${idx+1}">
-          <div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice||'')}</p></div>
-          <div class="food-list-wrap">
-            <div class="food-list-header">食材の内訳</div>
-            ${rows}
-          </div>
-        </div>
-      </div>`;
-  }).join('');
+      </div>
+    </div>`).join('');
 
   resEl.innerHTML = `
     <div class="meal-b-count" style="margin-bottom:12px">
-      <div><div class="label">間食 合計 Bカウント</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px">${done.length}枚分</div></div>
+      <div>
+        <div class="label">間食 合計 Bカウント</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${done.length}枚分</div>
+      </div>
       <div style="text-align:right">
-        <div class="count">${totalStr}</div>
+        <div class="count">${fmtCount(totalB)}</div>
         <div class="unit">カウント</div>
       </div>
     </div>
@@ -529,15 +625,15 @@ function resetSnack() {
   renderSnackResults();
   updateSnackTabDot();
   updateAnalyzeAllBtn();
-  updateDaily();
   document.getElementById('err-snack').style.display = 'none';
+  updateDaily();
 }
 
 function updateSnackTabDot() {
-  const tab = document.querySelector('.tab[data-meal="snack"]');
-  const hasPending = state.snack.items.some(i => i.file && !i.result);
-  const hasDone    = state.snack.items.some(i => i.result);
-  tab.classList.toggle('has-photo', hasPending && !hasDone);
+  const tab      = document.querySelector('.tab[data-meal="snack"]');
+  const hasPend  = state.snack.items.some(i => i.file && !i.result);
+  const hasDone  = state.snack.items.some(i => i.result);
+  tab.classList.toggle('has-photo', hasPend && !hasDone);
   tab.classList.toggle('done', hasDone);
 }
 
@@ -572,7 +668,7 @@ async function analyzeSingleMeal(mealId) {
   const s = state[mealId];
   if (!s.file) return;
 
-  document.getElementById(`ld-${mealId}`).style.display = 'block';
+  document.getElementById(`ld-${mealId}`).style.display  = 'block';
   document.getElementById(`res-${mealId}`).style.display = 'none';
   document.getElementById(`err-${mealId}`).style.display = 'none';
 
@@ -584,7 +680,7 @@ async function analyzeSingleMeal(mealId) {
     document.getElementById(`ld-${mealId}`).style.display = 'none';
     if (data.error) { showSingleError(mealId, data.error); return; }
     s.result = data;
-    renderSingleResult(mealId, data);
+    renderSingleResult(mealId, data, true);
   } catch(e) {
     document.getElementById(`ld-${mealId}`).style.display = 'none';
     showSingleError(mealId, '通信エラーが発生しました。再度お試しください。');
@@ -604,12 +700,8 @@ async function analyzeSnackItem(itemId) {
     const res  = await fetch('/analyze', { method:'POST', body:formData });
     const data = await res.json();
     item.loading = false;
-    if (data.error) {
-      item.error = data.error;
-      showSnackError(data.error);
-    } else {
-      item.result = data;
-    }
+    if (data.error) { item.error = data.error; showSnackError(data.error); }
+    else            { item.result = data; }
   } catch(e) {
     item.loading = false;
     item.error = '通信エラーが発生しました。';
@@ -626,7 +718,6 @@ function showSingleError(mealId, msg) {
   el.textContent = '⚠️ ' + msg;
   el.style.display = 'block';
 }
-
 function showSnackError(msg) {
   const el = document.getElementById('err-snack');
   el.textContent = '⚠️ ' + msg;
@@ -634,16 +725,15 @@ function showSnackError(msg) {
 }
 
 // ═══════════════════════════════════════════
-//  Render single meal result
+//  Render single result
 // ═══════════════════════════════════════════
-function renderSingleResult(mealId, data) {
+function renderSingleResult(mealId, data, saveAfter) {
   const resEl = document.getElementById(`res-${mealId}`);
-  const cnt = fmtCount(data.total_b_count);
   resEl.innerHTML = `
     <div class="meal-b-count">
       <div><div class="label">このメニューの Bカウント</div></div>
       <div style="text-align:right">
-        <div class="count">${cnt}</div>
+        <div class="count">${fmtCount(data.total_b_count)}</div>
         <div class="unit">カウント</div>
       </div>
     </div>
@@ -653,20 +743,29 @@ function renderSingleResult(mealId, data) {
       <div class="food-list-header">食材の内訳</div>
       ${buildFoodRows(data.foods)}
     </div>
-    <button class="re-analyze" onclick="resetSingleMeal('${mealId}')">↩ 別の写真に変更する</button>
+    <button class="re-analyze" onclick="retake('${mealId}')">↩ 別の写真に変更する</button>
   `;
   resEl.style.display = 'block';
+
+  // hide upload/preview
+  const ua = document.getElementById(`ua-${mealId}`);
+  const pw = document.getElementById(`pw-${mealId}`);
+  if (ua) ua.style.display = 'none';
+  if (pw) pw.style.display = 'none';
+
   const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
   tab.classList.remove('has-photo');
   tab.classList.add('done');
+
+  if (saveAfter) { updateDaily(); saveState(); }
 }
 
 function resetSingleMeal(mealId) {
   state[mealId] = { file:null, previewSrc:null, result:null };
-  document.getElementById(`ua-${mealId}`).style.display = 'flex';
-  document.getElementById(`pw-${mealId}`).style.display = 'none';
+  document.getElementById(`ua-${mealId}`).style.display  = 'flex';
+  document.getElementById(`pw-${mealId}`).style.display  = 'none';
   document.getElementById(`res-${mealId}`).style.display = 'none';
-  document.getElementById(`res-${mealId}`).innerHTML = '';
+  document.getElementById(`res-${mealId}`).innerHTML     = '';
   document.getElementById(`err-${mealId}`).style.display = 'none';
   document.querySelector(`.tab[data-meal="${mealId}"]`).classList.remove('done','has-photo');
   updateAnalyzeAllBtn();
@@ -681,9 +780,16 @@ function updateDaily() {
   const doneMeals = [];
 
   ['breakfast','lunch','dinner'].forEach(id => {
+    const chip  = document.getElementById(`chip-${id}`);
+    const chipB = document.getElementById(`chip-b-${id}`);
     if (state[id].result) {
       total += state[id].result.total_b_count;
       doneMeals.push(MEALS.find(m=>m.id===id).label);
+      chipB.textContent = ' ' + fmtCount(state[id].result.total_b_count) + 'B';
+      chip.classList.add('done');
+    } else {
+      chipB.textContent = '';
+      chip.classList.remove('done');
     }
   });
 
@@ -692,26 +798,12 @@ function updateDaily() {
     const snackTotal = snackDone.reduce((s,i) => s + i.result.total_b_count, 0);
     total += snackTotal;
     doneMeals.push('間食');
-    // chip
-    const c = snackTotal;
-    document.getElementById('chip-b-snack').textContent = ' ' + fmtCount(c) + 'B';
+    document.getElementById('chip-b-snack').textContent = ' ' + fmtCount(snackTotal) + 'B';
     document.getElementById('chip-snack').classList.add('done');
   } else {
     document.getElementById('chip-b-snack').textContent = '';
     document.getElementById('chip-snack').classList.remove('done');
   }
-
-  ['breakfast','lunch','dinner'].forEach(id => {
-    const chip  = document.getElementById(`chip-${id}`);
-    const chipB = document.getElementById(`chip-b-${id}`);
-    if (state[id].result) {
-      chipB.textContent = ' ' + fmtCount(state[id].result.total_b_count) + 'B';
-      chip.classList.add('done');
-    } else {
-      chipB.textContent = '';
-      chip.classList.remove('done');
-    }
-  });
 
   const countEl = document.getElementById('daily-count');
   const subEl   = document.getElementById('daily-sub');
@@ -722,17 +814,18 @@ function updateDaily() {
     countEl.textContent = fmtCount(total);
     subEl.textContent   = doneMeals.join('・') + ' の合計';
   }
+
+  saveState();
 }
 
 // ═══════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════
 function buildFoodRows(foods) {
-  return (foods || []).map(food => {
+  return (foods||[]).map(food => {
     const isB     = food.category === 'B';
     const isGoodB = food.category === 'グッドB';
     const hasCount = isB || isGoodB;
-    const fc = fmtCount(food.b_count);
     const badgeClass = isB ? 'badge-b' : isGoodB ? 'badge-good-b' : 'badge-a';
     const badgeLabel = isB ? 'B食材'   : isGoodB ? 'グッドB'      : 'A食材';
     return `
@@ -746,7 +839,7 @@ function buildFoodRows(foods) {
           <div class="food-meta">${esc(food.reason)}</div>
         </div>
         <div class="food-cnt">
-          <div class="n ${!hasCount?'zero':''}">${hasCount ? fc : '−'}</div>
+          <div class="n ${!hasCount?'zero':''}">${hasCount ? fmtCount(food.b_count) : '−'}</div>
           <div class="u">${isB ? 'Bカウント' : isGoodB ? 'グッドB' : 'A食材'}</div>
         </div>
       </div>`;
@@ -755,8 +848,8 @@ function buildFoodRows(foods) {
 
 function fmtCount(n) {
   if (n === undefined || n === null) return '0';
-  const s = n.toFixed(2).replace(/\.?0+$/, '');
-  return s === '' ? '0' : s;
+  const s = parseFloat(n.toFixed(2)).toString();
+  return s;
 }
 
 function compressImage(file) {
@@ -767,7 +860,7 @@ function compressImage(file) {
       let {width, height} = img;
       if (width > MAX || height > MAX) {
         if (width > height) { height = Math.round(height*MAX/width); width = MAX; }
-        else                { width = Math.round(width*MAX/height);  height = MAX; }
+        else                { width  = Math.round(width*MAX/height); height = MAX; }
       }
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
@@ -785,11 +878,27 @@ function compressImage(file) {
   });
 }
 
-function fileToDataURL(file) {
+// 表示・保存用の小さいサムネイル（～600px, ~50KB）
+function createThumbnail(file) {
   return new Promise(resolve => {
-    const r = new FileReader();
-    r.onload = e => resolve(e.target.result);
-    r.readAsDataURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 600;
+      let {width, height} = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height*MAX/width); width = MAX; }
+        else                { width  = Math.round(width*MAX/height); height = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(blob => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', 0.72);
+    };
+    img.src = URL.createObjectURL(file);
   });
 }
 
@@ -813,6 +922,15 @@ function esc(str) {
   }
   ping();
 })();
+
+// ═══════════════════════════════════════════
+//  Init: load saved state, build panels
+// ═══════════════════════════════════════════
+loadSavedState();
+['breakfast','lunch','dinner'].forEach(id => buildSinglePanel(MEALS.find(m=>m.id===id)));
+buildSnackPanel();
+updateDaily();
+updateAnalyzeAllBtn();
 </script>
 </body>
 </html>
