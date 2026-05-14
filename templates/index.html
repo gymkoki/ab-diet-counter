@@ -101,6 +101,10 @@
     .reset-btn { width: 100%; padding: 14px; border-radius: 12px; background: var(--surface); border: 1.5px solid var(--border); font-size: 14px; font-weight: 700; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
     .reset-btn:hover { border-color: var(--primary); color: var(--primary); }
 
+    /* Result photo */
+    .result-photo-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px; }
+    .result-photo-card img { width: 100%; max-height: 280px; object-fit: cover; display: block; }
+
     /* Error */
     #error-msg { display: none; background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius); padding: 16px 20px; color: #DC2626; font-size: 14px; margin-bottom: 16px; }
 
@@ -132,8 +136,7 @@
 <body>
 
 <header>
-  <div class="logo">Reor Gym</div>
-  <h1>AB Diet Bカウンター</h1>
+  <h1>ABダイエット Bカウンター</h1>
   <p>写真を撮るだけで今日のBカウントを計算</p>
 </header>
 
@@ -195,6 +198,9 @@
       <div class="b-count-label">合計 B カウント</div>
       <div class="b-count-value" id="total-b-count">—</div>
       <div class="b-count-unit">カウント</div>
+    </div>
+    <div class="result-photo-card">
+      <img id="result-photo" src="" alt="分析した写真">
     </div>
     <div class="advice-card">
       <div class="advice-icon">💡</div>
@@ -333,6 +339,8 @@
   }
 
   function renderResults(data) {
+    // 分析した写真を結果画面に表示
+    document.getElementById("result-photo").src = previewImg.src;
     document.getElementById("total-b-count").textContent = data.total_b_count;
     document.getElementById("advice-text").textContent = data.advice || "";
     const list = document.getElementById("foods-list");
