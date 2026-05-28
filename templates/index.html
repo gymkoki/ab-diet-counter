@@ -212,20 +212,22 @@
       <span class="chevron">▼</span>
     </button>
     <div class="rules-body">
-      <h4>判定基準（実際に食べる量のカロリーで決まる）</h4>
-      🟢 120kcal未満 → A食材 → 0カウント<br>
-      🟡 120〜200kcal未満 → グッドB → 0.5カウント<br>
-      🔴 200kcal以上 → B食材 → 1カウント
-      <h4>🟢 A食材の例</h4>
-      野菜全般・果物・きのこ・海藻、豆腐・こんにゃく、魚介（脂の少ないもの）、鶏肉（皮なし）、プロテイン単体、少量の調味料・オイル
-      <h4>🍗 揚げ物（吸油込みの合計カロリーで判定）</h4>
-      鶏むね肉唐揚げ（皮なし）≒ 290kcal → <strong>B1</strong><br>
-      フライドチキン（皮付き・厚衣）≒ 400kcal → <strong>B2</strong><br>
-      野菜天ぷら 1〜2個 ≒ 70kcal → <strong>A（0）</strong>
-      <h4>🥛 牛乳のルール</h4>
-      1人前=400ml。200mlなら0.5カウント、量に比例して計算
-      <h4>🥤 ドリンクのルール（500ml換算）</h4>
-      家でスムージーを作った場合はA食材。市販ドリンクは500ml換算で判定
+      <h4>STEP1：食材カテゴリ（種類で決まる）</h4>
+      🟢 <strong>A食材</strong>：野菜全般・果物・皮なし鶏肉・白身魚介・きのこ・海藻・豆腐・調味料少量・プロテイン単体 → <strong>量に関係なく常に0</strong><br>
+      🟡 <strong>グッドB</strong>：1人前120〜200kcal未満（納豆・バナナ・オートミール・さつまいも・全粒粉パン等）<br>
+      🔴 <strong>B食材</strong>：1人前200kcal以上（白米・パン・麺類・揚げ物・スイーツ・油大さじ2等）
+      <h4>STEP2：量によるカウント</h4>
+      A食材 → 常に <strong>0</strong><br>
+      グッドB → 少量0 / 1人前（120〜200kcal）<strong>0.5</strong> / 200kcal超 <strong>1</strong><br>
+      B食材 → 少量0 / 半人前<strong>0.5</strong> / 1人前<strong>1</strong> / 大盛り<strong>2</strong>
+      <h4>📌 納豆の例（グッドB）</h4>
+      1パック（70kcal）→ 0 ／ 2パック（140kcal）→ <strong>0.5</strong> ／ 3パック（210kcal）→ <strong>1</strong>
+      <h4>🍗 揚げ物（吸油込みで分類）</h4>
+      鶏むね肉唐揚げ ≒ 290kcal → B食材 → <strong>B1</strong><br>
+      フライドチキン（皮付き）≒ 400kcal → B食材 → <strong>B2</strong>
+      <h4>🥛 牛乳 / 🥤 市販ドリンク</h4>
+      牛乳：1人前400ml → B1（比例計算）<br>
+      市販ドリンク：500ml換算で判定（手作りスムージーはA食材）
     </div>
   </div>
 </div>
