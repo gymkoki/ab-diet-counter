@@ -148,6 +148,12 @@
     .rank-count { font-size:13px; font-weight:800; color:var(--text); text-align:right; white-space:nowrap; }
     .rank-me-badge { display:inline-block; font-size:10px; background:var(--primary); color:white; padding:1px 6px; border-radius:10px; font-weight:700; margin-left:4px; }
 
+    /* analyze meal button */
+    .analyze-meal-wrap { padding:10px 16px 4px; }
+    .btn-analyze-meal { width:100%; padding:15px; border-radius:14px; font-size:15px; font-weight:800; border:none; cursor:pointer; background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; box-shadow:0 4px 16px rgba(255,107,53,0.35); transition:opacity 0.2s, transform 0.1s; }
+    .btn-analyze-meal:active   { transform:scale(0.97); }
+    .btn-analyze-meal:disabled { opacity:0.45; cursor:not-allowed; box-shadow:none; }
+
     /* lightbox */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
     #lightbox.show { display:flex; }
@@ -363,6 +369,9 @@ function buildPanel(m) {
   const panel = document.getElementById(`panel-${m.id}`);
   panel.innerHTML = `
     <div id="strip-${m.id}" class="meal-strip"></div>
+    <div id="analyze-wrap-${m.id}" class="analyze-meal-wrap" style="display:none">
+      <button class="btn-analyze-meal" onclick="analyzeMeal('${m.id}')">✨ Bカウントする</button>
+    </div>
     <div class="meal-add" id="add-${m.id}">
       <input type="file" accept="image/*" multiple onchange="onFilesChange('${m.id}',this)">
       <div class="meal-add-icon">${m.emoji}</div>
@@ -386,6 +395,7 @@ function buildPanel(m) {
     renderStrip(m.id);
     renderResults(m.id);
     updateTabDot(m.id);
+    updateAnalyzeBtn(m.id);
   }
 }
 
@@ -419,6 +429,7 @@ async function addFiles(mealId, files) {
     item.previewSrc = thumb;
     renderStrip(mealId);
     updateTabDot(mealId);
+    updateAnalyzeBtn(mealId);
   }
 }
 
@@ -427,6 +438,7 @@ function removeItem(mealId, itemId) {
   renderStrip(mealId);
   renderResults(mealId);
   updateTabDot(mealId);
+  updateAnalyzeBtn(mealId);
   saveState();
   updateTotalB();
 }
@@ -545,6 +557,7 @@ async function analyzeItem(mealId, itemId) {
   renderStrip(mealId);
   renderResults(mealId);
   updateTabDot(mealId);
+  updateAnalyzeBtn(mealId);
   saveState();
   updateTotalB();
   loadStats();
@@ -635,6 +648,25 @@ function createThumbnail(file) {
     };
     img.src = URL.createObjectURL(file);
   });
+}
+
+// ═══════════════════════════════════════════
+//  食事別「Bカウントする」ボタン制御
+// ═══════════════════════════════════════════
+function updateAnalyzeBtn(mealId) {
+  const wrap = document.getElementById(`analyze-wrap-${mealId}`);
+  if (!wrap) return;
+  const hasPending = state[mealId].items.some(i => i.file && !i.result && !i.loading);
+  wrap.style.display = hasPending ? 'block' : 'none';
+}
+
+async function analyzeMeal(mealId) {
+  const btn = document.querySelector(`#analyze-wrap-${mealId} .btn-analyze-meal`);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 分析中…'; }
+  const pending = state[mealId].items.filter(i => i.file && !i.result && !i.loading);
+  await Promise.all(pending.map(i => analyzeItem(mealId, i.id)));
+  if (btn) { btn.disabled = false; btn.textContent = '✨ Bカウントする'; }
+  updateAnalyzeBtn(mealId);
 }
 
 // ═══════════════════════════════════════════
