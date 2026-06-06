@@ -97,23 +97,38 @@
     /* error */
     .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:12px; color:#DC2626; }
 
-    /* rules */
-    .rules-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-top:8px; }
-    .rules-toggle { width:100%; padding:14px 20px; background:none; border:none; text-align:left; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
-    .rules-body { display:none; padding:0 20px 16px; font-size:12px; color:var(--text-muted); line-height:1.8; border-top:1px solid var(--border); }
-    .rules-body.open { display:block; }
-    .rules-body h4 { font-size:12px; font-weight:700; color:var(--text); margin:10px 0 3px; }
-    .chevron { transition:transform 0.2s; }
-    .chevron.open { transform:rotate(180deg); }
+    /* daily total card */
+    .daily-total-card { background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; margin:12px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; }
+    .daily-total-label { font-size:13px; font-weight:700; opacity:0.9; }
+    .daily-total-count { font-size:52px; font-weight:900; line-height:1; }
+    .daily-total-unit { font-size:13px; font-weight:600; opacity:0.85; margin-left:4px; }
 
     /* stats bar */
-    .stats-bar { display:flex; align-items:stretch; background:var(--surface); margin:12px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
-    .stat-item { flex:1; padding:14px 10px; text-align:center; }
+    .stats-bar { display:flex; align-items:stretch; background:var(--surface); margin:10px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .stat-item { flex:1; padding:12px 10px; text-align:center; }
     .stat-btn { background:none; border:none; cursor:pointer; transition:background 0.15s; }
     .stat-btn:active { background:var(--bg); }
-    .stat-divider { width:1px; background:var(--border); margin:10px 0; flex-shrink:0; }
-    .stat-number { font-size:26px; font-weight:900; color:var(--primary); line-height:1; }
-    .stat-label { font-size:10px; color:var(--text-muted); margin-top:4px; font-weight:600; }
+    .stat-divider { width:1px; background:var(--border); margin:8px 0; flex-shrink:0; }
+    .stat-number { font-size:24px; font-weight:900; color:var(--primary); line-height:1; }
+    .stat-label { font-size:10px; color:var(--text-muted); margin-top:3px; font-weight:600; }
+    .stat-sub { font-size:10px; color:var(--text-muted); margin-top:2px; }
+
+    /* reset dialog */
+    #reset-overlay { display:none; position:fixed; inset:0; z-index:250; background:rgba(0,0,0,0.45); align-items:center; justify-content:center; }
+    #reset-overlay.show { display:flex; }
+    .reset-dialog { background:var(--surface); border-radius:18px; padding:28px 24px; max-width:320px; width:88%; text-align:center; box-shadow:0 8px 40px rgba(0,0,0,0.2); }
+    .reset-dialog h3 { font-size:17px; font-weight:800; margin-bottom:10px; }
+    .reset-dialog p { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
+    .reset-btns { display:flex; gap:10px; }
+    .reset-btns button { flex:1; padding:12px; border-radius:12px; font-size:14px; font-weight:700; border:none; cursor:pointer; }
+    .reset-cancel { background:var(--bg); color:var(--text-muted); }
+    .reset-confirm { background:#DC2626; color:white; }
+
+    /* tabs wrapper with reset */
+    .tabs-wrapper { display:flex; align-items:flex-end; padding:10px 16px 0; gap:6px; }
+    .tabs { display:flex; gap:6px; flex:1; }
+    .btn-full-reset { flex-shrink:0; padding:8px 10px; border-radius:12px 12px 0 0; border:1.5px solid #FECACA; border-bottom:none; background:white; color:#DC2626; font-size:10px; font-weight:700; cursor:pointer; text-align:center; line-height:1.5; white-space:nowrap; }
+    .btn-full-reset:active { background:#FEF2F2; }
 
     /* ranking modal */
     #ranking-overlay { display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.5); align-items:flex-end; justify-content:center; }
@@ -151,6 +166,14 @@
   <span>サーバー起動中… 初回のみ30秒ほどかかります ☕</span>
 </div>
 
+<div class="daily-total-card">
+  <div class="daily-total-label">🍽 今日のBカウント合計</div>
+  <div style="text-align:right">
+    <span class="daily-total-count" id="daily-total-count">0</span>
+    <span class="daily-total-unit">カウント</span>
+  </div>
+</div>
+
 <div class="stats-bar">
   <div class="stat-item">
     <div class="stat-number" id="today-users">-</div>
@@ -160,6 +183,7 @@
   <button class="stat-item stat-btn" onclick="openRanking()">
     <div class="stat-number" id="my-rank-display">-</div>
     <div class="stat-label">🏆 今月の順位 →</div>
+    <div class="stat-sub" id="total-users-display"></div>
   </button>
 </div>
 
@@ -174,12 +198,24 @@
   </div>
 </div>
 
-<div style="padding:0 16px">
+<div class="tabs-wrapper">
   <div class="tabs">
     <button class="tab active" data-meal="breakfast" onclick="switchTab('breakfast')">🌅 朝食<span class="tab-dot"></span></button>
     <button class="tab"        data-meal="lunch"      onclick="switchTab('lunch')"     >☀️ 昼食<span class="tab-dot"></span></button>
     <button class="tab"        data-meal="dinner"     onclick="switchTab('dinner')"    >🌙 夕食<span class="tab-dot"></span></button>
     <button class="tab"        data-meal="snack"      onclick="switchTab('snack')"     >🍪 間食<span class="tab-dot"></span></button>
+  </div>
+  <button class="btn-full-reset" onclick="confirmFullReset()">🔄<br>リセット</button>
+</div>
+
+<div id="reset-overlay" onclick="closeFullReset()">
+  <div class="reset-dialog" onclick="event.stopPropagation()">
+    <h3>データをリセット</h3>
+    <p>朝食・昼食・夕食・間食のすべてのデータが消去されます。よろしいですか？</p>
+    <div class="reset-btns">
+      <button class="reset-cancel" onclick="closeFullReset()">キャンセル</button>
+      <button class="reset-confirm" onclick="doFullReset()">リセットする</button>
+    </div>
   </div>
 </div>
 
@@ -189,33 +225,6 @@
   <div id="panel-dinner"    class="tab-panel"       ></div>
   <div id="panel-snack"     class="tab-panel"       ></div>
 
-  <div class="rules-card">
-    <button class="rules-toggle" onclick="toggleRules(this)">
-      <span>📖 ABダイエットのルールを確認</span>
-      <span class="chevron">▼</span>
-    </button>
-    <div class="rules-body">
-      <h4>STEP1：食材カテゴリ（種類で決まる）</h4>
-      🟢 <strong>A食材</strong>：野菜全般・果物・皮なし鶏肉・白身魚介・きのこ・海藻・豆腐・調味料少量・プロテイン単体 → <strong>量に関係なく常に0</strong><br>
-      🟡 <strong>グッドB</strong>：1人前120〜200kcal未満（納豆・バナナ・オートミール・さつまいも・全粒粉パン等）<br>
-      🔴 <strong>B食材</strong>：1人前200kcal以上（白米・パン・麺類・揚げ物・スイーツ・油大さじ2等）
-      <h4>STEP2：量によるカウント</h4>
-      A食材 → 常に <strong>0</strong><br>
-      グッドB → 少量0 / 1人前（120〜200kcal）<strong>0.5</strong> / 200kcal超 <strong>1</strong><br>
-      B食材 → 少量0 / 半人前<strong>0.5</strong> / 1人前<strong>1</strong> / 大盛り<strong>2</strong>
-      <h4>📌 納豆の例（グッドB）</h4>
-      1パック（70kcal）→ 0 ／ 2パック（140kcal）→ <strong>0.5</strong> ／ 3パック（210kcal）→ <strong>1</strong>
-      <h4>🍗 揚げ物（食材を分解してカウント）</h4>
-      ①主食材：本来の分類で判定　②衣：少量→常に0　③吸収油：カロリーで判定<br>
-      鶏もも肉唐揚げ（皮付き）= もも肉B1 ＋ 吸油0.5 ＝ <strong>B1.5</strong><br>
-      鶏むね肉唐揚げ（皮なし）= むね肉A0 ＋ 吸油0.5 ＝ <strong>B0.5</strong><br>
-      フライドチキン（皮付き・厚衣）= もも肉B1 ＋ 吸油B1 ＝ <strong>B2</strong><br>
-      野菜天ぷら 2〜3個 = 野菜A0 ＋ 吸油0.5 ＝ <strong>B0.5</strong>
-      <h4>🥛 牛乳 / 🥤 市販ドリンク</h4>
-      牛乳：1人前400ml → B1（比例計算）<br>
-      市販ドリンク：500ml換算で判定（手作りスムージーはA食材）
-    </div>
-  </div>
 </div>
 
 <div id="lightbox" onclick="closeLightbox()">
@@ -247,10 +256,19 @@ async function loadStats() {
   try {
     const res = await fetch(`/api/stats?user_id=${encodeURIComponent(USER_ID)}`);
     const d = await res.json();
-    document.getElementById('today-users').textContent = d.today_users;
-    document.getElementById('my-rank-display').textContent =
-      d.my_rank ? `${d.my_rank}位` : '-';
+    applyStats(d);
   } catch(e) {}
+}
+
+function applyStats(d) {
+  document.getElementById('today-users').textContent = d.today_users;
+  if (d.my_rank) {
+    document.getElementById('my-rank-display').textContent = `${d.my_rank}位`;
+    document.getElementById('total-users-display').textContent = `全${d.total_users}人中`;
+  } else {
+    document.getElementById('my-rank-display').textContent = '-';
+    document.getElementById('total-users-display').textContent = '';
+  }
 }
 
 async function openRanking() {
@@ -260,9 +278,7 @@ async function openRanking() {
   try {
     const res = await fetch(`/api/stats?user_id=${encodeURIComponent(USER_ID)}`);
     const d = await res.json();
-    document.getElementById('today-users').textContent = d.today_users;
-    document.getElementById('my-rank-display').textContent =
-      d.my_rank ? `${d.my_rank}位` : '-';
+    applyStats(d);
     document.getElementById('ranking-sub').textContent =
       `過去30日間 ・ ${d.total_users}人が参加中`;
     const max = d.ranking.length ? d.ranking[0].count : 1;
@@ -412,6 +428,7 @@ function removeItem(mealId, itemId) {
   renderResults(mealId);
   updateTabDot(mealId);
   saveState();
+  updateTotalB();
 }
 
 // ═══════════════════════════════════════════
@@ -489,6 +506,7 @@ function resetMeal(mealId) {
   updateTabDot(mealId);
   document.getElementById(`err-${mealId}`).style.display = 'none';
   saveState();
+  updateTotalB();
 }
 
 function updateTabDot(mealId) {
@@ -528,6 +546,7 @@ async function analyzeItem(mealId, itemId) {
   renderResults(mealId);
   updateTabDot(mealId);
   saveState();
+  updateTotalB();
   loadStats();
 }
 
@@ -619,6 +638,36 @@ function createThumbnail(file) {
 }
 
 // ═══════════════════════════════════════════
+//  今日のBカウント合計
+// ═══════════════════════════════════════════
+function updateTotalB() {
+  let total = 0;
+  MEALS.forEach(m => {
+    state[m.id].items.filter(i => i.result).forEach(i => {
+      total += i.result.total_b_count;
+    });
+  });
+  const el = document.getElementById('daily-total-count');
+  if (el) el.textContent = fmtCount(total);
+}
+
+// ═══════════════════════════════════════════
+//  全データリセット
+// ═══════════════════════════════════════════
+function confirmFullReset() { document.getElementById('reset-overlay').classList.add('show'); }
+function closeFullReset()   { document.getElementById('reset-overlay').classList.remove('show'); }
+function doFullReset() {
+  closeFullReset();
+  MEALS.forEach(m => { state[m.id] = { items: [] }; });
+  itemIdSeq = 0;
+  localStorage.removeItem(STORAGE_KEY);
+  MEALS.forEach(m => buildPanel(m));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('done','has-photo'));
+  switchTab('breakfast');
+  updateTotalB();
+}
+
+// ═══════════════════════════════════════════
 //  Lightbox
 // ═══════════════════════════════════════════
 function openLightbox(src) {
@@ -630,11 +679,6 @@ function closeLightbox() {
   document.getElementById('lightbox-img').src = '';
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
-
-function toggleRules(btn) {
-  btn.nextElementSibling.classList.toggle('open');
-  btn.querySelector('.chevron').classList.toggle('open');
-}
 
 function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -657,6 +701,7 @@ function esc(str) {
 // ═══════════════════════════════════════════
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
+updateTotalB();
 loadStats();
 </script>
 </body>
