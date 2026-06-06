@@ -24,40 +24,6 @@
     #warmup-banner { display:none; margin:12px 16px 0; background:#FFF8E7; border:1px solid #FCD34D; border-radius:10px; padding:12px 16px; font-size:12px; color:#92400E; align-items:center; gap:10px; }
     .ws { width:16px; height:16px; border:2px solid #FCD34D; border-top-color:#D97706; border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0; }
 
-    /* daily card */
-    .daily-card { background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; margin:16px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:18px 20px; display:flex; align-items:center; justify-content:space-between; }
-    .daily-label { font-size:13px; font-weight:600; opacity:0.85; }
-    .daily-sub   { font-size:11px; opacity:0.7; margin-top:2px; }
-    .daily-count { font-size:52px; font-weight:900; line-height:1; }
-    .daily-unit  { font-size:13px; font-weight:600; opacity:0.85; }
-
-    /* chips + reset */
-    .chips-reset-row { display:flex; align-items:center; padding:10px 16px 0; gap:6px; }
-    .meal-summary { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; flex:1; }
-    .meal-summary::-webkit-scrollbar { display:none; }
-    .meal-chip { flex-shrink:0; padding:5px 12px; border-radius:20px; font-size:11px; font-weight:700; background:var(--surface); border:1.5px solid var(--border); color:var(--text-muted); display:flex; align-items:center; gap:5px; }
-    .meal-chip.done { border-color:var(--primary); color:var(--primary); background:#FFF5F0; }
-    .meal-chip .chip-count { font-size:13px; font-weight:900; }
-    .btn-reset { flex-shrink:0; padding:6px 12px; border-radius:20px; font-size:11px; font-weight:700; background:none; border:1.5px solid #FECACA; color:#DC2626; cursor:pointer; white-space:nowrap; }
-    .btn-reset:hover { background:#FEF2F2; }
-
-    /* reset overlay */
-    #reset-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.45); align-items:center; justify-content:center; }
-    #reset-overlay.show { display:flex; }
-    .reset-dialog { background:var(--surface); border-radius:18px; padding:28px 24px; max-width:320px; width:88%; text-align:center; box-shadow:0 8px 40px rgba(0,0,0,0.2); }
-    .reset-dialog h3 { font-size:17px; font-weight:800; margin-bottom:10px; }
-    .reset-dialog p  { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
-    .reset-btns { display:flex; gap:10px; }
-    .reset-btns button { flex:1; padding:12px; border-radius:12px; font-size:14px; font-weight:700; border:none; cursor:pointer; }
-    .reset-cancel  { background:var(--bg); color:var(--text-muted); }
-    .reset-confirm { background:#DC2626; color:white; }
-
-    /* analyze-all */
-    .analyze-all-wrap { padding:12px 16px 0; }
-    .btn-analyze-all { width:100%; display:flex; align-items:center; justify-content:center; gap:10px; padding:16px; border-radius:14px; font-size:15px; font-weight:800; border:none; cursor:pointer; background:linear-gradient(135deg, var(--pink), #e05580); color:white; box-shadow:0 4px 16px rgba(255,107,157,0.4); transition:opacity 0.2s, transform 0.1s; }
-    .btn-analyze-all:active   { transform:scale(0.97); }
-    .btn-analyze-all:disabled { opacity:0.35; cursor:not-allowed; box-shadow:none; }
-
     /* tabs */
     .tabs { display:flex; padding:12px 16px 0; gap:6px; }
     .tab { flex:1; padding:10px 6px; border-radius:12px 12px 0 0; border:none; background:var(--border); color:var(--text-muted); font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; position:relative; }
@@ -139,6 +105,12 @@
     .rules-body h4 { font-size:12px; font-weight:700; color:var(--text); margin:10px 0 3px; }
     .chevron { transition:transform 0.2s; }
     .chevron.open { transform:rotate(180deg); }
+
+    /* lightbox */
+    #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
+    #lightbox.show { display:flex; }
+    #lightbox img { max-width:96vw; max-height:92vh; object-fit:contain; border-radius:8px; cursor:default; }
+    #lightbox-close { position:absolute; top:16px; right:16px; width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.15); color:white; border:none; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
   </style>
 </head>
 <body>
@@ -153,43 +125,6 @@
   <span>サーバー起動中… 初回のみ30秒ほどかかります ☕</span>
 </div>
 
-<div class="daily-card">
-  <div>
-    <div class="daily-label">1日の合計 Bカウント</div>
-    <div class="daily-sub" id="daily-sub">まだ分析していません</div>
-  </div>
-  <div style="text-align:right">
-    <div class="daily-count" id="daily-count">—</div>
-    <div class="daily-unit">カウント</div>
-  </div>
-</div>
-
-<div class="chips-reset-row">
-  <div class="meal-summary">
-    <div class="meal-chip" id="chip-breakfast"><span>🌅 朝食</span><span class="chip-count" id="chip-b-breakfast"></span></div>
-    <div class="meal-chip" id="chip-lunch"    ><span>☀️ 昼食</span><span class="chip-count" id="chip-b-lunch"    ></span></div>
-    <div class="meal-chip" id="chip-dinner"   ><span>🌙 夕食</span><span class="chip-count" id="chip-b-dinner"   ></span></div>
-    <div class="meal-chip" id="chip-snack"    ><span>🍪 間食</span><span class="chip-count" id="chip-b-snack"    ></span></div>
-  </div>
-  <button class="btn-reset" onclick="confirmReset()">🔄 リセット</button>
-</div>
-
-<div id="reset-overlay">
-  <div class="reset-dialog">
-    <h3>1日のデータをリセット</h3>
-    <p>朝食・昼食・夕食・間食のデータがすべて消去されます。よろしいですか？</p>
-    <div class="reset-btns">
-      <button class="reset-cancel"  onclick="closeReset()">キャンセル</button>
-      <button class="reset-confirm" onclick="doReset()">リセットする</button>
-    </div>
-  </div>
-</div>
-
-<div class="analyze-all-wrap">
-  <button class="btn-analyze-all" id="btn-all" disabled onclick="analyzeAll()">
-    ✨ まとめて分析する
-  </button>
-</div>
 
 <div style="padding:0 16px">
   <div class="tabs">
@@ -233,6 +168,11 @@
       市販ドリンク：500ml換算で判定（手作りスムージーはA食材）
     </div>
   </div>
+</div>
+
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
 </div>
 
 <script>
@@ -285,22 +225,6 @@ function loadSavedState() {
   } catch(e) { console.warn('load failed', e); }
 }
 
-// ═══════════════════════════════════════════
-//  Reset
-// ═══════════════════════════════════════════
-function confirmReset() { document.getElementById('reset-overlay').classList.add('show'); }
-function closeReset()   { document.getElementById('reset-overlay').classList.remove('show'); }
-function doReset() {
-  closeReset();
-  MEALS.forEach(m => { state[m.id] = { items:[] }; });
-  itemIdSeq = 0;
-  localStorage.removeItem(STORAGE_KEY);
-  MEALS.forEach(m => buildPanel(m));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('done','has-photo'));
-  switchTab('breakfast');
-  updateAnalyzeAllBtn();
-  updateDaily();
-}
 
 // ═══════════════════════════════════════════
 //  Build panels（全食事共通）
@@ -365,7 +289,6 @@ async function addFiles(mealId, files) {
     item.previewSrc = thumb;
     renderStrip(mealId);
     updateTabDot(mealId);
-    updateAnalyzeAllBtn();
   }
 }
 
@@ -374,8 +297,7 @@ function removeItem(mealId, itemId) {
   renderStrip(mealId);
   renderResults(mealId);
   updateTabDot(mealId);
-  updateAnalyzeAllBtn();
-  updateDaily();
+  saveState();
 }
 
 // ═══════════════════════════════════════════
@@ -391,7 +313,7 @@ function renderStrip(mealId) {
     return `
       <div class="meal-thumb">
         ${item.previewSrc
-          ? `<img src="${item.previewSrc}" alt="">`
+          ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">📷</div>`}
         ${item.loading ? `<div class="th-spinner"><div class="th-spin"></div></div>` : ''}
         ${!item.result && !item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
@@ -420,7 +342,7 @@ function renderResults(mealId) {
         <span class="ic-cnt">B ${fmtCount(item.result.total_b_count)}</span>
       </div>
       <div style="padding:10px 14px 14px">
-        <img class="result-photo" src="${item.previewSrc}" alt="">
+        <img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">
         <div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice||'')}</p></div>
         <div class="food-list-wrap">
           <div class="food-list-header">食材の内訳</div>
@@ -451,9 +373,8 @@ function resetMeal(mealId) {
   renderStrip(mealId);
   renderResults(mealId);
   updateTabDot(mealId);
-  updateAnalyzeAllBtn();
   document.getElementById(`err-${mealId}`).style.display = 'none';
-  updateDaily();
+  saveState();
 }
 
 function updateTabDot(mealId) {
@@ -464,28 +385,6 @@ function updateTabDot(mealId) {
   tab.classList.toggle('done', hasDone);
 }
 
-// ═══════════════════════════════════════════
-//  まとめて分析
-// ═══════════════════════════════════════════
-function updateAnalyzeAllBtn() {
-  const hasPending = MEALS.some(m => state[m.id].items.some(i => i.file && !i.result));
-  document.getElementById('btn-all').disabled = !hasPending;
-}
-
-async function analyzeAll() {
-  const btn = document.getElementById('btn-all');
-  btn.disabled = true;
-  btn.textContent = '⏳ 分析中…';
-
-  const tasks = MEALS.flatMap(m =>
-    state[m.id].items.filter(i => i.file && !i.result).map(i => analyzeItem(m.id, i.id))
-  );
-  await Promise.all(tasks);
-
-  btn.textContent = '✨ まとめて分析する';
-  updateAnalyzeAllBtn();
-  updateDaily();
-}
 
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
@@ -513,7 +412,7 @@ async function analyzeItem(mealId, itemId) {
   renderStrip(mealId);
   renderResults(mealId);
   updateTabDot(mealId);
-  updateDaily();
+  saveState();
 }
 
 function showError(mealId, msg) {
@@ -522,40 +421,6 @@ function showError(mealId, msg) {
   el.style.display = 'block';
 }
 
-// ═══════════════════════════════════════════
-//  Daily total
-// ═══════════════════════════════════════════
-function updateDaily() {
-  let total = 0;
-  const doneMeals = [];
-
-  MEALS.forEach(m => {
-    const done = state[m.id].items.filter(i => i.result);
-    const chip  = document.getElementById(`chip-${m.id}`);
-    const chipB = document.getElementById(`chip-b-${m.id}`);
-    if (done.length) {
-      const mealTotal = done.reduce((s,i) => s + i.result.total_b_count, 0);
-      total += mealTotal;
-      doneMeals.push(MEALS.find(x => x.id === m.id).label);
-      chipB.textContent = ' ' + fmtCount(mealTotal) + 'B';
-      chip.classList.add('done');
-    } else {
-      chipB.textContent = '';
-      chip.classList.remove('done');
-    }
-  });
-
-  const countEl = document.getElementById('daily-count');
-  const subEl   = document.getElementById('daily-sub');
-  if (!doneMeals.length) {
-    countEl.textContent = '—';
-    subEl.textContent   = 'まだ分析していません';
-  } else {
-    countEl.textContent = fmtCount(total);
-    subEl.textContent   = doneMeals.join('・') + ' の合計';
-  }
-  saveState();
-}
 
 // ═══════════════════════════════════════════
 //  Helpers
@@ -637,6 +502,19 @@ function createThumbnail(file) {
   });
 }
 
+// ═══════════════════════════════════════════
+//  Lightbox
+// ═══════════════════════════════════════════
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').classList.add('show');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('show');
+  document.getElementById('lightbox-img').src = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
 function toggleRules(btn) {
   btn.nextElementSibling.classList.toggle('open');
   btn.querySelector('.chevron').classList.toggle('open');
@@ -663,8 +541,6 @@ function esc(str) {
 // ═══════════════════════════════════════════
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
-updateDaily();
-updateAnalyzeAllBtn();
 </script>
 </body>
 </html>
