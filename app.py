@@ -1,7 +1,6 @@
 import os
 import base64
 import json
-import sqlite3
 import datetime
 import threading
 from flask import Flask, render_template, request, jsonify
@@ -12,22 +11,56 @@ ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(ENV_PATH, override=True)
 app = Flask(__name__)
 
-# ── 利用ログDB ──────────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
+# ── 利用ログDB（PostgreSQL 優先、なければ SQLite）──────────
 _db_lock = threading.Lock()
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
+_DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if _DATABASE_URL:
+    # Render は "postgres://" で渡してくる場合があるので修正
+    _DATABASE_URL = _DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    import psycopg2
+    USE_PG = True
+    PH = "%s"          # psycopg2 のプレースホルダ
+else:
+    import sqlite3
+    _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
+    USE_PG = False
+    PH = "?"           # sqlite3 のプレースホルダ
+
+
+def _get_conn():
+    if USE_PG:
+        return psycopg2.connect(_DATABASE_URL)
+    conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS usage_log (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id    TEXT    NOT NULL,
-                created_at TEXT    NOT NULL
-            )
-        """)
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        if USE_PG:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS usage_log (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    created_at TEXT   NOT NULL
+                )
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS usage_log (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    created_at TEXT    NOT NULL
+                )
+            """)
         conn.commit()
+    finally:
+        conn.close()
+
 
 init_db()
 
@@ -307,18 +340,24 @@ def get_stats():
     today_start = now.strftime("%Y-%m-%dT00:00:00")
     month_start = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%dT00:00:00")
 
-    with sqlite3.connect(DB_PATH) as conn:
-        today_users = conn.execute(
-            "SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at >= ?",
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at >= {PH}",
             (today_start,)
-        ).fetchone()[0]
+        )
+        today_users = cur.fetchone()[0]
 
-        rows = conn.execute(
-            """SELECT user_id, COUNT(*) cnt FROM usage_log
-               WHERE created_at >= ?
+        cur.execute(
+            f"""SELECT user_id, COUNT(*) cnt FROM usage_log
+               WHERE created_at >= {PH}
                GROUP BY user_id ORDER BY cnt DESC""",
             (month_start,)
-        ).fetchall()
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
 
     ranking, my_rank, my_count = [], None, 0
     for i, (row_uid, cnt) in enumerate(rows):
@@ -354,12 +393,16 @@ def analyze():
     if uid:
         ts = datetime.datetime.now(JST).isoformat()
         with _db_lock:
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.execute(
-                    "INSERT INTO usage_log (user_id, created_at) VALUES (?, ?)",
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO usage_log (user_id, created_at) VALUES ({PH}, {PH})",
                     (uid, ts)
                 )
                 conn.commit()
+            finally:
+                conn.close()
 
     image_data = file.read()
     base64_image = base64.standard_b64encode(image_data).decode("utf-8")
