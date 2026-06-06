@@ -106,6 +106,33 @@
     .chevron { transition:transform 0.2s; }
     .chevron.open { transform:rotate(180deg); }
 
+    /* stats bar */
+    .stats-bar { display:flex; align-items:stretch; background:var(--surface); margin:12px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .stat-item { flex:1; padding:14px 10px; text-align:center; }
+    .stat-btn { background:none; border:none; cursor:pointer; transition:background 0.15s; }
+    .stat-btn:active { background:var(--bg); }
+    .stat-divider { width:1px; background:var(--border); margin:10px 0; flex-shrink:0; }
+    .stat-number { font-size:26px; font-weight:900; color:var(--primary); line-height:1; }
+    .stat-label { font-size:10px; color:var(--text-muted); margin-top:4px; font-weight:600; }
+
+    /* ranking modal */
+    #ranking-overlay { display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.5); align-items:flex-end; justify-content:center; }
+    #ranking-overlay.show { display:flex; }
+    .ranking-dialog { background:var(--surface); border-radius:20px 20px 0 0; width:100%; max-width:480px; max-height:80vh; overflow-y:auto; padding-bottom:env(safe-area-inset-bottom,16px); }
+    .ranking-header { display:flex; align-items:center; justify-content:space-between; padding:18px 20px 12px; font-size:16px; font-weight:800; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:1; }
+    .ranking-header button { background:none; border:none; font-size:18px; color:var(--text-muted); cursor:pointer; width:32px; height:32px; border-radius:50%; }
+    .ranking-sub { font-size:12px; color:var(--text-muted); padding:10px 20px 6px; }
+    .rank-row { display:flex; align-items:center; padding:12px 20px; border-bottom:1px solid var(--border); gap:12px; }
+    .rank-row.is-me { background:#FFF5F0; }
+    .rank-row:last-child { border-bottom:none; }
+    .rank-num { font-size:16px; font-weight:900; width:28px; text-align:center; color:var(--text-muted); flex-shrink:0; }
+    .rank-bar-wrap { flex:1; }
+    .rank-bar { height:8px; border-radius:4px; background:var(--border); min-width:4px; transition:width 0.4s; }
+    .rank-bar .rank-fill { height:100%; border-radius:4px; background:var(--primary); opacity:0.55; }
+    .rank-row.is-me .rank-fill { opacity:1; }
+    .rank-count { font-size:13px; font-weight:800; color:var(--text); text-align:right; white-space:nowrap; }
+    .rank-me-badge { display:inline-block; font-size:10px; background:var(--primary); color:white; padding:1px 6px; border-radius:10px; font-weight:700; margin-left:4px; }
+
     /* lightbox */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
     #lightbox.show { display:flex; }
@@ -117,7 +144,6 @@
 
 <header>
   <h1>ABダイエット Bカウンター</h1>
-  <p>写真を撮るだけで今日のBカウントを計算</p>
 </header>
 
 <div id="warmup-banner">
@@ -125,6 +151,28 @@
   <span>サーバー起動中… 初回のみ30秒ほどかかります ☕</span>
 </div>
 
+<div class="stats-bar">
+  <div class="stat-item">
+    <div class="stat-number" id="today-users">-</div>
+    <div class="stat-label">👥 今日の利用者</div>
+  </div>
+  <div class="stat-divider"></div>
+  <button class="stat-item stat-btn" onclick="openRanking()">
+    <div class="stat-number" id="my-rank-display">-</div>
+    <div class="stat-label">🏆 今月の順位 →</div>
+  </button>
+</div>
+
+<div id="ranking-overlay" onclick="closeRanking()">
+  <div class="ranking-dialog" onclick="event.stopPropagation()">
+    <div class="ranking-header">
+      <span>🏆 今月の分析ランキング</span>
+      <button onclick="closeRanking()">✕</button>
+    </div>
+    <div class="ranking-sub" id="ranking-sub">読み込み中…</div>
+    <div id="ranking-list"></div>
+  </div>
+</div>
 
 <div style="padding:0 16px">
   <div class="tabs">
@@ -176,6 +224,72 @@
 </div>
 
 <script>
+// ═══════════════════════════════════════════
+//  ユーザーID（ブラウザごとに匿名UUID）
+// ═══════════════════════════════════════════
+function getOrCreateUserId() {
+  const KEY = 'ab-diet-uid-v1';
+  let uid = localStorage.getItem(KEY);
+  if (!uid) {
+    uid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'u-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(KEY, uid);
+  }
+  return uid;
+}
+const USER_ID = getOrCreateUserId();
+
+// ═══════════════════════════════════════════
+//  Stats & Ranking
+// ═══════════════════════════════════════════
+async function loadStats() {
+  try {
+    const res = await fetch(`/api/stats?user_id=${encodeURIComponent(USER_ID)}`);
+    const d = await res.json();
+    document.getElementById('today-users').textContent = d.today_users;
+    document.getElementById('my-rank-display').textContent =
+      d.my_rank ? `${d.my_rank}位` : '-';
+  } catch(e) {}
+}
+
+async function openRanking() {
+  document.getElementById('ranking-overlay').classList.add('show');
+  document.getElementById('ranking-sub').textContent = '読み込み中…';
+  document.getElementById('ranking-list').innerHTML = '';
+  try {
+    const res = await fetch(`/api/stats?user_id=${encodeURIComponent(USER_ID)}`);
+    const d = await res.json();
+    document.getElementById('today-users').textContent = d.today_users;
+    document.getElementById('my-rank-display').textContent =
+      d.my_rank ? `${d.my_rank}位` : '-';
+    document.getElementById('ranking-sub').textContent =
+      `過去30日間 ・ ${d.total_users}人が参加中`;
+    const max = d.ranking.length ? d.ranking[0].count : 1;
+    const medals = ['🥇','🥈','🥉'];
+    document.getElementById('ranking-list').innerHTML = d.ranking.length
+      ? d.ranking.map(r => {
+          const label = medals[r.rank-1] || r.rank + '位';
+          const pct = Math.round(r.count / max * 100);
+          return `<div class="rank-row${r.is_me?' is-me':''}">
+            <div class="rank-num">${label}</div>
+            <div class="rank-bar-wrap">
+              <div class="rank-bar"><div class="rank-fill" style="width:${pct}%"></div></div>
+            </div>
+            <div class="rank-count">${r.count}回${r.is_me?'<span class="rank-me-badge">あなた</span>':''}</div>
+          </div>`;
+        }).join('')
+      : '<div style="padding:24px;text-align:center;color:var(--text-muted)">まだデータがありません</div>';
+  } catch(e) {
+    document.getElementById('ranking-sub').textContent = '読み込みに失敗しました';
+  }
+}
+
+function closeRanking() {
+  document.getElementById('ranking-overlay').classList.remove('show');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRanking(); });
+
 // ═══════════════════════════════════════════
 //  定数・State
 // ═══════════════════════════════════════════
@@ -395,6 +509,7 @@ async function analyzeItem(mealId, itemId) {
 
   const formData = new FormData();
   formData.append('image', item.file);
+  formData.append('user_id', USER_ID);
   try {
     const res  = await fetch('/analyze', { method:'POST', body:formData });
     const data = await res.json();
@@ -413,6 +528,7 @@ async function analyzeItem(mealId, itemId) {
   renderResults(mealId);
   updateTabDot(mealId);
   saveState();
+  loadStats();
 }
 
 function showError(mealId, msg) {
@@ -541,6 +657,7 @@ function esc(str) {
 // ═══════════════════════════════════════════
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
+loadStats();
 </script>
 </body>
 </html>

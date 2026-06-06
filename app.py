@@ -1,6 +1,9 @@
 import os
 import base64
 import json
+import sqlite3
+import datetime
+import threading
 from flask import Flask, render_template, request, jsonify
 import anthropic
 from dotenv import load_dotenv, set_key
@@ -8,6 +11,25 @@ from dotenv import load_dotenv, set_key
 ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(ENV_PATH, override=True)
 app = Flask(__name__)
+
+# ── 利用ログDB ──────────────────────────────────────
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
+_db_lock = threading.Lock()
+JST = datetime.timezone(datetime.timedelta(hours=9))
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS usage_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    TEXT    NOT NULL,
+                created_at TEXT    NOT NULL
+            )
+        """)
+        conn.commit()
+
+init_db()
 
 ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて特定し、ABダイエットのルールに基づいてBカウントを計算してください。
 
@@ -278,6 +300,42 @@ def setup():
     return jsonify({"ok": True})
 
 
+@app.route("/api/stats")
+def get_stats():
+    uid = request.args.get("user_id", "")
+    now = datetime.datetime.now(JST)
+    today_start = now.strftime("%Y-%m-%dT00:00:00")
+    month_start = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%dT00:00:00")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        today_users = conn.execute(
+            "SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at >= ?",
+            (today_start,)
+        ).fetchone()[0]
+
+        rows = conn.execute(
+            """SELECT user_id, COUNT(*) cnt FROM usage_log
+               WHERE created_at >= ?
+               GROUP BY user_id ORDER BY cnt DESC""",
+            (month_start,)
+        ).fetchall()
+
+    ranking, my_rank, my_count = [], None, 0
+    for i, (row_uid, cnt) in enumerate(rows):
+        is_me = row_uid == uid
+        ranking.append({"rank": i + 1, "count": cnt, "is_me": is_me})
+        if is_me:
+            my_rank, my_count = i + 1, cnt
+
+    return jsonify({
+        "today_users": today_users,
+        "ranking": ranking[:10],
+        "my_rank": my_rank,
+        "my_count": my_count,
+        "total_users": len(rows),
+    })
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     client = get_client()
@@ -290,6 +348,18 @@ def analyze():
     file = request.files["image"]
     if file.filename == "":
         return jsonify({"error": "ファイルが選択されていません"}), 400
+
+    # 利用ログ記録
+    uid = request.form.get("user_id", "")
+    if uid:
+        ts = datetime.datetime.now(JST).isoformat()
+        with _db_lock:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute(
+                    "INSERT INTO usage_log (user_id, created_at) VALUES (?, ?)",
+                    (uid, ts)
+                )
+                conn.commit()
 
     image_data = file.read()
     base64_image = base64.standard_b64encode(image_data).decode("utf-8")
