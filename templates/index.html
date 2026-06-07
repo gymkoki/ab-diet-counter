@@ -278,7 +278,7 @@ function openPhotoSheet(mealId) {
 }
 function closePhotoSheet() {
   document.getElementById('photo-source-sheet').classList.remove('show');
-  _photoMealId = null;
+  // _photoMealId はここでクリアしない（写真選択後に使うため）
 }
 function triggerCamera() {
   closePhotoSheet();
@@ -291,7 +291,9 @@ function triggerLibrary() {
 function onHiddenInputChange(input) {
   const files = [...input.files];
   input.value = '';
-  if (files.length && _photoMealId) addFiles(_photoMealId, files);
+  const mealId = _photoMealId;
+  _photoMealId = null; // 使い終わってからクリア
+  if (files.length && mealId) addFiles(mealId, files);
 }
 
 // ═══════════════════════════════════════════
