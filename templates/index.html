@@ -425,7 +425,7 @@ function buildPanel(m) {
   panel.innerHTML = `
     <div id="strip-${m.id}" class="meal-strip"></div>
     <div id="analyze-wrap-${m.id}" class="analyze-meal-wrap" style="display:none">
-      <button class="btn-analyze-meal" onclick="analyzeMeal('${m.id}')">✨ Bカウントする</button>
+      <button class="btn-analyze-meal" onclick="analyzeMeal('${m.id}')">✨ 計算する</button>
     </div>
     <div class="meal-add" id="add-${m.id}" onclick="openPhotoSheet('${m.id}')">
       <div class="meal-add-icon">${m.emoji}</div>
@@ -699,7 +699,7 @@ function createThumbnail(file) {
 }
 
 // ═══════════════════════════════════════════
-//  食事別「Bカウントする」ボタン制御
+//  食事別「計算する」ボタン制御
 // ═══════════════════════════════════════════
 function updateAnalyzeBtn(mealId) {
   const wrap = document.getElementById(`analyze-wrap-${mealId}`);
@@ -713,7 +713,7 @@ async function analyzeMeal(mealId) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 分析中…'; }
   const pending = state[mealId].items.filter(i => i.file && !i.result && !i.loading);
   await Promise.all(pending.map(i => analyzeItem(mealId, i.id)));
-  if (btn) { btn.disabled = false; btn.textContent = '✨ Bカウントする'; }
+  if (btn) { btn.disabled = false; btn.textContent = '✨ 計算する'; }
   updateAnalyzeBtn(mealId);
 }
 
