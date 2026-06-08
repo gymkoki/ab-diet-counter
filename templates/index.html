@@ -148,17 +148,6 @@
     .rank-count { font-size:13px; font-weight:800; color:var(--text); text-align:right; white-space:nowrap; }
     .rank-me-badge { display:inline-block; font-size:10px; background:var(--primary); color:white; padding:1px 6px; border-radius:10px; font-weight:700; margin-left:4px; }
 
-    /* photo source sheet */
-    #photo-source-sheet { display:none; position:fixed; inset:0; z-index:400; background:rgba(0,0,0,0.45); align-items:flex-end; justify-content:center; }
-    #photo-source-sheet.show { display:flex; }
-    .photo-sheet-dialog { background:var(--surface); border-radius:20px 20px 0 0; width:100%; max-width:480px; padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 16px); }
-    .photo-sheet-btn { display:flex; align-items:center; gap:14px; width:100%; padding:16px 18px; border:none; background:none; font-size:16px; font-weight:600; color:var(--text); cursor:pointer; border-radius:12px; }
-    .photo-sheet-btn:active { background:var(--bg); }
-    .photo-sheet-btn .ps-icon { font-size:22px; width:36px; text-align:center; }
-    .photo-sheet-divider { height:1px; background:var(--border); margin:4px 0; }
-    .photo-sheet-cancel { display:block; width:100%; margin-top:8px; padding:15px; border:none; background:var(--bg); border-radius:12px; font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
-    .photo-sheet-cancel:active { background:var(--border); }
-
     /* analyze meal button */
     .analyze-meal-wrap { padding:10px 16px 4px; }
     .btn-analyze-meal { width:100%; padding:15px; border-radius:14px; font-size:15px; font-weight:800; border:none; cursor:pointer; background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; box-shadow:0 4px 16px rgba(255,107,53,0.35); transition:opacity 0.2s, transform 0.1s; }
@@ -244,22 +233,8 @@
 
 </div>
 
-<!-- 写真ソース選択シート -->
-<input type="file" id="input-camera"  accept="image/*" capture="environment" style="display:none" onchange="onHiddenInputChange(this)">
-<input type="file" id="input-library" accept="image/*" multiple           style="display:none" onchange="onHiddenInputChange(this)">
-
-<div id="photo-source-sheet" onclick="closePhotoSheet()">
-  <div class="photo-sheet-dialog" onclick="event.stopPropagation()">
-    <button class="photo-sheet-btn" onclick="triggerCamera()">
-      <span class="ps-icon">📷</span>写真を撮る
-    </button>
-    <div class="photo-sheet-divider"></div>
-    <button class="photo-sheet-btn" onclick="triggerLibrary()">
-      <span class="ps-icon">🖼</span>フォトライブラリから選ぶ
-    </button>
-    <button class="photo-sheet-cancel" onclick="closePhotoSheet()">キャンセル</button>
-  </div>
-</div>
+<!-- 写真選択（ネイティブiOSピッカーを直接表示） -->
+<input type="file" id="input-file" accept="image/*" multiple style="display:none" onchange="onHiddenInputChange(this)">
 
 <div id="lightbox" onclick="closeLightbox()">
   <button id="lightbox-close" onclick="closeLightbox()">✕</button>
@@ -268,31 +243,19 @@
 
 <script>
 // ═══════════════════════════════════════════
-//  写真ソース選択シート
+//  写真選択（ネイティブiOSピッカーを直接表示）
 // ═══════════════════════════════════════════
 let _photoMealId = null;
 
-function openPhotoSheet(mealId) {
+function openFileInput(mealId) {
   _photoMealId = mealId;
-  document.getElementById('photo-source-sheet').classList.add('show');
-}
-function closePhotoSheet() {
-  document.getElementById('photo-source-sheet').classList.remove('show');
-  // _photoMealId はここでクリアしない（写真選択後に使うため）
-}
-function triggerCamera() {
-  closePhotoSheet();
-  document.getElementById('input-camera').click();
-}
-function triggerLibrary() {
-  closePhotoSheet();
-  document.getElementById('input-library').click();
+  document.getElementById('input-file').click();
 }
 function onHiddenInputChange(input) {
   const files = [...input.files];
   input.value = '';
   const mealId = _photoMealId;
-  _photoMealId = null; // 使い終わってからクリア
+  _photoMealId = null;
   if (files.length && mealId) addFiles(mealId, files);
 }
 
@@ -429,7 +392,7 @@ function buildPanel(m) {
     <div id="analyze-wrap-${m.id}" class="analyze-meal-wrap" style="display:none">
       <button class="btn-analyze-meal" onclick="analyzeMeal('${m.id}')">✨ 計算する</button>
     </div>
-    <div class="meal-add" id="add-${m.id}" onclick="openPhotoSheet('${m.id}')">
+    <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
       <div class="meal-add-icon">${m.emoji}</div>
       <h3>${m.label}の写真を追加</h3>
       <p>タップして写真を選ぶ</p>
