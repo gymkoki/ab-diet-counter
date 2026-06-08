@@ -1,0 +1,22 @@
+{
+  "name": "ABダイエット Bカウンター",
+  "short_name": "Bカウンター",
+  "description": "食事写真を撮ってBカウントを記録するABダイエットアプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F4EF",
+  "theme_color": "#FF6B35",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
