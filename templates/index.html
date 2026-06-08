@@ -602,11 +602,12 @@ function showError(mealId, msg) {
 // ═══════════════════════════════════════════
 function buildFoodRows(foods) {
   return (foods||[]).map(food => {
-    // グッドBは旧データ互換のためBとして扱う
-    const isB = food.category === 'B' || food.category === 'グッドB';
-    const hasCount = isB;
-    const badgeClass = isB ? 'badge-b' : 'badge-a';
-    const badgeLabel = isB ? 'B食材' : 'A食材';
+    const isB     = food.category === 'B';
+    const isGoodB = food.category === 'Good B' || food.category === 'グッドB';
+    const hasCount = isB || isGoodB;
+    const badgeClass = isB ? 'badge-b' : isGoodB ? 'badge-good-b' : 'badge-a';
+    const badgeLabel = isB ? 'B食材'   : isGoodB ? 'Good B'       : 'A食材';
+    const unitLabel  = isB ? 'Bカウント' : isGoodB ? 'Bカウント'    : 'A食材';
     return `
       <div class="food-row">
         <div>
@@ -619,7 +620,7 @@ function buildFoodRows(foods) {
         </div>
         <div class="food-cnt">
           <div class="n ${!hasCount?'zero':''}">${hasCount ? fmtCount(food.b_count) : '−'}</div>
-          <div class="u">${isB ? 'Bカウント' : 'A食材'}</div>
+          <div class="u">${unitLabel}</div>
         </div>
       </div>`;
   }).join('');
