@@ -434,5 +434,77 @@ def analyze():
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
 
 
+@app.route("/reanalyze", methods=["POST"])
+def reanalyze():
+    client = get_client()
+    if client is None:
+        return jsonify({"error": "APIキーが設定されていません。"}), 401
+
+    if "image" not in request.files:
+        return jsonify({"error": "画像が見つかりません"}), 400
+
+    file = request.files["image"]
+    correction = request.form.get("correction", "").strip()
+    if not correction:
+        return jsonify({"error": "補足情報を入力してください"}), 400
+
+    image_data = file.read()
+    base64_image = base64.standard_b64encode(image_data).decode("utf-8")
+    media_type = file.content_type
+    if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+        media_type = "image/jpeg"
+
+    prompt_with_correction = ANALYSIS_PROMPT + f"""
+
+━━━━━━━━━━━━━━━━━━━━━━━
+【ユーザーからの補足・訂正情報】
+{correction}
+
+この補足情報を最優先して、上記のABダイエットルールに基づき再計算してください。
+━━━━━━━━━━━━━━━━━━━━━━━"""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": base64_image,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt_with_correction,
+                        },
+                    ],
+                }
+            ],
+        )
+
+        result_text = response.content[0].text.strip()
+        if result_text.startswith("```"):
+            lines = result_text.split("\n")[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            result_text = "\n".join(lines)
+
+        result = json.loads(result_text)
+        return jsonify(result)
+
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"分析結果の解析に失敗しました。({e})"}), 500
+    except anthropic.AuthenticationError:
+        return jsonify({"error": "APIキーが無効です。"}), 401
+    except anthropic.APIError as e:
+        return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

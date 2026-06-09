@@ -101,6 +101,17 @@
     .re-analyze { width:100%; margin-top:10px; padding:10px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
 
+    /* 計算し直す */
+    .recalc-btn { width:100%; margin-top:8px; padding:9px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+    .recalc-btn:hover { border-color:#6366F1; color:#6366F1; }
+    .recalc-form { display:none; margin-top:8px; padding:12px; background:#F5F3FF; border:1.5px solid #C4B5FD; border-radius:12px; }
+    .recalc-form.open { display:block; }
+    .recalc-form label { font-size:11px; font-weight:700; color:#5B21B6; display:block; margin-bottom:6px; }
+    .recalc-textarea { width:100%; min-height:72px; padding:10px; border:1px solid #C4B5FD; border-radius:8px; font-size:13px; font-family:inherit; resize:vertical; outline:none; background:white; }
+    .recalc-textarea:focus { border-color:#6366F1; }
+    .btn-recalc { width:100%; margin-top:8px; padding:11px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:13px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
+    .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
+
     /* error */
     .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:12px; color:#DC2626; }
 
@@ -518,6 +529,12 @@ function renderResults(mealId) {
           <div class="food-list-header">食材の内訳</div>
           ${buildFoodRows(item.result.foods)}
         </div>
+        <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
+        <div class="recalc-form" id="recalc-form-${mealId}-${item.id}">
+          <label>補足・訂正内容を入力してください</label>
+          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：このヨーグルトは無脂肪ヨーグルトなのでA食材です。"></textarea>
+          <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
+        </div>
       </div>
     </div>`).join('');
 
@@ -588,6 +605,60 @@ async function analyzeItem(mealId, itemId) {
   saveState();
   updateTotalB();
   loadStats();
+}
+
+function toggleRecalcForm(mealId, itemId) {
+  const form = document.getElementById(`recalc-form-${mealId}-${itemId}`);
+  if (!form) return;
+  form.classList.toggle('open');
+  if (form.classList.contains('open')) {
+    document.getElementById(`recalc-text-${mealId}-${itemId}`)?.focus();
+  }
+}
+
+function dataURLtoBlob(dataUrl) {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new Blob([u8arr], {type: mime});
+}
+
+async function reanalyzeItem(mealId, itemId) {
+  const item = state[mealId].items.find(i => i.id === itemId);
+  if (!item) return;
+
+  const textarea = document.getElementById(`recalc-text-${mealId}-${itemId}`);
+  const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
+  const correction = textarea?.value?.trim();
+  if (!correction) { textarea?.focus(); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 再計算中…'; }
+
+  const blob = dataURLtoBlob(item.previewSrc);
+  const formData = new FormData();
+  formData.append('image', blob, 'image.jpg');
+  formData.append('correction', correction);
+  formData.append('user_id', USER_ID);
+
+  try {
+    const res = await fetch('/reanalyze', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.error) {
+      showError(mealId, data.error);
+    } else {
+      item.result = data;
+      renderResults(mealId);
+      updateTotalB();
+      saveState();
+    }
+  } catch(e) {
+    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
 }
 
 function showError(mealId, msg) {
