@@ -23,9 +23,9 @@
       --shadow: 0 4px 24px rgba(0,0,0,0.08); --radius: 16px;
     }
     body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 20px 20px 24px; text-align: center; }
-    header h1 { font-size: 22px; font-weight: 800; }
-    header p  { margin-top: 4px; font-size: 12px; opacity: 0.85; }
+    header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px; text-align: center; }
+    header h1 { font-size: 17px; font-weight: 800; }
+    header p  { margin-top: 2px; font-size: 11px; opacity: 0.85; }
 
     /* warmup */
     #warmup-banner { display:none; margin:12px 16px 0; background:#FFF8E7; border:1px solid #FCD34D; border-radius:10px; padding:12px 16px; font-size:12px; color:#92400E; align-items:center; gap:10px; }
@@ -33,7 +33,7 @@
 
     /* tabs */
     .tabs { display:flex; padding:12px 16px 0; gap:6px; }
-    .tab { flex:1; padding:10px 6px; border-radius:12px 12px 0 0; border:none; background:var(--border); color:var(--text-muted); font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; position:relative; }
+    .tab { flex:1; padding:10px 6px; border-radius:12px 12px 0 0; border:none; background:var(--border); color:var(--text-muted); font-size:15px; font-weight:700; cursor:pointer; transition:all 0.2s; position:relative; }
     .tab.active { background:var(--surface); color:var(--primary); box-shadow:0 -2px 8px rgba(0,0,0,0.06); }
     .tab .tab-dot { width:6px; height:6px; border-radius:50%; display:inline-block; margin-left:4px; vertical-align:middle; display:none; }
     .tab.has-photo .tab-dot { display:inline-block; background:#FCD34D; }
@@ -58,9 +58,9 @@
     .meal-add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:20px; cursor:pointer; border:2px dashed var(--border); border-radius:12px; margin:10px 16px 4px; transition:border-color 0.2s, background 0.2s; position:relative; }
     .meal-add:hover { border-color:var(--primary); background:#FFF5F0; }
     .meal-add input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
-    .meal-add-icon { font-size:20px; }
-    .meal-add h3 { font-size:13px; font-weight:700; }
-    .meal-add p  { font-size:11px; color:var(--text-muted); }
+    .meal-add-icon { font-size:26px; }
+    .meal-add h3 { font-size:17px; font-weight:700; }
+    .meal-add p  { font-size:14px; color:var(--text-muted); }
 
     /* loading */
     .meal-loading { display:none; text-align:center; padding:24px 16px; }
@@ -71,64 +71,64 @@
     /* result */
     .meal-result { display:none; padding:0 16px 16px; }
     .meal-b-count { background:#FFF5F0; border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-    .meal-b-count .label { font-size:12px; font-weight:700; color:var(--text-muted); }
-    .meal-b-count .count { font-size:36px; font-weight:900; color:var(--primary); line-height:1; }
-    .meal-b-count .unit  { font-size:12px; font-weight:600; color:var(--primary); }
+    .meal-b-count .label { font-size:15px; font-weight:700; color:var(--text-muted); }
+    .meal-b-count .count { font-size:42px; font-weight:900; color:var(--primary); line-height:1; }
+    .meal-b-count .unit  { font-size:15px; font-weight:600; color:var(--primary); }
     .result-photo { width:100%; border-radius:10px; max-height:200px; object-fit:cover; display:block; margin-bottom:12px; }
     .advice-row { display:flex; gap:8px; align-items:flex-start; background:var(--bg); border-radius:10px; padding:12px; margin-bottom:12px; }
-    .advice-row .icon { font-size:16px; flex-shrink:0; }
-    .advice-row p { font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .advice-row .icon { font-size:18px; flex-shrink:0; }
+    .advice-row p { font-size:15px; color:var(--text-muted); line-height:1.6; }
     .food-list-wrap { border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-    .food-list-header { padding:10px 14px; background:var(--bg); font-size:12px; font-weight:700; border-bottom:1px solid var(--border); }
-    .food-row { display:grid; grid-template-columns:1fr auto; gap:6px; padding:10px 14px; border-bottom:1px solid var(--border); align-items:start; }
+    .food-list-header { padding:10px 14px; background:var(--bg); font-size:15px; font-weight:700; border-bottom:1px solid var(--border); }
+    .food-row { display:grid; grid-template-columns:1fr auto; gap:6px; padding:12px 14px; border-bottom:1px solid var(--border); align-items:start; }
     .food-row:last-child { border-bottom:none; }
-    .food-name { font-size:13px; font-weight:600; margin-bottom:2px; }
-    .food-meta { font-size:10px; color:var(--text-muted); line-height:1.4; }
-    .food-badge { display:inline-flex; padding:1px 6px; border-radius:20px; font-size:10px; font-weight:700; margin-right:3px; }
+    .food-name { font-size:16px; font-weight:600; margin-bottom:4px; }
+    .food-meta { font-size:13px; color:var(--text-muted); line-height:1.5; }
+    .food-badge { display:inline-flex; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:700; margin-right:3px; }
     .badge-b      { background:#FFF0EB; color:var(--b-color); }
     .badge-good-b { background:#FFF8E7; color:#D97706; }
     .badge-a      { background:#E8F9F8; color:var(--a-color); }
     .food-cnt { text-align:right; }
-    .food-cnt .n { font-size:18px; font-weight:800; color:var(--b-color); line-height:1; }
+    .food-cnt .n { font-size:22px; font-weight:800; color:var(--b-color); line-height:1; }
     .food-cnt .n.zero { color:var(--a-color); }
-    .food-cnt .u { font-size:9px; color:var(--text-muted); }
+    .food-cnt .u { font-size:12px; color:var(--text-muted); }
 
     /* multi-result cards */
     .item-result-card { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:12px; }
-    .item-result-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border); font-size:12px; font-weight:700; }
-    .item-result-header .ic-cnt { color:var(--primary); font-size:14px; font-weight:900; }
+    .item-result-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border); font-size:15px; font-weight:700; }
+    .item-result-header .ic-cnt { color:var(--primary); font-size:18px; font-weight:900; }
 
-    .re-analyze { width:100%; margin-top:10px; padding:10px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; }
+    .re-analyze { width:100%; margin-top:10px; padding:12px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
 
     /* 計算し直す */
-    .recalc-btn { width:100%; margin-top:8px; padding:9px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+    .recalc-btn { width:100%; margin-top:8px; padding:11px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
     .recalc-btn:hover { border-color:#6366F1; color:#6366F1; }
     .recalc-form { display:none; margin-top:8px; padding:12px; background:#F5F3FF; border:1.5px solid #C4B5FD; border-radius:12px; }
     .recalc-form.open { display:block; }
-    .recalc-form label { font-size:11px; font-weight:700; color:#5B21B6; display:block; margin-bottom:6px; }
-    .recalc-textarea { width:100%; min-height:72px; padding:10px; border:1px solid #C4B5FD; border-radius:8px; font-size:13px; font-family:inherit; resize:vertical; outline:none; background:white; }
+    .recalc-form label { font-size:14px; font-weight:700; color:#5B21B6; display:block; margin-bottom:6px; }
+    .recalc-textarea { width:100%; min-height:80px; padding:10px; border:1px solid #C4B5FD; border-radius:8px; font-size:15px; font-family:inherit; resize:vertical; outline:none; background:white; }
     .recalc-textarea:focus { border-color:#6366F1; }
-    .btn-recalc { width:100%; margin-top:8px; padding:11px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:13px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
+    .btn-recalc { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:15px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
 
     /* error */
-    .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:12px; color:#DC2626; }
+    .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:14px; color:#DC2626; }
 
     /* daily total card */
-    .daily-total-card { background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; margin:12px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; }
-    .daily-total-label { font-size:13px; font-weight:700; opacity:0.9; }
-    .daily-total-count { font-size:52px; font-weight:900; line-height:1; }
-    .daily-total-unit { font-size:13px; font-weight:600; opacity:0.85; margin-left:4px; }
+    .daily-total-card { background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; margin:10px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; }
+    .daily-total-label { font-size:16px; font-weight:700; opacity:0.9; }
+    .daily-total-count { font-size:56px; font-weight:900; line-height:1; }
+    .daily-total-unit { font-size:16px; font-weight:600; opacity:0.85; margin-left:4px; }
 
     /* weekly total card */
     .weekly-total-card { background:var(--surface); margin:8px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; border-left:4px solid #6366F1; }
-    .weekly-total-label { font-size:12px; font-weight:700; color:#5B21B6; }
-    .weekly-total-sub { font-size:11px; color:var(--text-muted); margin-top:2px; }
-    .weekly-total-count { font-size:32px; font-weight:900; color:#6366F1; line-height:1; }
-    .weekly-total-unit { font-size:11px; color:#6366F1; font-weight:600; opacity:0.8; margin-left:3px; }
-    .weekly-days-badge { font-size:11px; color:#6366F1; font-weight:700; margin-top:3px; text-align:right; }
-    .weekly-uploaded { font-size:10px; color:#10B981; font-weight:700; margin-top:2px; }
+    .weekly-total-label { font-size:15px; font-weight:700; color:#5B21B6; }
+    .weekly-total-sub { font-size:13px; color:var(--text-muted); margin-top:2px; }
+    .weekly-total-count { font-size:36px; font-weight:900; color:#6366F1; line-height:1; }
+    .weekly-total-unit { font-size:13px; color:#6366F1; font-weight:600; opacity:0.8; margin-left:3px; }
+    .weekly-days-badge { font-size:13px; color:#6366F1; font-weight:700; margin-top:3px; text-align:right; }
+    .weekly-uploaded { font-size:12px; color:#10B981; font-weight:700; margin-top:2px; }
 
     /* stats bar */
     .stats-bar { display:flex; align-items:stretch; background:var(--surface); margin:10px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
@@ -136,25 +136,25 @@
     .stat-btn { background:none; border:none; cursor:pointer; transition:background 0.15s; }
     .stat-btn:active { background:var(--bg); }
     .stat-divider { width:1px; background:var(--border); margin:8px 0; flex-shrink:0; }
-    .stat-number { font-size:24px; font-weight:900; color:var(--primary); line-height:1; }
-    .stat-label { font-size:10px; color:var(--text-muted); margin-top:3px; font-weight:600; }
-    .stat-sub { font-size:10px; color:var(--text-muted); margin-top:2px; }
+    .stat-number { font-size:26px; font-weight:900; color:var(--primary); line-height:1; }
+    .stat-label { font-size:13px; color:var(--text-muted); margin-top:3px; font-weight:600; }
+    .stat-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
 
     /* reset dialog */
     #reset-overlay { display:none; position:fixed; inset:0; z-index:250; background:rgba(0,0,0,0.45); align-items:center; justify-content:center; }
     #reset-overlay.show { display:flex; }
-    .reset-dialog { background:var(--surface); border-radius:18px; padding:28px 24px; max-width:320px; width:88%; text-align:center; box-shadow:0 8px 40px rgba(0,0,0,0.2); }
-    .reset-dialog h3 { font-size:17px; font-weight:800; margin-bottom:10px; }
-    .reset-dialog p { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
+    .reset-dialog { background:var(--surface); border-radius:18px; padding:28px 24px; max-width:340px; width:90%; text-align:center; box-shadow:0 8px 40px rgba(0,0,0,0.2); }
+    .reset-dialog h3 { font-size:19px; font-weight:800; margin-bottom:10px; }
+    .reset-dialog p { font-size:15px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
     .reset-btns { display:flex; gap:10px; }
-    .reset-btns button { flex:1; padding:12px; border-radius:12px; font-size:14px; font-weight:700; border:none; cursor:pointer; }
+    .reset-btns button { flex:1; padding:14px; border-radius:12px; font-size:16px; font-weight:700; border:none; cursor:pointer; }
     .reset-cancel { background:var(--bg); color:var(--text-muted); }
     .reset-confirm { background:#DC2626; color:white; }
 
     /* tabs wrapper with reset */
     .tabs-wrapper { display:flex; align-items:flex-end; padding:10px 16px 0; gap:6px; }
     .tabs { display:flex; gap:6px; flex:1; }
-    .btn-full-reset { flex-shrink:0; padding:8px 10px; border-radius:12px 12px 0 0; border:1.5px solid #FECACA; border-bottom:none; background:white; color:#DC2626; font-size:10px; font-weight:700; cursor:pointer; text-align:center; line-height:1.5; white-space:nowrap; }
+    .btn-full-reset { flex-shrink:0; padding:8px 10px; border-radius:12px 12px 0 0; border:1.5px solid #FECACA; border-bottom:none; background:white; color:#DC2626; font-size:13px; font-weight:700; cursor:pointer; text-align:center; line-height:1.5; white-space:nowrap; }
     .btn-full-reset:active { background:#FEF2F2; }
 
     /* ranking modal */
@@ -181,7 +181,7 @@
 
     /* analyze meal button */
     .analyze-meal-wrap { padding:10px 16px 4px; }
-    .btn-analyze-meal { width:100%; padding:15px; border-radius:14px; font-size:15px; font-weight:800; border:none; cursor:pointer; background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; box-shadow:0 4px 16px rgba(255,107,53,0.35); transition:opacity 0.2s, transform 0.1s; }
+    .btn-analyze-meal { width:100%; padding:17px; border-radius:14px; font-size:17px; font-weight:800; border:none; cursor:pointer; background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; box-shadow:0 4px 16px rgba(255,107,53,0.35); transition:opacity 0.2s, transform 0.1s; }
     .btn-analyze-meal:active   { transform:scale(0.97); }
     .btn-analyze-meal:disabled { opacity:0.45; cursor:not-allowed; box-shadow:none; }
 
@@ -214,7 +214,7 @@
 <div class="weekly-total-card">
   <div>
     <div class="weekly-total-label">📅 今週のBカウント合計</div>
-    <div class="weekly-total-sub" id="weekly-sub">朝・昼・夕・間食が揃うと記録されます</div>
+    <div class="weekly-total-sub" id="weekly-sub">🔄 リセットで今日の記録が保存されます</div>
   </div>
   <div style="text-align:right">
     <div>
@@ -261,11 +261,11 @@
 
 <div id="reset-overlay" onclick="closeFullReset()">
   <div class="reset-dialog" onclick="event.stopPropagation()">
-    <h3>データをリセット</h3>
-    <p>朝食・昼食・夕食・間食のすべてのデータが消去されます。よろしいですか？</p>
+    <h3>1日を記録して新しい日を始める</h3>
+    <p>今日のBカウントを今週の記録に保存して、新しい1日のカウントを始めます。</p>
     <div class="reset-btns">
       <button class="reset-cancel" onclick="closeFullReset()">キャンセル</button>
-      <button class="reset-confirm" onclick="doFullReset()">リセットする</button>
+      <button class="reset-confirm" onclick="doFullReset()">記録して新しい日へ</button>
     </div>
   </div>
 </div>
@@ -813,16 +813,6 @@ function updateTotalB() {
   });
   const el = document.getElementById('daily-total-count');
   if (el) el.textContent = fmtCount(total);
-
-  // 4食すべて揃ったら今週カウントを記録
-  if (allMealsDone()) {
-    const today = getTodayJST();
-    const lastDate  = localStorage.getItem('weeklyUploadDate') || '';
-    const lastCount = parseFloat(localStorage.getItem('weeklyUploadCount') ?? '-1');
-    if (today !== lastDate || total !== lastCount) {
-      submitDailyB(total, today);
-    }
-  }
 }
 
 async function submitDailyB(bCount, date) {
@@ -852,7 +842,7 @@ async function loadWeeklyB() {
       const todayUploaded = (data.daily||[]).some(d => d.date === today);
       subEl.textContent = todayUploaded
         ? '✅ 今日のカウントを記録済み'
-        : '朝・昼・夕・間食が揃うと記録されます';
+        : '🔄 リセットで今日の記録が保存されます';
       subEl.style.color = todayUploaded ? '#10B981' : '';
     }
   } catch(e) { /* silent */ }
@@ -863,11 +853,24 @@ async function loadWeeklyB() {
 // ═══════════════════════════════════════════
 function confirmFullReset() { document.getElementById('reset-overlay').classList.add('show'); }
 function closeFullReset()   { document.getElementById('reset-overlay').classList.remove('show'); }
-function doFullReset() {
+async function doFullReset() {
   closeFullReset();
+
+  // 今日のBカウントを今週の記録に保存してからリセット
+  let total = 0;
+  MEALS.forEach(m => {
+    state[m.id].items.filter(i => i.result).forEach(i => { total += i.result.total_b_count; });
+  });
+  if (total > 0) {
+    const today = getTodayJST();
+    await submitDailyB(total, today);
+  }
+
   MEALS.forEach(m => { state[m.id] = { items: [] }; });
   itemIdSeq = 0;
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem('weeklyUploadDate');
+  localStorage.removeItem('weeklyUploadCount');
   MEALS.forEach(m => buildPanel(m));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('done','has-photo'));
   switchTab('breakfast');
