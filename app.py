@@ -49,12 +49,32 @@ def init_db():
                     created_at TEXT   NOT NULL
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_b_count (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    date       TEXT   NOT NULL,
+                    b_count    REAL   NOT NULL,
+                    created_at TEXT   NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usage_log (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id    TEXT    NOT NULL,
                     created_at TEXT    NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_b_count (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    date       TEXT    NOT NULL,
+                    b_count    REAL    NOT NULL,
+                    created_at TEXT    NOT NULL,
+                    UNIQUE(user_id, date)
                 )
             """)
         conn.commit()
@@ -350,6 +370,78 @@ def get_stats():
         "my_rank": my_rank,
         "my_count": my_count,
         "total_users": len(rows),
+    })
+
+
+@app.route("/api/daily-b", methods=["POST"])
+def post_daily_b():
+    """今日のBカウントを記録（全食事完了時に呼ばれる）"""
+    data = request.get_json()
+    uid     = (data or {}).get("user_id", "").strip()
+    b_count = (data or {}).get("b_count", 0)
+    date    = (data or {}).get("date", "")   # YYYY-MM-DD (JST)
+    if not uid or not date:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_b_count (user_id, date, b_count, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET b_count=%s, created_at=%s""",
+                    (uid, date, b_count, ts, b_count, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_b_count (user_id, date, b_count, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET b_count=excluded.b_count, created_at=excluded.created_at""",
+                    (uid, date, b_count, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/weekly-b")
+def get_weekly_b():
+    """今週（月〜日）のBカウント合計と日数を返す"""
+    uid = request.args.get("user_id", "")
+    if not uid:
+        return jsonify({"week_total": 0, "days_count": 0})
+
+    now = datetime.datetime.now(JST)
+    # 今週の月曜日を計算
+    week_start = (now - datetime.timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+    week_end   = (now + datetime.timedelta(days=6 - now.weekday())).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT date, b_count FROM daily_b_count
+               WHERE user_id={PH} AND date>={PH} AND date<={PH}
+               ORDER BY date""",
+            (uid, week_start, week_end)
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    week_total = sum(r[1] for r in rows)
+    days_count = len(rows)
+    daily = [{"date": r[0], "b_count": r[1]} for r in rows]
+    return jsonify({
+        "week_total": week_total,
+        "days_count": days_count,
+        "daily": daily,
+        "week_start": week_start,
+        "week_end": week_end,
     })
 
 

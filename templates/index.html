@@ -121,6 +121,15 @@
     .daily-total-count { font-size:52px; font-weight:900; line-height:1; }
     .daily-total-unit { font-size:13px; font-weight:600; opacity:0.85; margin-left:4px; }
 
+    /* weekly total card */
+    .weekly-total-card { background:var(--surface); margin:8px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; border-left:4px solid #6366F1; }
+    .weekly-total-label { font-size:12px; font-weight:700; color:#5B21B6; }
+    .weekly-total-sub { font-size:11px; color:var(--text-muted); margin-top:2px; }
+    .weekly-total-count { font-size:32px; font-weight:900; color:#6366F1; line-height:1; }
+    .weekly-total-unit { font-size:11px; color:#6366F1; font-weight:600; opacity:0.8; margin-left:3px; }
+    .weekly-days-badge { font-size:11px; color:#6366F1; font-weight:700; margin-top:3px; text-align:right; }
+    .weekly-uploaded { font-size:10px; color:#10B981; font-weight:700; margin-top:2px; }
+
     /* stats bar */
     .stats-bar { display:flex; align-items:stretch; background:var(--surface); margin:10px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
     .stat-item { flex:1; padding:12px 10px; text-align:center; }
@@ -199,6 +208,20 @@
   <div style="text-align:right">
     <span class="daily-total-count" id="daily-total-count">0</span>
     <span class="daily-total-unit">カウント</span>
+  </div>
+</div>
+
+<div class="weekly-total-card">
+  <div>
+    <div class="weekly-total-label">📅 今週のBカウント合計</div>
+    <div class="weekly-total-sub" id="weekly-sub">朝・昼・夕・間食が揃うと記録されます</div>
+  </div>
+  <div style="text-align:right">
+    <div>
+      <span class="weekly-total-count" id="weekly-total-count">-</span>
+      <span class="weekly-total-unit">カウント</span>
+    </div>
+    <div class="weekly-days-badge" id="weekly-days-badge"></div>
   </div>
 </div>
 
@@ -771,6 +794,16 @@ async function analyzeMeal(mealId) {
 // ═══════════════════════════════════════════
 //  今日のBカウント合計
 // ═══════════════════════════════════════════
+function getTodayJST() {
+  return new Date().toLocaleDateString('ja-JP', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).replace(/\//g, '-');
+}
+
+function allMealsDone() {
+  return MEALS.every(m => state[m.id].items.some(i => i.result));
+}
+
 function updateTotalB() {
   let total = 0;
   MEALS.forEach(m => {
@@ -780,6 +813,49 @@ function updateTotalB() {
   });
   const el = document.getElementById('daily-total-count');
   if (el) el.textContent = fmtCount(total);
+
+  // 4食すべて揃ったら今週カウントを記録
+  if (allMealsDone()) {
+    const today = getTodayJST();
+    const lastDate  = localStorage.getItem('weeklyUploadDate') || '';
+    const lastCount = parseFloat(localStorage.getItem('weeklyUploadCount') ?? '-1');
+    if (today !== lastDate || total !== lastCount) {
+      submitDailyB(total, today);
+    }
+  }
+}
+
+async function submitDailyB(bCount, date) {
+  try {
+    await fetch('/api/daily-b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, b_count: bCount, date })
+    });
+    localStorage.setItem('weeklyUploadDate',  date);
+    localStorage.setItem('weeklyUploadCount', bCount);
+    loadWeeklyB();
+  } catch(e) { /* silent */ }
+}
+
+async function loadWeeklyB() {
+  try {
+    const res  = await fetch(`/api/weekly-b?user_id=${encodeURIComponent(USER_ID)}`);
+    const data = await res.json();
+    const countEl = document.getElementById('weekly-total-count');
+    const daysEl  = document.getElementById('weekly-days-badge');
+    const subEl   = document.getElementById('weekly-sub');
+    if (countEl) countEl.textContent = fmtCount(data.week_total);
+    if (daysEl)  daysEl.textContent  = data.days_count > 0 ? `${data.days_count}日目` : '';
+    if (subEl) {
+      const today = getTodayJST();
+      const todayUploaded = (data.daily||[]).some(d => d.date === today);
+      subEl.textContent = todayUploaded
+        ? '✅ 今日のカウントを記録済み'
+        : '朝・昼・夕・間食が揃うと記録されます';
+      subEl.style.color = todayUploaded ? '#10B981' : '';
+    }
+  } catch(e) { /* silent */ }
 }
 
 // ═══════════════════════════════════════════
@@ -834,6 +910,7 @@ loadSavedState();
 MEALS.forEach(m => buildPanel(m));
 updateTotalB();
 loadStats();
+loadWeeklyB();
 </script>
 </body>
 </html>
