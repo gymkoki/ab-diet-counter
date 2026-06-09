@@ -1,4 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#FF6B9D"/>
-  <text x="32" y="47" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="42" text-anchor="middle" fill="#FFFFFF">B</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <!-- オレンジ背景（丸角） -->
+  <rect width="192" height="192" rx="42" fill="#FF6B35"/>
+
+  <!-- B字の外形（白） -->
+  <path fill="white" d="
+    M 52,36
+    H 100
+    C 134,36 148,52 148,72
+    C 148,86 140,95 125,99
+    C 142,103 154,114 154,134
+    C 154,154 138,160 102,160
+    H 52
+    Z
+  "/>
+
+  <!-- B字の上の穴（オレンジ） -->
+  <path fill="#FF6B35" d="
+    M 80,60
+    H 98
+    C 116,60 120,69 120,76
+    C 120,83 116,92 98,92
+    H 80
+    Z
+  "/>
+
+  <!-- B字の下の穴（オレンジ） -->
+  <path fill="#FF6B35" d="
+    M 80,108
+    H 100
+    C 124,108 128,118 128,126
+    C 128,134 124,144 100,144
+    H 80
+    Z
+  "/>
 </svg>

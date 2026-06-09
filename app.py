@@ -274,6 +274,12 @@ def status():
     return jsonify({"configured": bool(key)})
 
 
+@app.route("/ping")
+def ping():
+    """Render無料プランのスリープ防止用エンドポイント（外部監視サービスからpingされる）"""
+    return "ok", 200
+
+
 @app.route("/api/setup", methods=["POST"])
 def setup():
     data = request.get_json()
