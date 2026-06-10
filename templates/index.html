@@ -46,6 +46,7 @@
     .history-total .count { font-size:28px; font-weight:900; color:#6366F1; }
     header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px; text-align: center; }
     header h1 { font-size: 17px; font-weight: 800; }
+    .header-users { display:block; font-size: 12px; font-weight: 600; opacity: 0.85; margin-top: 2px; }
     header p  { margin-top: 2px; font-size: 11px; opacity: 0.85; }
 
     /* warmup */
@@ -143,25 +144,6 @@
     .daily-total-count { font-size:56px; font-weight:900; line-height:1; }
     .daily-total-unit { font-size:16px; font-weight:600; opacity:0.85; margin-left:4px; }
 
-    /* weekly total card */
-    .weekly-total-card { background:var(--surface); margin:8px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; border-left:4px solid #6366F1; }
-    .weekly-total-label { font-size:15px; font-weight:700; color:#5B21B6; }
-    .weekly-total-sub { font-size:13px; color:var(--text-muted); margin-top:2px; }
-    .weekly-total-count { font-size:36px; font-weight:900; color:#6366F1; line-height:1; }
-    .weekly-total-unit { font-size:13px; color:#6366F1; font-weight:600; opacity:0.8; margin-left:3px; }
-    .weekly-days-badge { font-size:13px; color:#6366F1; font-weight:700; margin-top:3px; text-align:right; }
-    .weekly-uploaded { font-size:12px; color:#10B981; font-weight:700; margin-top:2px; }
-
-    /* stats bar */
-    .stats-bar { display:flex; align-items:stretch; background:var(--surface); margin:10px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
-    .stat-item { flex:1; padding:12px 10px; text-align:center; }
-    .stat-btn { background:none; border:none; cursor:pointer; transition:background 0.15s; }
-    .stat-btn:active { background:var(--bg); }
-    .stat-divider { width:1px; background:var(--border); margin:8px 0; flex-shrink:0; }
-    .stat-number { font-size:26px; font-weight:900; color:var(--primary); line-height:1; }
-    .stat-label { font-size:13px; color:var(--text-muted); margin-top:3px; font-weight:600; }
-    .stat-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
-
     /* reset dialog */
     #reset-overlay { display:none; position:fixed; inset:0; z-index:250; background:rgba(0,0,0,0.45); align-items:center; justify-content:center; }
     #reset-overlay.show { display:flex; }
@@ -179,23 +161,6 @@
     .btn-full-reset { flex-shrink:0; padding:8px 10px; border-radius:12px 12px 0 0; border:1.5px solid #FECACA; border-bottom:none; background:white; color:#DC2626; font-size:13px; font-weight:700; cursor:pointer; text-align:center; line-height:1.5; white-space:nowrap; }
     .btn-full-reset:active { background:#FEF2F2; }
 
-    /* ranking modal */
-    #ranking-overlay { display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.5); align-items:flex-end; justify-content:center; }
-    #ranking-overlay.show { display:flex; }
-    .ranking-dialog { background:var(--surface); border-radius:20px 20px 0 0; width:100%; max-width:480px; max-height:80vh; overflow-y:auto; padding-bottom:env(safe-area-inset-bottom,16px); }
-    .ranking-header { display:flex; align-items:center; justify-content:space-between; padding:18px 20px 12px; font-size:16px; font-weight:800; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:1; }
-    .ranking-header button { background:none; border:none; font-size:18px; color:var(--text-muted); cursor:pointer; width:32px; height:32px; border-radius:50%; }
-    .ranking-sub { font-size:12px; color:var(--text-muted); padding:10px 20px 6px; }
-    .rank-row { display:flex; align-items:center; padding:12px 20px; border-bottom:1px solid var(--border); gap:12px; }
-    .rank-row.is-me { background:#FFF5F0; }
-    .rank-row:last-child { border-bottom:none; }
-    .rank-num { font-size:16px; font-weight:900; width:28px; text-align:center; color:var(--text-muted); flex-shrink:0; }
-    .rank-bar-wrap { flex:1; }
-    .rank-bar { height:8px; border-radius:4px; background:var(--border); min-width:4px; transition:width 0.4s; }
-    .rank-bar .rank-fill { height:100%; border-radius:4px; background:var(--primary); opacity:0.55; }
-    .rank-row.is-me .rank-fill { opacity:1; }
-    .rank-count { font-size:13px; font-weight:800; color:var(--text); text-align:right; white-space:nowrap; }
-    .rank-me-badge { display:inline-block; font-size:10px; background:var(--primary); color:white; padding:1px 6px; border-radius:10px; font-weight:700; margin-left:4px; }
 
     /* result card delete button */
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
@@ -217,7 +182,7 @@
 <body>
 
 <header>
-  <h1>ABダイエット Bカウンター</h1>
+  <h1>ABダイエット Bカウンター<span class="header-users" id="header-users"></span></h1>
 </header>
 
 <div id="warmup-banner">
@@ -232,44 +197,6 @@
   <div style="text-align:right">
     <span class="daily-total-count" id="daily-total-count">0</span>
     <span class="daily-total-unit">カウント</span>
-  </div>
-</div>
-
-<div class="weekly-total-card">
-  <div>
-    <div class="weekly-total-label">📅 今週のBカウント合計</div>
-    <div class="weekly-total-sub" id="weekly-sub"></div>
-  </div>
-  <div style="text-align:right">
-    <div>
-      <span class="weekly-total-count" id="weekly-total-count">-</span>
-      <span class="weekly-total-unit">カウント</span>
-    </div>
-    <div class="weekly-days-badge" id="weekly-days-badge"></div>
-  </div>
-</div>
-
-<div class="stats-bar">
-  <div class="stat-item">
-    <div class="stat-number" id="today-users">-</div>
-    <div class="stat-label">👥 今日の利用者</div>
-  </div>
-  <div class="stat-divider"></div>
-  <button class="stat-item stat-btn" onclick="openRanking()">
-    <div class="stat-number" id="my-rank-display">-</div>
-    <div class="stat-label">🏆 利用回数ランキング →</div>
-    <div class="stat-sub" id="total-users-display"></div>
-  </button>
-</div>
-
-<div id="ranking-overlay" onclick="closeRanking()">
-  <div class="ranking-dialog" onclick="event.stopPropagation()">
-    <div class="ranking-header">
-      <span>🏆 今月の分析ランキング</span>
-      <button onclick="closeRanking()">✕</button>
-    </div>
-    <div class="ranking-sub" id="ranking-sub">読み込み中…</div>
-    <div id="ranking-list"></div>
   </div>
 </div>
 
@@ -379,50 +306,9 @@ async function loadStats() {
 }
 
 function applyStats(d) {
-  document.getElementById('today-users').textContent = d.today_users;
-  if (d.my_rank) {
-    document.getElementById('my-rank-display').textContent = `${d.my_rank}位`;
-    document.getElementById('total-users-display').textContent = `全${d.total_users}人中`;
-  } else {
-    document.getElementById('my-rank-display').textContent = '-';
-    document.getElementById('total-users-display').textContent = '';
-  }
+  const el = document.getElementById('header-users');
+  if (el) el.textContent = `（今日の利用者${d.today_users}名）`;
 }
-
-async function openRanking() {
-  document.getElementById('ranking-overlay').classList.add('show');
-  document.getElementById('ranking-sub').textContent = '読み込み中…';
-  document.getElementById('ranking-list').innerHTML = '';
-  try {
-    const res = await fetch(`/api/stats?user_id=${encodeURIComponent(USER_ID)}`);
-    const d = await res.json();
-    applyStats(d);
-    document.getElementById('ranking-sub').textContent =
-      `過去30日間 ・ ${d.total_users}人が参加中`;
-    const max = d.ranking.length ? d.ranking[0].count : 1;
-    const medals = ['🥇','🥈','🥉'];
-    document.getElementById('ranking-list').innerHTML = d.ranking.length
-      ? d.ranking.map(r => {
-          const label = medals[r.rank-1] || r.rank + '位';
-          const pct = Math.round(r.count / max * 100);
-          return `<div class="rank-row${r.is_me?' is-me':''}">
-            <div class="rank-num">${label}</div>
-            <div class="rank-bar-wrap">
-              <div class="rank-bar"><div class="rank-fill" style="width:${pct}%"></div></div>
-            </div>
-            <div class="rank-count">${r.count}回${r.is_me?'<span class="rank-me-badge">あなた</span>':''}</div>
-          </div>`;
-        }).join('')
-      : '<div style="padding:24px;text-align:center;color:var(--text-muted)">まだデータがありません</div>';
-  } catch(e) {
-    document.getElementById('ranking-sub').textContent = '読み込みに失敗しました';
-  }
-}
-
-function closeRanking() {
-  document.getElementById('ranking-overlay').classList.remove('show');
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRanking(); });
 
 // ═══════════════════════════════════════════
 //  定数・State
@@ -872,25 +758,6 @@ async function submitDailyB(bCount, date) {
     });
     localStorage.setItem('weeklyUploadDate',  date);
     localStorage.setItem('weeklyUploadCount', bCount);
-    loadWeeklyB();
-  } catch(e) { /* silent */ }
-}
-
-async function loadWeeklyB() {
-  try {
-    const res  = await fetch(`/api/weekly-b?user_id=${encodeURIComponent(USER_ID)}`);
-    const data = await res.json();
-    const countEl = document.getElementById('weekly-total-count');
-    const daysEl  = document.getElementById('weekly-days-badge');
-    const subEl   = document.getElementById('weekly-sub');
-    if (countEl) countEl.textContent = fmtCount(data.week_total);
-    if (daysEl)  daysEl.textContent  = data.days_count > 0 ? `${data.days_count}日目` : '';
-    if (subEl) {
-      const today = getTodayJST();
-      const todayUploaded = (data.daily||[]).some(d => d.date === today);
-      subEl.textContent = todayUploaded ? '✅ 今日のカウントを記録済み' : '';
-      subEl.style.color = todayUploaded ? '#10B981' : '';
-    }
   } catch(e) { /* silent */ }
 }
 
@@ -1011,7 +878,6 @@ loadSavedState();
 MEALS.forEach(m => buildPanel(m));
 updateTotalB();
 loadStats();
-loadWeeklyB();
 </script>
 </body>
 </html>
