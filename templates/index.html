@@ -22,7 +22,28 @@
       --b-color: #FF6B35; --a-color: #2EC4B6;
       --shadow: 0 4px 24px rgba(0,0,0,0.08); --radius: 16px;
     }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 76px; }
+
+    /* bottom nav */
+    .bottom-nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--surface); box-shadow:0 -2px 16px rgba(0,0,0,0.08); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
+    .bottom-nav-item { flex:1; padding:10px 0 8px; border:none; background:none; font-size:13px; font-weight:700; color:var(--text-muted); cursor:pointer; line-height:1.5; transition:color 0.15s; }
+    .bottom-nav-item .bn-icon { font-size:20px; display:block; margin-bottom:2px; }
+    .bottom-nav-item.active { color:var(--primary); }
+
+    /* history view */
+    .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; }
+    .history-card h2 { font-size:17px; font-weight:800; margin-bottom:4px; }
+    .history-card .history-range { font-size:13px; color:var(--text-muted); margin-bottom:14px; }
+    .history-row { display:flex; align-items:center; justify-content:space-between; padding:14px 4px; border-bottom:1px solid var(--border); }
+    .history-row:last-child { border-bottom:none; }
+    .history-date { font-size:16px; font-weight:700; }
+    .history-date .dow { font-size:13px; color:var(--text-muted); font-weight:600; margin-left:4px; }
+    .history-count { font-size:24px; font-weight:900; color:#6366F1; }
+    .history-unit { font-size:12px; font-weight:600; color:#6366F1; opacity:0.8; }
+    .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:14px; line-height:1.8; }
+    .history-total { display:flex; align-items:center; justify-content:space-between; background:#F5F3FF; border-radius:12px; padding:14px 16px; margin-top:14px; }
+    .history-total .label { font-size:14px; font-weight:700; color:#5B21B6; }
+    .history-total .count { font-size:28px; font-weight:900; color:#6366F1; }
     header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px; text-align: center; }
     header h1 { font-size: 17px; font-weight: 800; }
     header p  { margin-top: 2px; font-size: 11px; opacity: 0.85; }
@@ -100,6 +121,7 @@
 
     .re-analyze { width:100%; margin-top:10px; padding:12px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
+    .reset-caption { text-align:center; font-size:12px; color:var(--text-muted); margin-top:6px; }
 
     /* 計算し直す */
     .recalc-btn { width:100%; margin-top:8px; padding:11px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
@@ -203,6 +225,8 @@
   <span>サーバー起動中… 初回のみ30秒ほどかかります ☕</span>
 </div>
 
+<div id="view-main">
+
 <div class="daily-total-card">
   <div class="daily-total-label">🍽 今日のBカウント合計</div>
   <div style="text-align:right">
@@ -214,7 +238,7 @@
 <div class="weekly-total-card">
   <div>
     <div class="weekly-total-label">📅 今週のBカウント合計</div>
-    <div class="weekly-total-sub" id="weekly-sub">🔄 リセットで今日の記録が保存されます</div>
+    <div class="weekly-total-sub" id="weekly-sub"></div>
   </div>
   <div style="text-align:right">
     <div>
@@ -276,6 +300,29 @@
   <div id="panel-dinner"    class="tab-panel"       ></div>
   <div id="panel-snack"     class="tab-panel"       ></div>
 
+</div>
+
+</div>
+
+<div id="view-history" style="display:none">
+  <div class="history-card">
+    <h2>📊 今週のBカウント履歴</h2>
+    <div class="history-range" id="history-range">読み込み中…</div>
+    <div id="history-list"></div>
+    <div class="history-total" id="history-total" style="display:none">
+      <span class="label">今週の合計</span>
+      <span class="count" id="history-total-count">-</span>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-nav">
+  <button class="bottom-nav-item active" id="nav-main" onclick="switchView('main')">
+    <span class="bn-icon">📷</span>記録
+  </button>
+  <button class="bottom-nav-item" id="nav-history" onclick="switchView('history')">
+    <span class="bn-icon">📊</span>今週の履歴
+  </button>
 </div>
 
 <!-- 写真選択（ネイティブiOSピッカーを直接表示） -->
@@ -574,6 +621,7 @@ function renderResults(mealId) {
     </div>
     ${cards}
     <button class="re-analyze" onclick="resetMeal('${mealId}')">↩ ${m.label}をリセット</button>
+    <div class="reset-caption">今日の記録を保存</div>
   `;
   resEl.style.display = 'block';
 }
@@ -840,12 +888,62 @@ async function loadWeeklyB() {
     if (subEl) {
       const today = getTodayJST();
       const todayUploaded = (data.daily||[]).some(d => d.date === today);
-      subEl.textContent = todayUploaded
-        ? '✅ 今日のカウントを記録済み'
-        : '🔄 リセットで今日の記録が保存されます';
+      subEl.textContent = todayUploaded ? '✅ 今日のカウントを記録済み' : '';
       subEl.style.color = todayUploaded ? '#10B981' : '';
     }
   } catch(e) { /* silent */ }
+}
+
+// ═══════════════════════════════════════════
+//  画面切り替え（記録 / 今週の履歴）
+// ═══════════════════════════════════════════
+function switchView(view) {
+  document.getElementById('view-main').style.display    = (view === 'main') ? '' : 'none';
+  document.getElementById('view-history').style.display = (view === 'history') ? '' : 'none';
+  document.getElementById('nav-main').classList.toggle('active', view === 'main');
+  document.getElementById('nav-history').classList.toggle('active', view === 'history');
+  if (view === 'history') loadHistory();
+}
+
+const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
+
+async function loadHistory() {
+  const rangeEl = document.getElementById('history-range');
+  const listEl  = document.getElementById('history-list');
+  const totalEl = document.getElementById('history-total');
+  const totalCountEl = document.getElementById('history-total-count');
+  rangeEl.textContent = '読み込み中…';
+  listEl.innerHTML = '';
+  totalEl.style.display = 'none';
+  try {
+    const res  = await fetch(`/api/weekly-b?user_id=${encodeURIComponent(USER_ID)}`);
+    const data = await res.json();
+    const fmtDate = (s) => {
+      const d = new Date(s + 'T00:00:00');
+      return `${d.getMonth()+1}/${d.getDate()}`;
+    };
+    const dow = (s) => {
+      const d = new Date(s + 'T00:00:00');
+      return WEEKDAY_JA[d.getDay()];
+    };
+    rangeEl.textContent = `${fmtDate(data.week_start)} 〜 ${fmtDate(data.week_end)}`;
+
+    const daily = (data.daily || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+    if (daily.length === 0) {
+      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>下の「リセット」ボタンで1日の記録を保存すると、ここに表示されます。</div>';
+      return;
+    }
+    listEl.innerHTML = daily.map(d => `
+      <div class="history-row">
+        <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
+        <div><span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span></div>
+      </div>
+    `).join('');
+    totalCountEl.textContent = `${fmtCount(data.week_total)} カウント`;
+    totalEl.style.display = 'flex';
+  } catch(e) {
+    rangeEl.textContent = '読み込みに失敗しました';
+  }
 }
 
 // ═══════════════════════════════════════════
