@@ -6,7 +6,6 @@
   <title>ABダイエット Bカウンター</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="shortcut icon" href="/static/favicon.png">
-  <!-- PWA -->
   <link rel="manifest" href="/static/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,7 +15,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --primary: #FF6B35; --primary-dark: #FF4500; --pink: #FF6B9D;
+      --primary: #FF6B35; --primary-dark: #FF4500;
       --bg: #F7F4EF; --surface: #FFFFFF; --text: #1A1A2E;
       --text-muted: #6B7280; --border: #E5E7EB;
       --b-color: #FF6B35; --a-color: #2EC4B6;
@@ -25,55 +24,60 @@
     body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 76px; }
 
     /* ── ヘッダー ── */
-    header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px 12px; text-align: center; }
-    .header-top { display:flex; align-items:center; justify-content:center; position:relative; }
-    header h1 { font-size: 17px; font-weight: 800; white-space: nowrap; }
-    .header-reset-btn { position:absolute; right:0; background:rgba(255,255,255,0.2); border:none; color:white; font-size:18px; width:36px; height:36px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .header-reset-btn:active { background:rgba(255,255,255,0.35); }
-    .header-users { font-size: 13px; font-weight: 600; opacity:0.9; margin-top:4px; }
-    .daily-total-bar { margin-top:8px; background:rgba(255,255,255,0.18); border-radius:12px; padding:8px 16px; display:inline-flex; align-items:baseline; gap:6px; }
-    .daily-total-label { font-size:13px; font-weight:700; opacity:0.9; }
-    .daily-total-num { font-size:32px; font-weight:900; line-height:1; }
-    .daily-total-unit { font-size:14px; font-weight:700; opacity:0.9; }
+    header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px 0; text-align: center; }
+    .header-title { font-size: 16px; font-weight: 800; white-space: nowrap; padding-bottom: 8px; }
 
-    /* ── bottom nav ── */
-    .bottom-nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--surface); box-shadow:0 -2px 16px rgba(0,0,0,0.08); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
-    .bottom-nav-item { flex:1; padding:10px 0 8px; border:none; background:none; font-size:13px; font-weight:700; color:var(--text-muted); cursor:pointer; line-height:1.5; transition:color 0.15s; }
-    .bottom-nav-item .bn-icon { font-size:20px; display:block; margin-bottom:2px; }
-    .bottom-nav-item.active { color:var(--primary); }
+    /* ── Bカウント合計バー ── */
+    .daily-total-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.18); border-radius: 14px 14px 0 0; padding: 10px 20px; margin-top: 2px; }
+    .daily-total-left { display: flex; align-items: center; gap: 8px; }
+    .daily-total-icon { font-size: 20px; }
+    .daily-total-label { font-size: 15px; font-weight: 700; }
+    .daily-total-right { display: flex; align-items: baseline; gap: 4px; }
+    .daily-total-num { font-size: 40px; font-weight: 900; line-height: 1; }
+    .daily-total-unit { font-size: 15px; font-weight: 700; }
+
+    /* ── タブバー ── */
+    .tab-bar { display: flex; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 100; }
+    .tab-btn { flex: 1; padding: 8px 2px 6px; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; border-bottom: 3px solid transparent; transition: border-color 0.15s, color 0.15s; color: var(--text-muted); }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-emoji { font-size: 18px; line-height: 1; }
+    .tab-label { font-size: 11px; font-weight: 700; }
+    .tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); display: none; }
+    .tab-dot.visible { display: block; }
+    .tab-btn-reset { color: var(--primary); }
+    .tab-reset-icon { font-size: 20px; line-height: 1; font-weight: 900; }
 
     /* ── warmup ── */
     #warmup-banner { display:none; margin:12px 16px 0; background:#FFF8E7; border:1px solid #FCD34D; border-radius:10px; padding:12px 16px; font-size:12px; color:#92400E; align-items:center; gap:10px; }
     .ws { width:16px; height:16px; border:2px solid #FCD34D; border-top-color:#D97706; border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0; }
 
-    /* ── 2×2 食事グリッド ── */
-    .meal-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px 12px 4px; }
-    .mc { background:var(--surface); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; }
-    .mc-header { display:flex; align-items:center; gap:6px; padding:9px 10px 8px; border-bottom:1px solid var(--border); }
-    .mc-emoji { font-size:18px; flex-shrink:0; }
-    .mc-name { font-size:14px; font-weight:800; flex:1; }
-    .mc-b { font-size:13px; font-weight:800; color:var(--b-color); white-space:nowrap; }
-    .mc-add { width:28px; height:28px; border-radius:50%; border:none; background:var(--primary); color:white; font-size:18px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; line-height:1; }
-    .mc-add:active { opacity:0.75; }
-    .mc-strip { display:flex; gap:6px; padding:7px 8px; flex-wrap:wrap; min-height:52px; align-content:flex-start; }
-    .mc-empty { font-size:11px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; width:100%; }
+    /* ── 食事パネル ── */
+    .meal-panel { display: none; }
+    .meal-panel.active { display: block; }
+    .container { padding: 12px 16px 48px; }
 
-    /* ── サムネイル ── */
-    .meal-thumb { position:relative; width:64px; height:64px; flex-shrink:0; border-radius:10px; overflow:hidden; background:var(--bg); border:2px solid var(--border); }
+    /* ── 写真ストリップ ── */
+    .meal-strip { display:flex; gap:10px; padding:4px 0 4px; flex-wrap:wrap; }
+    .meal-thumb { position:relative; width:88px; height:88px; flex-shrink:0; border-radius:12px; overflow:hidden; background:var(--bg); border:2px solid var(--border); }
     .meal-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-    .meal-thumb .th-remove { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,0.6); color:white; border:none; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .meal-thumb .th-badge { position:absolute; bottom:2px; left:2px; right:2px; background:rgba(255,107,53,0.88); color:white; font-size:9px; font-weight:800; border-radius:4px; padding:1px 3px; text-align:center; }
+    .meal-thumb .th-remove { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,0.6); color:white; border:none; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .meal-thumb .th-badge { position:absolute; bottom:4px; left:4px; right:4px; background:rgba(255,107,53,0.88); color:white; font-size:10px; font-weight:800; border-radius:6px; padding:2px 4px; text-align:center; }
     .meal-thumb .th-spinner { position:absolute; inset:0; background:rgba(255,255,255,0.75); display:flex; align-items:center; justify-content:center; }
-    .th-spin { width:20px; height:20px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
+    .th-spin { width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
-    /* ── エラー（グリッド内） ── */
-    .meal-error { display:none; margin:4px 8px 6px; background:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:8px 10px; font-size:12px; color:#DC2626; }
+    /* ── 写真追加エリア ── */
+    .meal-add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:20px; cursor:pointer; border:2px dashed var(--border); border-radius:12px; margin:10px 0 4px; transition:border-color 0.2s, background 0.2s; position:relative; }
+    .meal-add:hover { border-color:var(--primary); background:#FFF5F0; }
+    .meal-add-icon { font-size:26px; }
+    .meal-add h3 { font-size:17px; font-weight:700; }
+    .meal-add p  { font-size:14px; color:var(--text-muted); }
 
-    /* ── 詳細結果エリア（グリッド下） ── */
-    .results-area { padding:4px 12px 8px; }
-    .meal-result { display:none; padding-bottom:4px; }
+    /* ── エラー ── */
+    .meal-error { display:none; margin:0 0 12px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:14px; color:#DC2626; }
 
+    /* ── 結果 ── */
+    .meal-result { display:none; }
     .meal-b-count { background:#FFF5F0; border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .meal-b-count .label { font-size:15px; font-weight:700; color:var(--text-muted); }
     .meal-b-count .count { font-size:42px; font-weight:900; color:var(--primary); line-height:1; }
@@ -116,7 +120,7 @@
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
 
-    /* ── リセット確認オーバーレイ ── */
+    /* ── リセット確認ダイアログ ── */
     #reset-overlay { display:none; position:fixed; inset:0; z-index:400; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; padding:24px; }
     #reset-overlay.show { display:flex; }
     .reset-dialog { background:white; border-radius:20px; padding:28px 24px; width:100%; max-width:320px; text-align:center; }
@@ -151,17 +155,46 @@
 <body>
 
 <header>
-  <div class="header-top">
-    <h1>ABダイエット Bカウンター</h1>
-    <button class="header-reset-btn" onclick="confirmReset()" title="1日をリセット">🗑</button>
-  </div>
-  <div class="header-users" id="header-users">今日の利用者 - 名</div>
+  <div class="header-title" id="header-users">ABダイエットアプリ</div>
   <div class="daily-total-bar">
-    <span class="daily-total-label">今日のBカウント合計</span>
-    <span class="daily-total-num" id="daily-total-count">0</span>
-    <span class="daily-total-unit">カウント</span>
+    <div class="daily-total-left">
+      <span class="daily-total-icon">🍽️</span>
+      <span class="daily-total-label">今日のBカウント合計</span>
+    </div>
+    <div class="daily-total-right">
+      <span class="daily-total-num" id="daily-total-count">0</span>
+      <span class="daily-total-unit">カウント</span>
+    </div>
   </div>
 </header>
+
+<!-- タブバー -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-breakfast" onclick="switchMeal('breakfast')">
+    <span class="tab-emoji">🌅</span>
+    <span class="tab-label">朝食</span>
+    <span class="tab-dot" id="dot-breakfast"></span>
+  </button>
+  <button class="tab-btn" id="tab-lunch" onclick="switchMeal('lunch')">
+    <span class="tab-emoji">☀️</span>
+    <span class="tab-label">昼食</span>
+    <span class="tab-dot" id="dot-lunch"></span>
+  </button>
+  <button class="tab-btn" id="tab-dinner" onclick="switchMeal('dinner')">
+    <span class="tab-emoji">🌙</span>
+    <span class="tab-label">夕食</span>
+    <span class="tab-dot" id="dot-dinner"></span>
+  </button>
+  <button class="tab-btn" id="tab-snack" onclick="switchMeal('snack')">
+    <span class="tab-emoji">🍪</span>
+    <span class="tab-label">間食</span>
+    <span class="tab-dot" id="dot-snack"></span>
+  </button>
+  <button class="tab-btn tab-btn-reset" onclick="confirmReset()">
+    <span class="tab-reset-icon">↺</span>
+    <span class="tab-label">リセット</span>
+  </button>
+</div>
 
 <div id="warmup-banner">
   <div class="ws"></div>
@@ -169,20 +202,10 @@
 </div>
 
 <div id="view-main">
-  <!-- 2×2 compact grid -->
-  <div class="meal-grid">
-    <div id="panel-breakfast"></div>
-    <div id="panel-lunch"></div>
-    <div id="panel-dinner"></div>
-    <div id="panel-snack"></div>
-  </div>
-  <!-- detailed results below grid -->
-  <div class="results-area">
-    <div class="meal-result" id="res-breakfast"></div>
-    <div class="meal-result" id="res-lunch"></div>
-    <div class="meal-result" id="res-dinner"></div>
-    <div class="meal-result" id="res-snack"></div>
-  </div>
+  <div id="panel-breakfast" class="meal-panel active"></div>
+  <div id="panel-lunch"     class="meal-panel"></div>
+  <div id="panel-dinner"    class="meal-panel"></div>
+  <div id="panel-snack"     class="meal-panel"></div>
 </div>
 
 <div id="view-history" style="display:none">
@@ -197,12 +220,12 @@
   </div>
 </div>
 
-<div class="bottom-nav">
-  <button class="bottom-nav-item active" id="nav-main" onclick="switchView('main')">
-    <span class="bn-icon">📷</span>記録
+<div class="bottom-nav" style="position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;box-shadow:0 -2px 16px rgba(0,0,0,0.08);z-index:150;padding-bottom:env(safe-area-inset-bottom,0)">
+  <button style="flex:1;padding:10px 0 8px;border:none;background:none;font-size:13px;font-weight:700;color:var(--primary);cursor:pointer;line-height:1.5" id="nav-main" onclick="switchView('main')">
+    <span style="font-size:20px;display:block;margin-bottom:2px">📷</span>記録
   </button>
-  <button class="bottom-nav-item" id="nav-history" onclick="switchView('history')">
-    <span class="bn-icon">📊</span>今週の履歴
+  <button style="flex:1;padding:10px 0 8px;border:none;background:none;font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;line-height:1.5" id="nav-history" onclick="switchView('history')">
+    <span style="font-size:20px;display:block;margin-bottom:2px">📊</span>今週の履歴
   </button>
 </div>
 
@@ -216,7 +239,7 @@
 <!-- リセット確認ダイアログ -->
 <div id="reset-overlay" onclick="cancelReset()">
   <div class="reset-dialog" onclick="event.stopPropagation()">
-    <h3>🗑 1日をリセット</h3>
+    <h3>↺ 1日をリセット</h3>
     <p>今日の記録をすべて削除します。<br>削除前にBカウントを履歴に保存します。</p>
     <div class="reset-dialog-btns">
       <button class="btn-cancel" onclick="cancelReset()">キャンセル</button>
@@ -269,10 +292,9 @@ async function loadStats() {
     applyStats(d);
   } catch(e) {}
 }
-
 function applyStats(d) {
   const el = document.getElementById('header-users');
-  if (el) el.textContent = `今日の利用者 ${d.today_users}名`;
+  if (el) el.textContent = `ABダイエットアプリ（今日の利用者${d.today_users}名）`;
 }
 
 // ═══════════════════════════════════════════
@@ -284,11 +306,11 @@ const MEALS = [
   { id:'dinner',    label:'夕食', emoji:'🌙' },
   { id:'snack',     label:'間食', emoji:'🍪' },
 ];
-
 const state = {};
 MEALS.forEach(m => { state[m.id] = { items:[] }; });
 let itemIdSeq = 0;
 const STORAGE_KEY = 'ab-diet-state-v3';
+let activeMeal = 'breakfast';
 
 // ═══════════════════════════════════════════
 //  LocalStorage
@@ -325,21 +347,41 @@ function loadSavedState() {
 }
 
 // ═══════════════════════════════════════════
-//  Build compact meal cards
+//  タブ切り替え
+// ═══════════════════════════════════════════
+function switchMeal(mealId) {
+  activeMeal = mealId;
+  MEALS.forEach(m => {
+    document.getElementById(`tab-${m.id}`).classList.toggle('active', m.id === mealId);
+    document.getElementById(`panel-${m.id}`).classList.toggle('active', m.id === mealId);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  Build panels
 // ═══════════════════════════════════════════
 function buildPanel(m) {
   const panel = document.getElementById(`panel-${m.id}`);
-  panel.className = 'mc';
   panel.innerHTML = `
-    <div class="mc-header">
-      <span class="mc-emoji">${m.emoji}</span>
-      <span class="mc-name">${m.label}</span>
-      <span class="mc-b" id="mc-count-${m.id}">B 0</span>
-      <button class="mc-add" onclick="openFileInput('${m.id}')">＋</button>
+    <div class="container">
+      <div id="strip-${m.id}" class="meal-strip"></div>
+      <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
+        <div class="meal-add-icon">${m.emoji}</div>
+        <h3>${m.label}の写真を追加</h3>
+        <p>タップして写真を選ぶ</p>
+      </div>
+      <div class="meal-error" id="err-${m.id}"></div>
+      <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
     </div>
-    <div id="strip-${m.id}" class="mc-strip"></div>
-    <div class="meal-error" id="err-${m.id}"></div>
   `;
+  const addEl = document.getElementById(`add-${m.id}`);
+  addEl.addEventListener('dragover',  e => { e.preventDefault(); addEl.style.borderColor = 'var(--primary)'; });
+  addEl.addEventListener('dragleave', () => { addEl.style.borderColor = ''; });
+  addEl.addEventListener('drop', e => {
+    e.preventDefault(); addEl.style.borderColor = '';
+    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
+    if (files.length) addFiles(m.id, files);
+  });
   if (state[m.id].items.length) {
     renderStrip(m.id);
     renderResults(m.id);
@@ -353,10 +395,9 @@ function updateDailyTotal() {
   let total = 0;
   MEALS.forEach(m => {
     const done = state[m.id].items.filter(i => i.result);
-    const mealB = done.reduce((s, i) => s + i.result.total_b_count, 0);
-    total += mealB;
-    const el = document.getElementById(`mc-count-${m.id}`);
-    if (el) el.textContent = done.length ? `B ${fmtCount(mealB)}` : 'B 0';
+    total += done.reduce((s, i) => s + i.result.total_b_count, 0);
+    const dot = document.getElementById(`dot-${m.id}`);
+    if (dot) dot.classList.toggle('visible', done.length > 0);
   });
   const el = document.getElementById('daily-total-count');
   if (el) el.textContent = fmtCount(total);
@@ -420,17 +461,13 @@ function removeItem(mealId, itemId) {
 function renderStrip(mealId) {
   const strip = document.getElementById(`strip-${mealId}`);
   if (!strip) return;
-  if (!state[mealId].items.length) {
-    strip.innerHTML = '<span class="mc-empty">写真なし</span>';
-    return;
-  }
   strip.innerHTML = state[mealId].items.map(item => {
     const cnt = item.result ? fmtCount(item.result.total_b_count) : null;
     return `
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">📷</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">📷</div>`}
         ${item.loading ? `<div class="th-spinner"><div class="th-spin"></div></div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
         ${cnt !== null ? `<div class="th-badge">B ${cnt}</div>` : ''}
@@ -477,7 +514,7 @@ function renderResults(mealId) {
     </div>`).join('');
 
   resEl.innerHTML = `
-    <div class="meal-b-count" style="margin-bottom:12px">
+    <div class="meal-b-count">
       <div>
         <div class="label">${m.label}の Bカウント</div>
         ${multiLabel ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${multiLabel}</div>` : ''}
@@ -507,10 +544,8 @@ function resetMeal(mealId) {
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item || !item.file) return;
-
   item.loading = true;
   renderStrip(mealId);
-
   const formData = new FormData();
   formData.append('image', item.file);
   formData.append('user_id', USER_ID);
@@ -518,12 +553,8 @@ async function analyzeItem(mealId, itemId) {
     const res  = await fetch('/analyze', { method:'POST', body:formData });
     const data = await res.json();
     item.loading = false;
-    if (data.error) {
-      item.error = data.error;
-      showError(mealId, data.error);
-    } else {
-      item.result = data;
-    }
+    if (data.error) { item.error = data.error; showError(mealId, data.error); }
+    else { item.result = data; }
   } catch(e) {
     item.loading = false;
     showError(mealId, '通信エラーが発生しました。再度お試しください。');
@@ -538,9 +569,7 @@ function toggleRecalcForm(mealId, itemId) {
   const form = document.getElementById(`recalc-form-${mealId}-${itemId}`);
   if (!form) return;
   form.classList.toggle('open');
-  if (form.classList.contains('open')) {
-    document.getElementById(`recalc-text-${mealId}-${itemId}`)?.focus();
-  }
+  if (form.classList.contains('open')) document.getElementById(`recalc-text-${mealId}-${itemId}`)?.focus();
 }
 
 function dataURLtoBlob(dataUrl) {
@@ -556,34 +585,24 @@ function dataURLtoBlob(dataUrl) {
 async function reanalyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
-
   const textarea = document.getElementById(`recalc-text-${mealId}-${itemId}`);
   const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
-
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 再計算中…'; }
-
   const blob = dataURLtoBlob(item.previewSrc);
   const formData = new FormData();
   formData.append('image', blob, 'image.jpg');
   formData.append('correction', correction);
   formData.append('user_id', USER_ID);
-
   try {
     const res = await fetch('/reanalyze', { method: 'POST', body: formData });
     const data = await res.json();
-    if (data.error) {
-      showError(mealId, data.error);
-    } else {
-      item.result = data;
-      renderResults(mealId);
-      saveState();
-    }
+    if (data.error) { showError(mealId, data.error); }
+    else { item.result = data; renderResults(mealId); saveState(); }
   } catch(e) {
     showError(mealId, '通信エラーが発生しました。再度お試しください。');
   }
-
   if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
 }
 
@@ -600,7 +619,6 @@ function showError(mealId, msg) {
 function buildFoodRows(foods) {
   return (foods||[]).map(food => {
     const isB = food.category === 'B' || food.category === 'Good B' || food.category === 'グッドB';
-    const hasCount = isB;
     const badgeClass = isB ? 'badge-b' : 'badge-a';
     const badgeLabel = isB ? 'B食材' : 'A食材';
     const unitLabel  = isB ? 'Bカウント' : 'A食材';
@@ -615,7 +633,7 @@ function buildFoodRows(foods) {
           <div class="food-meta">${esc(food.reason)}</div>
         </div>
         <div class="food-cnt">
-          <div class="n ${!hasCount?'zero':''}">${hasCount ? fmtCount(food.b_count) : '−'}</div>
+          <div class="n ${!isB?'zero':''}">${isB ? fmtCount(food.b_count) : '−'}</div>
           <div class="u">${unitLabel}</div>
         </div>
       </div>`;
@@ -674,9 +692,6 @@ function createThumbnail(file) {
   });
 }
 
-// ═══════════════════════════════════════════
-//  今日のBカウント合計 → サーバー送信
-// ═══════════════════════════════════════════
 function getTodayJST() {
   return new Date().toLocaleDateString('ja-JP', {
     timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -692,17 +707,18 @@ async function submitDailyB(bCount, date) {
     });
     localStorage.setItem('weeklyUploadDate',  date);
     localStorage.setItem('weeklyUploadCount', bCount);
-  } catch(e) { /* silent */ }
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════════════
-//  画面切り替え
+//  画面切り替え（記録 / 今週の履歴）
 // ═══════════════════════════════════════════
 function switchView(view) {
   document.getElementById('view-main').style.display    = (view === 'main') ? '' : 'none';
   document.getElementById('view-history').style.display = (view === 'history') ? '' : 'none';
-  document.getElementById('nav-main').classList.toggle('active', view === 'main');
-  document.getElementById('nav-history').classList.toggle('active', view === 'history');
+  document.getElementById('tab-bar') // タブバーは常に表示
+  document.getElementById('nav-main').style.color    = (view === 'main')    ? 'var(--primary)' : 'var(--text-muted)';
+  document.getElementById('nav-history').style.color = (view === 'history') ? 'var(--primary)' : 'var(--text-muted)';
   if (view === 'history') loadHistory();
 }
 
@@ -719,27 +735,19 @@ async function loadHistory() {
   try {
     const res  = await fetch(`/api/weekly-b?user_id=${encodeURIComponent(USER_ID)}`);
     const data = await res.json();
-    const fmtDate = (s) => {
-      const d = new Date(s + 'T00:00:00');
-      return `${d.getMonth()+1}/${d.getDate()}`;
-    };
-    const dow = (s) => {
-      const d = new Date(s + 'T00:00:00');
-      return WEEKDAY_JA[d.getDay()];
-    };
+    const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
+    const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
     rangeEl.textContent = `${fmtDate(data.week_start)} 〜 ${fmtDate(data.week_end)}`;
-
-    const daily = (data.daily || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+    const daily = (data.daily||[]).slice().sort((a,b) => a.date.localeCompare(b.date));
     if (daily.length === 0) {
-      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>ヘッダーの「🗑」ボタンで1日の記録を保存すると、ここに表示されます。</div>';
+      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>「↺ リセット」タブで1日の記録を保存すると、ここに表示されます。</div>';
       return;
     }
     listEl.innerHTML = daily.map(d => `
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
         <div><span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span></div>
-      </div>
-    `).join('');
+      </div>`).join('');
     const avg = data.days_count > 0 ? data.week_total / data.days_count : 0;
     totalCountEl.textContent = `${fmtCount(avg)} カウント / 日`;
     totalEl.style.display = 'flex';
