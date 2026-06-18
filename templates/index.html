@@ -6,7 +6,7 @@
   <title>ABダイエット Bカウンター</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="shortcut icon" href="/static/favicon.png">
-  <!-- PWA: ホーム画面に追加 -->
+  <!-- PWA -->
   <link rel="manifest" href="/static/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -24,65 +24,56 @@
     }
     body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 76px; }
 
-    /* bottom nav */
+    /* ── ヘッダー ── */
+    header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px 12px; text-align: center; }
+    .header-top { display:flex; align-items:center; justify-content:center; position:relative; }
+    header h1 { font-size: 17px; font-weight: 800; white-space: nowrap; }
+    .header-reset-btn { position:absolute; right:0; background:rgba(255,255,255,0.2); border:none; color:white; font-size:18px; width:36px; height:36px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .header-reset-btn:active { background:rgba(255,255,255,0.35); }
+    .header-users { font-size: 13px; font-weight: 600; opacity:0.9; margin-top:4px; }
+    .daily-total-bar { margin-top:8px; background:rgba(255,255,255,0.18); border-radius:12px; padding:8px 16px; display:inline-flex; align-items:baseline; gap:6px; }
+    .daily-total-label { font-size:13px; font-weight:700; opacity:0.9; }
+    .daily-total-num { font-size:32px; font-weight:900; line-height:1; }
+    .daily-total-unit { font-size:14px; font-weight:700; opacity:0.9; }
+
+    /* ── bottom nav ── */
     .bottom-nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--surface); box-shadow:0 -2px 16px rgba(0,0,0,0.08); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
     .bottom-nav-item { flex:1; padding:10px 0 8px; border:none; background:none; font-size:13px; font-weight:700; color:var(--text-muted); cursor:pointer; line-height:1.5; transition:color 0.15s; }
     .bottom-nav-item .bn-icon { font-size:20px; display:block; margin-bottom:2px; }
     .bottom-nav-item.active { color:var(--primary); }
 
-    /* history view */
-    .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; }
-    .history-card h2 { font-size:17px; font-weight:800; margin-bottom:4px; }
-    .history-card .history-range { font-size:13px; color:var(--text-muted); margin-bottom:14px; }
-    .history-row { display:flex; align-items:center; justify-content:space-between; padding:14px 4px; border-bottom:1px solid var(--border); }
-    .history-row:last-child { border-bottom:none; }
-    .history-date { font-size:16px; font-weight:700; }
-    .history-date .dow { font-size:13px; color:var(--text-muted); font-weight:600; margin-left:4px; }
-    .history-count { font-size:24px; font-weight:900; color:#6366F1; }
-    .history-unit { font-size:12px; font-weight:600; color:#6366F1; opacity:0.8; }
-    .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:14px; line-height:1.8; }
-    .history-total { display:flex; align-items:center; justify-content:space-between; background:#F5F3FF; border-radius:12px; padding:14px 16px; margin-top:14px; }
-    .history-total .label { font-size:14px; font-weight:700; color:#5B21B6; }
-    .history-total .count { font-size:28px; font-weight:900; color:#6366F1; }
-    header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px; text-align: center; }
-    header h1 { font-size: 17px; font-weight: 800; white-space: nowrap; }
-    .header-users { font-size: 17px; font-weight: 800; }
-    header p  { margin-top: 2px; font-size: 11px; opacity: 0.85; }
-
-    /* warmup */
+    /* ── warmup ── */
     #warmup-banner { display:none; margin:12px 16px 0; background:#FFF8E7; border:1px solid #FCD34D; border-radius:10px; padding:12px 16px; font-size:12px; color:#92400E; align-items:center; gap:10px; }
     .ws { width:16px; height:16px; border:2px solid #FCD34D; border-top-color:#D97706; border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0; }
 
-    /* panels */
-    .container { padding:0 16px 48px; }
-    .tab-panel { display:block; background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
+    /* ── 2×2 食事グリッド ── */
+    .meal-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px 12px 4px; }
+    .mc { background:var(--surface); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; }
+    .mc-header { display:flex; align-items:center; gap:6px; padding:9px 10px 8px; border-bottom:1px solid var(--border); }
+    .mc-emoji { font-size:18px; flex-shrink:0; }
+    .mc-name { font-size:14px; font-weight:800; flex:1; }
+    .mc-b { font-size:13px; font-weight:800; color:var(--b-color); white-space:nowrap; }
+    .mc-add { width:28px; height:28px; border-radius:50%; border:none; background:var(--primary); color:white; font-size:18px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; line-height:1; }
+    .mc-add:active { opacity:0.75; }
+    .mc-strip { display:flex; gap:6px; padding:7px 8px; flex-wrap:wrap; min-height:52px; align-content:flex-start; }
+    .mc-empty { font-size:11px; color:var(--text-muted); display:flex; align-items:center; justify-content:center; width:100%; }
 
-    /* photo strip */
-    .meal-strip { display:flex; gap:10px; padding:14px 16px 4px; flex-wrap:wrap; }
-    .meal-thumb { position:relative; width:88px; height:88px; flex-shrink:0; border-radius:12px; overflow:hidden; background:var(--bg); border:2px solid var(--border); }
+    /* ── サムネイル ── */
+    .meal-thumb { position:relative; width:64px; height:64px; flex-shrink:0; border-radius:10px; overflow:hidden; background:var(--bg); border:2px solid var(--border); }
     .meal-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-    .meal-thumb .th-remove { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,0.6); color:white; border:none; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .meal-thumb .th-badge { position:absolute; bottom:4px; left:4px; right:4px; background:rgba(255,107,53,0.88); color:white; font-size:10px; font-weight:800; border-radius:6px; padding:2px 4px; text-align:center; }
-    .meal-thumb .th-badge.good { background:rgba(217,119,6,0.88); }
+    .meal-thumb .th-remove { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,0.6); color:white; border:none; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .meal-thumb .th-badge { position:absolute; bottom:2px; left:2px; right:2px; background:rgba(255,107,53,0.88); color:white; font-size:9px; font-weight:800; border-radius:4px; padding:1px 3px; text-align:center; }
     .meal-thumb .th-spinner { position:absolute; inset:0; background:rgba(255,255,255,0.75); display:flex; align-items:center; justify-content:center; }
-    .th-spin { width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
-
-    /* add-photo area */
-    .meal-add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:20px; cursor:pointer; border:2px dashed var(--border); border-radius:12px; margin:10px 16px 4px; transition:border-color 0.2s, background 0.2s; position:relative; }
-    .meal-add:hover { border-color:var(--primary); background:#FFF5F0; }
-    .meal-add input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
-    .meal-add-icon { font-size:26px; }
-    .meal-add h3 { font-size:17px; font-weight:700; }
-    .meal-add p  { font-size:14px; color:var(--text-muted); }
-
-    /* loading */
-    .meal-loading { display:none; text-align:center; padding:24px 16px; }
-    .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 12px; }
+    .th-spin { width:20px; height:20px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
-    .meal-loading p { color:var(--text-muted); font-size:13px; }
 
-    /* result */
-    .meal-result { display:none; padding:0 16px 16px; }
+    /* ── エラー（グリッド内） ── */
+    .meal-error { display:none; margin:4px 8px 6px; background:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:8px 10px; font-size:12px; color:#DC2626; }
+
+    /* ── 詳細結果エリア（グリッド下） ── */
+    .results-area { padding:4px 12px 8px; }
+    .meal-result { display:none; padding-bottom:4px; }
+
     .meal-b-count { background:#FFF5F0; border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .meal-b-count .label { font-size:15px; font-weight:700; color:var(--text-muted); }
     .meal-b-count .count { font-size:42px; font-weight:900; color:var(--primary); line-height:1; }
@@ -98,23 +89,20 @@
     .food-name { font-size:16px; font-weight:600; margin-bottom:4px; }
     .food-meta { font-size:13px; color:var(--text-muted); line-height:1.5; }
     .food-badge { display:inline-flex; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:700; margin-right:3px; }
-    .badge-b      { background:#FFF0EB; color:var(--b-color); }
-    .badge-a      { background:#E8F9F8; color:var(--a-color); }
+    .badge-b { background:#FFF0EB; color:var(--b-color); }
+    .badge-a { background:#E8F9F8; color:var(--a-color); }
     .food-cnt { text-align:right; }
     .food-cnt .n { font-size:22px; font-weight:800; color:var(--b-color); line-height:1; }
     .food-cnt .n.zero { color:var(--a-color); }
     .food-cnt .u { font-size:12px; color:var(--text-muted); }
 
-    /* multi-result cards */
     .item-result-card { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:12px; }
     .item-result-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border); font-size:15px; font-weight:700; }
     .item-result-header .ic-cnt { color:var(--primary); font-size:18px; font-weight:900; }
 
     .re-analyze { width:100%; margin-top:10px; padding:12px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
-    .reset-caption { text-align:center; font-size:12px; color:var(--text-muted); margin-top:6px; }
 
-    /* 計算し直す */
     .recalc-btn { width:100%; margin-top:8px; padding:11px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
     .recalc-btn:hover { border-color:#6366F1; color:#6366F1; }
     .recalc-form { display:none; margin-top:8px; padding:12px; background:#F5F3FF; border:1.5px solid #C4B5FD; border-radius:12px; }
@@ -125,16 +113,35 @@
     .btn-recalc { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:15px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
 
-    /* error */
-    .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:14px; color:#DC2626; }
-
-
-
-    /* result card delete button */
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
 
-    /* lightbox */
+    /* ── リセット確認オーバーレイ ── */
+    #reset-overlay { display:none; position:fixed; inset:0; z-index:400; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; padding:24px; }
+    #reset-overlay.show { display:flex; }
+    .reset-dialog { background:white; border-radius:20px; padding:28px 24px; width:100%; max-width:320px; text-align:center; }
+    .reset-dialog h3 { font-size:18px; font-weight:800; margin-bottom:8px; }
+    .reset-dialog p { font-size:14px; color:var(--text-muted); margin-bottom:22px; line-height:1.6; }
+    .reset-dialog-btns { display:flex; gap:10px; }
+    .btn-cancel { flex:1; padding:13px; border-radius:12px; border:1.5px solid var(--border); background:none; font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
+    .btn-reset-ok { flex:1; padding:13px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:15px; font-weight:800; cursor:pointer; }
+
+    /* ── 履歴 ── */
+    .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; }
+    .history-card h2 { font-size:17px; font-weight:800; margin-bottom:4px; }
+    .history-card .history-range { font-size:13px; color:var(--text-muted); margin-bottom:14px; }
+    .history-row { display:flex; align-items:center; justify-content:space-between; padding:14px 4px; border-bottom:1px solid var(--border); }
+    .history-row:last-child { border-bottom:none; }
+    .history-date { font-size:16px; font-weight:700; }
+    .history-date .dow { font-size:13px; color:var(--text-muted); font-weight:600; margin-left:4px; }
+    .history-count { font-size:24px; font-weight:900; color:#6366F1; }
+    .history-unit { font-size:12px; font-weight:600; color:#6366F1; opacity:0.8; }
+    .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:14px; line-height:1.8; }
+    .history-total { display:flex; align-items:center; justify-content:space-between; background:#F5F3FF; border-radius:12px; padding:14px 16px; margin-top:14px; }
+    .history-total .label { font-size:14px; font-weight:700; color:#5B21B6; }
+    .history-total .count { font-size:28px; font-weight:900; color:#6366F1; }
+
+    /* ── lightbox ── */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
     #lightbox.show { display:flex; }
     #lightbox img { max-width:96vw; max-height:92vh; object-fit:contain; border-radius:8px; cursor:default; }
@@ -144,7 +151,16 @@
 <body>
 
 <header>
-  <h1>ABダイエットアプリ<span class="header-users" id="header-users"></span></h1>
+  <div class="header-top">
+    <h1>ABダイエット Bカウンター</h1>
+    <button class="header-reset-btn" onclick="confirmReset()" title="1日をリセット">🗑</button>
+  </div>
+  <div class="header-users" id="header-users">今日の利用者 - 名</div>
+  <div class="daily-total-bar">
+    <span class="daily-total-label">今日のBカウント合計</span>
+    <span class="daily-total-num" id="daily-total-count">0</span>
+    <span class="daily-total-unit">カウント</span>
+  </div>
 </header>
 
 <div id="warmup-banner">
@@ -153,15 +169,20 @@
 </div>
 
 <div id="view-main">
-
-<div class="container" style="padding-top:12px">
-  <div id="panel-breakfast" class="tab-panel active"></div>
-  <div id="panel-lunch"     class="tab-panel"       ></div>
-  <div id="panel-dinner"    class="tab-panel"       ></div>
-  <div id="panel-snack"     class="tab-panel"       ></div>
-
-</div>
-
+  <!-- 2×2 compact grid -->
+  <div class="meal-grid">
+    <div id="panel-breakfast"></div>
+    <div id="panel-lunch"></div>
+    <div id="panel-dinner"></div>
+    <div id="panel-snack"></div>
+  </div>
+  <!-- detailed results below grid -->
+  <div class="results-area">
+    <div class="meal-result" id="res-breakfast"></div>
+    <div class="meal-result" id="res-lunch"></div>
+    <div class="meal-result" id="res-dinner"></div>
+    <div class="meal-result" id="res-snack"></div>
+  </div>
 </div>
 
 <div id="view-history" style="display:none">
@@ -185,7 +206,6 @@
   </button>
 </div>
 
-<!-- 写真選択（ネイティブiOSピッカーを直接表示） -->
 <input type="file" id="input-file" accept="image/*" multiple style="display:none" onchange="onHiddenInputChange(this)">
 
 <div id="lightbox" onclick="closeLightbox()">
@@ -193,9 +213,21 @@
   <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
 </div>
 
+<!-- リセット確認ダイアログ -->
+<div id="reset-overlay" onclick="cancelReset()">
+  <div class="reset-dialog" onclick="event.stopPropagation()">
+    <h3>🗑 1日をリセット</h3>
+    <p>今日の記録をすべて削除します。<br>削除前にBカウントを履歴に保存します。</p>
+    <div class="reset-dialog-btns">
+      <button class="btn-cancel" onclick="cancelReset()">キャンセル</button>
+      <button class="btn-reset-ok" onclick="doReset()">リセットする</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════
-//  写真選択（ネイティブiOSピッカーを直接表示）
+//  写真選択
 // ═══════════════════════════════════════════
 let _photoMealId = null;
 
@@ -212,7 +244,7 @@ function onHiddenInputChange(input) {
 }
 
 // ═══════════════════════════════════════════
-//  ユーザーID（ブラウザごとに匿名UUID）
+//  ユーザーID
 // ═══════════════════════════════════════════
 function getOrCreateUserId() {
   const KEY = 'ab-diet-uid-v1';
@@ -228,7 +260,7 @@ function getOrCreateUserId() {
 const USER_ID = getOrCreateUserId();
 
 // ═══════════════════════════════════════════
-//  Stats & Ranking
+//  Stats
 // ═══════════════════════════════════════════
 async function loadStats() {
   try {
@@ -240,7 +272,7 @@ async function loadStats() {
 
 function applyStats(d) {
   const el = document.getElementById('header-users');
-  if (el) el.textContent = `（今日の利用者${d.today_users}名）`;
+  if (el) el.textContent = `今日の利用者 ${d.today_users}名`;
 }
 
 // ═══════════════════════════════════════════
@@ -292,36 +324,69 @@ function loadSavedState() {
   } catch(e) { console.warn('load failed', e); }
 }
 
-
 // ═══════════════════════════════════════════
-//  Build panels（全食事共通）
+//  Build compact meal cards
 // ═══════════════════════════════════════════
 function buildPanel(m) {
   const panel = document.getElementById(`panel-${m.id}`);
+  panel.className = 'mc';
   panel.innerHTML = `
-    <div id="strip-${m.id}" class="meal-strip"></div>
-    <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
-      <div class="meal-add-icon">${m.emoji}</div>
-      <h3>${m.label}の写真を追加</h3>
-      <p>タップして写真を選ぶ</p>
+    <div class="mc-header">
+      <span class="mc-emoji">${m.emoji}</span>
+      <span class="mc-name">${m.label}</span>
+      <span class="mc-b" id="mc-count-${m.id}">B 0</span>
+      <button class="mc-add" onclick="openFileInput('${m.id}')">＋</button>
     </div>
-    <div class="meal-error"  id="err-${m.id}"></div>
-    <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
+    <div id="strip-${m.id}" class="mc-strip"></div>
+    <div class="meal-error" id="err-${m.id}"></div>
   `;
-  // drag & drop（デスクトップ向け）
-  const addEl = document.getElementById(`add-${m.id}`);
-  addEl.addEventListener('dragover',  e => { e.preventDefault(); addEl.classList.add('drag-over'); });
-  addEl.addEventListener('dragleave', () => addEl.classList.remove('drag-over'));
-  addEl.addEventListener('drop', e => {
-    e.preventDefault(); addEl.classList.remove('drag-over');
-    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
-    if (files.length) addFiles(m.id, files);
-  });
-  // restore saved state
   if (state[m.id].items.length) {
     renderStrip(m.id);
     renderResults(m.id);
   }
+}
+
+// ═══════════════════════════════════════════
+//  今日のBカウント合計
+// ═══════════════════════════════════════════
+function updateDailyTotal() {
+  let total = 0;
+  MEALS.forEach(m => {
+    const done = state[m.id].items.filter(i => i.result);
+    const mealB = done.reduce((s, i) => s + i.result.total_b_count, 0);
+    total += mealB;
+    const el = document.getElementById(`mc-count-${m.id}`);
+    if (el) el.textContent = done.length ? `B ${fmtCount(mealB)}` : 'B 0';
+  });
+  const el = document.getElementById('daily-total-count');
+  if (el) el.textContent = fmtCount(total);
+}
+
+// ═══════════════════════════════════════════
+//  リセット
+// ═══════════════════════════════════════════
+function confirmReset() {
+  document.getElementById('reset-overlay').classList.add('show');
+}
+function cancelReset() {
+  document.getElementById('reset-overlay').classList.remove('show');
+}
+async function doReset() {
+  const total = MEALS.reduce((sum, m) => {
+    const done = state[m.id].items.filter(i => i.result);
+    return sum + done.reduce((s, i) => s + i.result.total_b_count, 0);
+  }, 0);
+  if (total > 0) await submitDailyB(total, getTodayJST());
+  MEALS.forEach(m => { state[m.id].items = []; });
+  localStorage.removeItem(STORAGE_KEY);
+  MEALS.forEach(m => {
+    renderStrip(m.id);
+    renderResults(m.id);
+    const errEl = document.getElementById(`err-${m.id}`);
+    if (errEl) errEl.style.display = 'none';
+  });
+  updateDailyTotal();
+  document.getElementById('reset-overlay').classList.remove('show');
 }
 
 // ═══════════════════════════════════════════
@@ -345,27 +410,30 @@ function removeItem(mealId, itemId) {
   state[mealId].items = state[mealId].items.filter(i => i.id !== itemId);
   renderStrip(mealId);
   renderResults(mealId);
+  updateDailyTotal();
   saveState();
 }
 
 // ═══════════════════════════════════════════
-//  Render strip（サムネイル一覧）
+//  Render strip
 // ═══════════════════════════════════════════
 function renderStrip(mealId) {
   const strip = document.getElementById(`strip-${mealId}`);
   if (!strip) return;
+  if (!state[mealId].items.length) {
+    strip.innerHTML = '<span class="mc-empty">写真なし</span>';
+    return;
+  }
   strip.innerHTML = state[mealId].items.map(item => {
     const cnt = item.result ? fmtCount(item.result.total_b_count) : null;
-    const isGoodOnly = item.result && item.result.total_b_count > 0 &&
-      item.result.foods.every(f => f.category !== 'B');
     return `
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">📷</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">📷</div>`}
         ${item.loading ? `<div class="th-spinner"><div class="th-spin"></div></div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
-        ${cnt !== null ? `<div class="th-badge${isGoodOnly?' good':''}">B ${cnt}</div>` : ''}
+        ${cnt !== null ? `<div class="th-badge">B ${cnt}</div>` : ''}
       </div>`;
   }).join('');
 }
@@ -377,7 +445,7 @@ function renderResults(mealId) {
   const resEl = document.getElementById(`res-${mealId}`);
   if (!resEl) return;
   const done = state[mealId].items.filter(i => i.result);
-  if (!done.length) { resEl.style.display='none'; resEl.innerHTML=''; return; }
+  if (!done.length) { resEl.style.display='none'; resEl.innerHTML=''; updateDailyTotal(); return; }
 
   const m = MEALS.find(x => x.id === mealId);
   const totalB = done.reduce((s,i) => s + i.result.total_b_count, 0);
@@ -423,16 +491,18 @@ function renderResults(mealId) {
     <button class="re-analyze" onclick="resetMeal('${mealId}')">↩ ${m.label}をリセット</button>
   `;
   resEl.style.display = 'block';
+  updateDailyTotal();
 }
 
 function resetMeal(mealId) {
   state[mealId].items = [];
   renderStrip(mealId);
   renderResults(mealId);
-  document.getElementById(`err-${mealId}`).style.display = 'none';
+  const errEl = document.getElementById(`err-${mealId}`);
+  if (errEl) errEl.style.display = 'none';
+  updateDailyTotal();
   saveState();
 }
-
 
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
@@ -519,20 +589,20 @@ async function reanalyzeItem(mealId, itemId) {
 
 function showError(mealId, msg) {
   const el = document.getElementById(`err-${mealId}`);
+  if (!el) return;
   el.textContent = '⚠️ ' + msg;
   el.style.display = 'block';
 }
-
 
 // ═══════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════
 function buildFoodRows(foods) {
   return (foods||[]).map(food => {
-    const isB     = food.category === 'B' || food.category === 'Good B' || food.category === 'グッドB';
+    const isB = food.category === 'B' || food.category === 'Good B' || food.category === 'グッドB';
     const hasCount = isB;
     const badgeClass = isB ? 'badge-b' : 'badge-a';
-    const badgeLabel = isB ? 'B食材'   : 'A食材';
+    const badgeLabel = isB ? 'B食材' : 'A食材';
     const unitLabel  = isB ? 'Bカウント' : 'A食材';
     return `
       <div class="food-row">
@@ -605,7 +675,7 @@ function createThumbnail(file) {
 }
 
 // ═══════════════════════════════════════════
-//  今日のBカウント合計
+//  今日のBカウント合計 → サーバー送信
 // ═══════════════════════════════════════════
 function getTodayJST() {
   return new Date().toLocaleDateString('ja-JP', {
@@ -626,7 +696,7 @@ async function submitDailyB(bCount, date) {
 }
 
 // ═══════════════════════════════════════════
-//  画面切り替え（記録 / 今週の履歴）
+//  画面切り替え
 // ═══════════════════════════════════════════
 function switchView(view) {
   document.getElementById('view-main').style.display    = (view === 'main') ? '' : 'none';
@@ -661,7 +731,7 @@ async function loadHistory() {
 
     const daily = (data.daily || []).slice().sort((a,b) => a.date.localeCompare(b.date));
     if (daily.length === 0) {
-      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>下の「リセット」ボタンで1日の記録を保存すると、ここに表示されます。</div>';
+      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>ヘッダーの「🗑」ボタンで1日の記録を保存すると、ここに表示されます。</div>';
       return;
     }
     listEl.innerHTML = daily.map(d => `
@@ -712,6 +782,7 @@ function esc(str) {
 // ═══════════════════════════════════════════
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
+updateDailyTotal();
 loadStats();
 </script>
 </body>
