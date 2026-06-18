@@ -53,18 +53,9 @@
     #warmup-banner { display:none; margin:12px 16px 0; background:#FFF8E7; border:1px solid #FCD34D; border-radius:10px; padding:12px 16px; font-size:12px; color:#92400E; align-items:center; gap:10px; }
     .ws { width:16px; height:16px; border:2px solid #FCD34D; border-top-color:#D97706; border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0; }
 
-    /* tabs */
-    .tabs { display:flex; padding:12px 16px 0; gap:6px; }
-    .tab { flex:1; padding:10px 6px; border-radius:12px 12px 0 0; border:none; background:var(--border); color:var(--text-muted); font-size:15px; font-weight:700; cursor:pointer; transition:all 0.2s; position:relative; }
-    .tab.active { background:var(--surface); color:var(--primary); box-shadow:0 -2px 8px rgba(0,0,0,0.06); }
-    .tab .tab-dot { width:6px; height:6px; border-radius:50%; display:inline-block; margin-left:4px; vertical-align:middle; display:none; }
-    .tab.has-photo .tab-dot { display:inline-block; background:#FCD34D; }
-    .tab.done      .tab-dot { display:inline-block; background:var(--a-color); }
-
     /* panels */
     .container { padding:0 16px 48px; }
-    .tab-panel { display:none; background:var(--surface); border-radius:0 0 var(--radius) var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
-    .tab-panel.active { display:block; }
+    .tab-panel { display:block; background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; }
 
     /* photo strip */
     .meal-strip { display:flex; gap:10px; padding:14px 16px 4px; flex-wrap:wrap; }
@@ -108,7 +99,6 @@
     .food-meta { font-size:13px; color:var(--text-muted); line-height:1.5; }
     .food-badge { display:inline-flex; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:700; margin-right:3px; }
     .badge-b      { background:#FFF0EB; color:var(--b-color); }
-    .badge-good-b { background:#FFF8E7; color:#D97706; }
     .badge-a      { background:#E8F9F8; color:var(--a-color); }
     .food-cnt { text-align:right; }
     .food-cnt .n { font-size:22px; font-weight:800; color:var(--b-color); line-height:1; }
@@ -138,39 +128,11 @@
     /* error */
     .meal-error { display:none; margin:0 16px 16px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:14px; color:#DC2626; }
 
-    /* daily total card */
-    .daily-total-card { background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; margin:10px 16px 0; border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 20px; display:flex; align-items:center; justify-content:space-between; }
-    .daily-total-label { font-size:16px; font-weight:700; opacity:0.9; }
-    .daily-total-count { font-size:56px; font-weight:900; line-height:1; }
-    .daily-total-unit { font-size:16px; font-weight:600; opacity:0.85; margin-left:4px; }
-
-    /* reset dialog */
-    #reset-overlay { display:none; position:fixed; inset:0; z-index:250; background:rgba(0,0,0,0.45); align-items:center; justify-content:center; }
-    #reset-overlay.show { display:flex; }
-    .reset-dialog { background:var(--surface); border-radius:18px; padding:28px 24px; max-width:340px; width:90%; text-align:center; box-shadow:0 8px 40px rgba(0,0,0,0.2); }
-    .reset-dialog h3 { font-size:19px; font-weight:800; margin-bottom:10px; }
-    .reset-dialog p { font-size:15px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
-    .reset-btns { display:flex; gap:10px; }
-    .reset-btns button { flex:1; padding:14px; border-radius:12px; font-size:16px; font-weight:700; border:none; cursor:pointer; }
-    .reset-cancel { background:var(--bg); color:var(--text-muted); }
-    .reset-confirm { background:#DC2626; color:white; }
-
-    /* tabs wrapper with reset */
-    .tabs-wrapper { display:flex; align-items:flex-end; padding:10px 16px 0; gap:6px; }
-    .tabs { display:flex; gap:6px; flex:1; }
-    .btn-full-reset { flex-shrink:0; padding:8px 10px; border-radius:12px 12px 0 0; border:1.5px solid #FECACA; border-bottom:none; background:white; color:#DC2626; font-size:13px; font-weight:700; cursor:pointer; text-align:center; line-height:1.5; white-space:nowrap; }
-    .btn-full-reset:active { background:#FEF2F2; }
 
 
     /* result card delete button */
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
-
-    /* analyze meal button */
-    .analyze-meal-wrap { padding:10px 16px 4px; }
-    .btn-analyze-meal { width:100%; padding:17px; border-radius:14px; font-size:17px; font-weight:800; border:none; cursor:pointer; background:linear-gradient(135deg, var(--primary), var(--primary-dark)); color:white; box-shadow:0 4px 16px rgba(255,107,53,0.35); transition:opacity 0.2s, transform 0.1s; }
-    .btn-analyze-meal:active   { transform:scale(0.97); }
-    .btn-analyze-meal:disabled { opacity:0.45; cursor:not-allowed; box-shadow:none; }
 
     /* lightbox */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
@@ -192,36 +154,7 @@
 
 <div id="view-main">
 
-<div class="daily-total-card">
-  <div class="daily-total-label">🍽 今日のBカウント合計</div>
-  <div style="text-align:right">
-    <span class="daily-total-count" id="daily-total-count">0</span>
-    <span class="daily-total-unit">カウント</span>
-  </div>
-</div>
-
-<div class="tabs-wrapper">
-  <div class="tabs">
-    <button class="tab active" data-meal="breakfast" onclick="switchTab('breakfast')">🌅 朝食<span class="tab-dot"></span></button>
-    <button class="tab"        data-meal="lunch"      onclick="switchTab('lunch')"     >☀️ 昼食<span class="tab-dot"></span></button>
-    <button class="tab"        data-meal="dinner"     onclick="switchTab('dinner')"    >🌙 夕食<span class="tab-dot"></span></button>
-    <button class="tab"        data-meal="snack"      onclick="switchTab('snack')"     >🍪 間食<span class="tab-dot"></span></button>
-  </div>
-  <button class="btn-full-reset" onclick="confirmFullReset()">🔄<br>リセット</button>
-</div>
-
-<div id="reset-overlay" onclick="closeFullReset()">
-  <div class="reset-dialog" onclick="event.stopPropagation()">
-    <h3>1日を記録して新しい日を始める</h3>
-    <p>今日のBカウントを今週の記録に保存して、新しい1日のカウントを始めます。</p>
-    <div class="reset-btns">
-      <button class="reset-cancel" onclick="closeFullReset()">キャンセル</button>
-      <button class="reset-confirm" onclick="doFullReset()">記録して新しい日へ</button>
-    </div>
-  </div>
-</div>
-
-<div class="container">
+<div class="container" style="padding-top:12px">
   <div id="panel-breakfast" class="tab-panel active"></div>
   <div id="panel-lunch"     class="tab-panel"       ></div>
   <div id="panel-dinner"    class="tab-panel"       ></div>
@@ -367,9 +300,6 @@ function buildPanel(m) {
   const panel = document.getElementById(`panel-${m.id}`);
   panel.innerHTML = `
     <div id="strip-${m.id}" class="meal-strip"></div>
-    <div id="analyze-wrap-${m.id}" class="analyze-meal-wrap" style="display:none">
-      <button class="btn-analyze-meal" onclick="analyzeMeal('${m.id}')">✨ 計算する</button>
-    </div>
     <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
       <div class="meal-add-icon">${m.emoji}</div>
       <h3>${m.label}の写真を追加</h3>
@@ -391,19 +321,7 @@ function buildPanel(m) {
   if (state[m.id].items.length) {
     renderStrip(m.id);
     renderResults(m.id);
-    updateTabDot(m.id);
-    updateAnalyzeBtn(m.id);
   }
-}
-
-// ═══════════════════════════════════════════
-//  Tab switching
-// ═══════════════════════════════════════════
-function switchTab(mealId) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelector(`.tab[data-meal="${mealId}"]`).classList.add('active');
-  document.getElementById(`panel-${mealId}`).classList.add('active');
 }
 
 // ═══════════════════════════════════════════
@@ -419,8 +337,7 @@ async function addFiles(mealId, files) {
     item.file = compressed;
     item.previewSrc = thumb;
     renderStrip(mealId);
-    updateTabDot(mealId);
-    updateAnalyzeBtn(mealId);
+    analyzeItem(mealId, id);
   }
 }
 
@@ -428,10 +345,7 @@ function removeItem(mealId, itemId) {
   state[mealId].items = state[mealId].items.filter(i => i.id !== itemId);
   renderStrip(mealId);
   renderResults(mealId);
-  updateTabDot(mealId);
-  updateAnalyzeBtn(mealId);
   saveState();
-  updateTotalB();
 }
 
 // ═══════════════════════════════════════════
@@ -507,7 +421,6 @@ function renderResults(mealId) {
     </div>
     ${cards}
     <button class="re-analyze" onclick="resetMeal('${mealId}')">↩ ${m.label}をリセット</button>
-    <div class="reset-caption">今日の記録を保存</div>
   `;
   resEl.style.display = 'block';
 }
@@ -516,18 +429,8 @@ function resetMeal(mealId) {
   state[mealId].items = [];
   renderStrip(mealId);
   renderResults(mealId);
-  updateTabDot(mealId);
   document.getElementById(`err-${mealId}`).style.display = 'none';
   saveState();
-  updateTotalB();
-}
-
-function updateTabDot(mealId) {
-  const tab = document.querySelector(`.tab[data-meal="${mealId}"]`);
-  const hasPending = state[mealId].items.some(i => i.file && !i.result);
-  const hasDone    = state[mealId].items.some(i => i.result);
-  tab.classList.toggle('has-photo', hasPending && !hasDone);
-  tab.classList.toggle('done', hasDone);
 }
 
 
@@ -557,10 +460,7 @@ async function analyzeItem(mealId, itemId) {
   }
   renderStrip(mealId);
   renderResults(mealId);
-  updateTabDot(mealId);
-  updateAnalyzeBtn(mealId);
   saveState();
-  updateTotalB();
   loadStats();
 }
 
@@ -608,7 +508,6 @@ async function reanalyzeItem(mealId, itemId) {
     } else {
       item.result = data;
       renderResults(mealId);
-      updateTotalB();
       saveState();
     }
   } catch(e) {
@@ -706,46 +605,12 @@ function createThumbnail(file) {
 }
 
 // ═══════════════════════════════════════════
-//  食事別「計算する」ボタン制御
-// ═══════════════════════════════════════════
-function updateAnalyzeBtn(mealId) {
-  const wrap = document.getElementById(`analyze-wrap-${mealId}`);
-  if (!wrap) return;
-  const hasPending = state[mealId].items.some(i => i.file && !i.result && !i.loading);
-  wrap.style.display = hasPending ? 'block' : 'none';
-}
-
-async function analyzeMeal(mealId) {
-  const btn = document.querySelector(`#analyze-wrap-${mealId} .btn-analyze-meal`);
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ 分析中…'; }
-  const pending = state[mealId].items.filter(i => i.file && !i.result && !i.loading);
-  await Promise.all(pending.map(i => analyzeItem(mealId, i.id)));
-  if (btn) { btn.disabled = false; btn.textContent = '✨ 計算する'; }
-  updateAnalyzeBtn(mealId);
-}
-
-// ═══════════════════════════════════════════
 //  今日のBカウント合計
 // ═══════════════════════════════════════════
 function getTodayJST() {
   return new Date().toLocaleDateString('ja-JP', {
     timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
   }).replace(/\//g, '-');
-}
-
-function allMealsDone() {
-  return MEALS.every(m => state[m.id].items.some(i => i.result));
-}
-
-function updateTotalB() {
-  let total = 0;
-  MEALS.forEach(m => {
-    state[m.id].items.filter(i => i.result).forEach(i => {
-      total += i.result.total_b_count;
-    });
-  });
-  const el = document.getElementById('daily-total-count');
-  if (el) el.textContent = fmtCount(total);
 }
 
 async function submitDailyB(bCount, date) {
@@ -814,35 +679,6 @@ async function loadHistory() {
 }
 
 // ═══════════════════════════════════════════
-//  全データリセット
-// ═══════════════════════════════════════════
-function confirmFullReset() { document.getElementById('reset-overlay').classList.add('show'); }
-function closeFullReset()   { document.getElementById('reset-overlay').classList.remove('show'); }
-async function doFullReset() {
-  closeFullReset();
-
-  // 今日のBカウントを今週の記録に保存してからリセット
-  let total = 0;
-  MEALS.forEach(m => {
-    state[m.id].items.filter(i => i.result).forEach(i => { total += i.result.total_b_count; });
-  });
-  if (total > 0) {
-    const today = getTodayJST();
-    await submitDailyB(total, today);
-  }
-
-  MEALS.forEach(m => { state[m.id] = { items: [] }; });
-  itemIdSeq = 0;
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem('weeklyUploadDate');
-  localStorage.removeItem('weeklyUploadCount');
-  MEALS.forEach(m => buildPanel(m));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('done','has-photo'));
-  switchTab('breakfast');
-  updateTotalB();
-}
-
-// ═══════════════════════════════════════════
 //  Lightbox
 // ═══════════════════════════════════════════
 function openLightbox(src) {
@@ -876,7 +712,6 @@ function esc(str) {
 // ═══════════════════════════════════════════
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
-updateTotalB();
 loadStats();
 </script>
 </body>
