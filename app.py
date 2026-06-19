@@ -20,7 +20,7 @@ app = Flask(__name__)
 # ── 画像の縮小・圧縮（AI分析の高速化）────────────────────
 # Claude Visionは画像サイズが大きいほど処理（トークン化）に時間がかかるため、
 # 分析前に長辺を最大1024pxへ縮小し、JPEGで圧縮してから送信する。
-MAX_IMAGE_DIMENSION = 1024
+MAX_IMAGE_DIMENSION = 512
 JPEG_QUALITY = 85
 
 
@@ -548,7 +548,7 @@ def analyze():
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             messages=[
                 {
@@ -623,7 +623,7 @@ def reanalyze():
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             messages=[
                 {
