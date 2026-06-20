@@ -487,8 +487,8 @@ function renderStrip(mealId) {
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">📷</div>`}
         ${item.loading ? `<div class="th-spinner">
-          <div class="th-pct">${item.loadingPct||0}%</div>
-          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${item.loadingPct||0}%"></div></div>
+          <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
+          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
         </div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
         ${cnt !== null ? `<div class="th-badge">B ${cnt}</div>` : ''}
