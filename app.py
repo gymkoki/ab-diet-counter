@@ -549,7 +549,7 @@ def analyze():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2000,
+            max_tokens=1000,
             system=[
                 {
                     "type": "text",
@@ -625,7 +625,7 @@ def reanalyze():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2000,
+            max_tokens=1000,
             system=[
                 {
                     "type": "text",

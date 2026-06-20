@@ -790,7 +790,7 @@ function esc(str) {
 // warmup
 (function() {
   const banner = document.getElementById('warmup-banner');
-  const t = setTimeout(() => { banner.style.display = 'flex'; }, 2000);
+  const t = setTimeout(() => { banner.style.display = 'flex'; }, 10000);
   function ping() {
     fetch('/api/status').then(r => r.json())
       .then(() => { clearTimeout(t); banner.style.display = 'none'; })
