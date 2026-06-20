@@ -24,6 +24,44 @@ MAX_IMAGE_DIMENSION = 512
 JPEG_QUALITY = 85
 
 
+def repair_json(text: str) -> str:
+    """トークン上限で切れたJSONを補修して返す。修復不能なら元のテキストを返す。"""
+    # コードブロック除去
+    if text.startswith("```"):
+        lines = text.split("\n")[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+
+    # 末尾の不完全な food エントリを削除し、配列・オブジェクトを閉じる
+    try:
+        # まず foods 配列の最後の完全な } を探す
+        last_close = text.rfind("},\n")
+        if last_close == -1:
+            last_close = text.rfind("}")
+        if last_close != -1:
+            text = text[:last_close + 1]
+        # 閉じられていない文字列・配列・オブジェクトを補完
+        open_brackets = text.count("[") - text.count("]")
+        open_braces   = text.count("{") - text.count("}")
+        # foods 配列を閉じ、total_b_count と advice を付加
+        if open_brackets > 0:
+            text += "]" * open_brackets
+        if open_braces > 0:
+            text += "}" * open_braces
+        # total_b_count / advice がなければ付加
+        parsed = json.loads(text)
+        if "total_b_count" not in parsed:
+            parsed["total_b_count"] = sum(
+                f.get("b_count", 0) for f in parsed.get("foods", [])
+            )
+        if "advice" not in parsed:
+            parsed["advice"] = "（分析データが多いため一部省略されました）"
+        return json.dumps(parsed, ensure_ascii=False)
+    except Exception:
+        return text
+
+
 def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
     """画像を縮小・圧縮し、(base64文字列, media_type) を返す。"""
     if Image is None:
@@ -549,7 +587,7 @@ def analyze():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1000,
+            max_tokens=2500,
             system=[
                 {
                     "type": "text",
@@ -583,11 +621,14 @@ def analyze():
                 lines = lines[:-1]
             result_text = "\n".join(lines)
 
-        result = json.loads(result_text)
+        try:
+            result = json.loads(result_text)
+        except json.JSONDecodeError:
+            result = json.loads(repair_json(result_text))
         return jsonify(result)
 
     except json.JSONDecodeError as e:
-        return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
+        return jsonify({"error": f"分析結果の解析に失敗しました。写真をもう一度撮り直してお試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
     except anthropic.APIError as e:
@@ -625,7 +666,7 @@ def reanalyze():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1000,
+            max_tokens=2500,
             system=[
                 {
                     "type": "text",
