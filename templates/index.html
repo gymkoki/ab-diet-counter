@@ -236,6 +236,20 @@
   <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
 </div>
 
+<!-- アップデートお知らせ（各端末1回のみ表示） -->
+<div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
+  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
+    <div style="font-size:22px;margin-bottom:10px">📢 最近のアップデート</div>
+    <p style="font-size:14px;line-height:1.8;color:#374151;margin-bottom:20px">
+      以前のアップデートで写真の読み込みを高速化するため、AIモデルを変更しましたが、画像認識の精度が落ちてしまいました。<br><br>
+      精度を元に戻すため、より高精度なAIモデルに切り替えました。その影響で、写真のBカウント計算に<strong>10秒ほど</strong>お時間をいただくようになりました。<br><br>
+      ご不便をおかけして申し訳ありません。<br>
+      <span style="color:#6B7280">（奥松）</span>
+    </p>
+    <button onclick="closeUpdateNotice()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#FF6B35,#FF4500);color:white;font-size:16px;font-weight:800;cursor:pointer">OK</button>
+  </div>
+</div>
+
 <!-- リセット確認ダイアログ -->
 <div id="reset-overlay" onclick="cancelReset()">
   <div class="reset-dialog" onclick="event.stopPropagation()">
@@ -786,12 +800,24 @@ function esc(str) {
 })();
 
 // ═══════════════════════════════════════════
+//  アップデートお知らせ（各端末1回のみ）
+// ═══════════════════════════════════════════
+const NOTICE_KEY = 'ab-diet-notice-v2';
+function closeUpdateNotice() {
+  localStorage.setItem(NOTICE_KEY, '1');
+  document.getElementById('update-notice-overlay').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════
 //  Init
 // ═══════════════════════════════════════════
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
 updateDailyTotal();
 loadStats();
+if (!localStorage.getItem(NOTICE_KEY)) {
+  document.getElementById('update-notice-overlay').style.display = 'flex';
+}
 </script>
 </body>
 </html>
