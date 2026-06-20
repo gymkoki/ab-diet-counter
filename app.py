@@ -550,6 +550,13 @@ def analyze():
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=2000,
+            system=[
+                {
+                    "type": "text",
+                    "text": ANALYSIS_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[
                 {
                     "role": "user",
@@ -561,10 +568,6 @@ def analyze():
                                 "media_type": media_type,
                                 "data": base64_image,
                             },
-                        },
-                        {
-                            "type": "text",
-                            "text": ANALYSIS_PROMPT,
                         },
                     ],
                 }
@@ -612,19 +615,24 @@ def reanalyze():
 
     base64_image, media_type = prepare_image_for_api(image_data, media_type)
 
-    prompt_with_correction = ANALYSIS_PROMPT + f"""
-
-━━━━━━━━━━━━━━━━━━━━━━━
+    correction_text = f"""━━━━━━━━━━━━━━━━━━━━━━━
 【ユーザーからの補足・訂正情報】
 {correction}
 
-この補足情報を最優先して、上記のABダイエットルールに基づき再計算してください。
+この補足情報を最優先して、ABダイエットルールに基づき再計算してください。
 ━━━━━━━━━━━━━━━━━━━━━━━"""
 
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=2000,
+            system=[
+                {
+                    "type": "text",
+                    "text": ANALYSIS_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[
                 {
                     "role": "user",
@@ -639,7 +647,7 @@ def reanalyze():
                         },
                         {
                             "type": "text",
-                            "text": prompt_with_correction,
+                            "text": correction_text,
                         },
                     ],
                 }
