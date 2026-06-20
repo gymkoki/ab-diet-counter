@@ -62,8 +62,11 @@
     .meal-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
     .meal-thumb .th-remove { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,0.6); color:white; border:none; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
     .meal-thumb .th-badge { position:absolute; bottom:4px; left:4px; right:4px; background:rgba(255,107,53,0.88); color:white; font-size:10px; font-weight:800; border-radius:6px; padding:2px 4px; text-align:center; }
-    .meal-thumb .th-spinner { position:absolute; inset:0; background:rgba(255,255,255,0.75); display:flex; align-items:center; justify-content:center; }
-    .th-spin { width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
+    .meal-thumb .th-spinner { position:absolute; inset:0; background:rgba(0,0,0,0.55); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; }
+    .th-pct { font-size:20px; font-weight:900; color:white; line-height:1; }
+    .th-pbar-wrap { width:66px; height:6px; background:rgba(255,255,255,0.3); border-radius:3px; overflow:hidden; }
+    .th-pbar { height:100%; background:var(--primary); border-radius:3px; transition:width 0.4s ease-out; }
+    .th-spin { width:24px; height:24px; border:3px solid rgba(255,255,255,0.3); border-top-color:white; border-radius:50%; animation:spin 0.8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
     /* ── 写真追加エリア ── */
@@ -325,6 +328,7 @@ MEALS.forEach(m => { state[m.id] = { items:[] }; });
 let itemIdSeq = 0;
 const STORAGE_KEY = 'ab-diet-state-v3';
 let activeMeal = 'breakfast';
+const _progressTimers = {};
 
 // ═══════════════════════════════════════════
 //  LocalStorage
@@ -482,7 +486,10 @@ function renderStrip(mealId) {
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">📷</div>`}
-        ${item.loading ? `<div class="th-spinner"><div class="th-spin"></div></div>` : ''}
+        ${item.loading ? `<div class="th-spinner">
+          <div class="th-pct">${item.loadingPct||0}%</div>
+          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${item.loadingPct||0}%"></div></div>
+        </div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
         ${cnt !== null ? `<div class="th-badge">B ${cnt}</div>` : ''}
       </div>`;
@@ -555,10 +562,34 @@ function resetMeal(mealId) {
   saveState();
 }
 
+function _startProgress(mealId, itemId) {
+  const key = `${mealId}-${itemId}`;
+  const item = state[mealId].items.find(i => i.id === itemId);
+  if (!item) return;
+  item.loadingPct = 0;
+  _progressTimers[key] = setInterval(() => {
+    const p = item.loadingPct || 0;
+    if (p < 40)      item.loadingPct = Math.min(40,  p + 5);
+    else if (p < 70) item.loadingPct = Math.min(70,  p + 2);
+    else if (p < 88) item.loadingPct = Math.min(88,  p + 0.8);
+    renderStrip(mealId);
+  }, 400);
+}
+
+function _stopProgress(mealId, itemId) {
+  const key = `${mealId}-${itemId}`;
+  clearInterval(_progressTimers[key]);
+  delete _progressTimers[key];
+  const item = state[mealId].items.find(i => i.id === itemId);
+  if (item) item.loadingPct = 100;
+}
+
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item || !item.file) return;
   item.loading = true;
+  item.loadingPct = 0;
+  _startProgress(mealId, itemId);
   renderStrip(mealId);
   const formData = new FormData();
   formData.append('image', item.file);
@@ -566,10 +597,14 @@ async function analyzeItem(mealId, itemId) {
   try {
     const res  = await fetch('/analyze', { method:'POST', body:formData });
     const data = await res.json();
+    _stopProgress(mealId, itemId);
+    renderStrip(mealId);
+    await new Promise(r => setTimeout(r, 300));
     item.loading = false;
     if (data.error) { item.error = data.error; showError(mealId, data.error); }
     else { item.result = data; }
   } catch(e) {
+    _stopProgress(mealId, itemId);
     item.loading = false;
     showError(mealId, '通信エラーが発生しました。再度お試しください。');
   }
