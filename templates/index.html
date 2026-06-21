@@ -950,9 +950,13 @@ function calcExKcal(type, min) {
 }
 
 function kcalToExBCount(kcal) {
-  if (kcal >= 400) return 2;
-  if (kcal >= 200) return 1;
-  if (kcal >= 120) return 0.5;
+  if (kcal >= 2000) return 6;
+  if (kcal >= 1600) return 5;
+  if (kcal >= 1200) return 4;
+  if (kcal >= 800)  return 3;
+  if (kcal >= 400)  return 2;
+  if (kcal >= 200)  return 1;
+  if (kcal >= 120)  return 0.5;
   return 0;
 }
 
