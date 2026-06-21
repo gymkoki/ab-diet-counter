@@ -159,6 +159,37 @@
     .history-total .label { font-size:14px; font-weight:700; color:#5B21B6; }
     .history-total .count { font-size:28px; font-weight:900; color:#6366F1; }
 
+    /* ── ボトムナビ（4タブ） ── */
+    .bnav { position:fixed; bottom:0; left:0; right:0; display:flex; background:#fff; box-shadow:0 -2px 16px rgba(0,0,0,0.08); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
+    .bnav-btn { flex:1; padding:8px 0 6px; border:none; background:none; font-size:11px; font-weight:700; color:var(--text-muted); cursor:pointer; line-height:1.5; }
+    .bnav-icon { font-size:20px; display:block; margin-bottom:2px; }
+    .bnav-btn.active { color:var(--primary); }
+
+    /* ── 運動ビュー ── */
+    .ex-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; margin:12px 16px 0; }
+    .ex-card h3 { font-size:15px; font-weight:800; margin-bottom:12px; }
+    .chip-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .chip { padding:12px 8px; border-radius:12px; border:2px solid var(--border); background:none; font-size:13px; font-weight:700; cursor:pointer; color:var(--text); text-align:center; transition:all 0.15s; }
+    .chip.sel { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
+    .ex-result-card { background:#FFF5F0; border-radius:var(--radius); padding:20px; margin:12px 16px 0; }
+    .ex-result-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid rgba(0,0,0,0.06); }
+    .ex-result-row:last-of-type { border-bottom:none; }
+    .ex-result-label { font-size:13px; font-weight:700; color:var(--text-muted); }
+    .ex-result-val { font-size:20px; font-weight:900; color:var(--primary); }
+    .btn-record-ex { width:100%; padding:14px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:16px; font-weight:800; cursor:pointer; margin-top:14px; }
+    .ex-log-row { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid var(--border); }
+    .ex-log-row:last-child { border-bottom:none; }
+
+    /* ── 設定ビュー ── */
+    .setting-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin:12px 16px 0; }
+    .setting-card h2 { font-size:17px; font-weight:800; margin-bottom:18px; }
+    .setting-label { font-size:13px; font-weight:700; color:var(--text-muted); margin-bottom:6px; margin-top:14px; display:block; }
+    .setting-label:first-of-type { margin-top:0; }
+    .setting-input { width:100%; padding:13px 14px; border:1.5px solid var(--border); border-radius:10px; font-size:18px; font-family:inherit; outline:none; }
+    .setting-input:focus { border-color:var(--primary); }
+    .btn-save { width:100%; padding:14px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:16px; font-weight:800; cursor:pointer; margin-top:18px; }
+    .setting-note { font-size:12px; color:var(--text-muted); line-height:1.7; margin:10px 16px 0; }
+
     /* ── lightbox ── */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
     #lightbox.show { display:flex; }
@@ -183,7 +214,7 @@
 </header>
 
 <!-- タブバー -->
-<div class="tab-bar">
+<div class="tab-bar" id="tab-bar">
   <button class="tab-btn active" id="tab-breakfast" onclick="switchMeal('breakfast')">
     <span class="tab-emoji">🌅</span>
     <span class="tab-label">朝食</span>
@@ -234,12 +265,63 @@
   </div>
 </div>
 
-<div class="bottom-nav" style="position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;box-shadow:0 -2px 16px rgba(0,0,0,0.08);z-index:150;padding-bottom:env(safe-area-inset-bottom,0)">
-  <button style="flex:1;padding:10px 0 8px;border:none;background:none;font-size:13px;font-weight:700;color:var(--primary);cursor:pointer;line-height:1.5" id="nav-main" onclick="switchView('main')">
-    <span style="font-size:20px;display:block;margin-bottom:2px">📷</span>記録
+<!-- 運動ビュー -->
+<div id="view-exercise" style="display:none;padding-bottom:80px">
+  <div class="ex-card">
+    <h3>🏋️ 運動種目を選ぶ</h3>
+    <div class="chip-grid" id="chips-type">
+      <button class="chip" onclick="selectExType('散歩')">🚶 散歩</button>
+      <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
+      <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
+      <button class="chip" onclick="selectExType('オンラインレッスン')">💻 オンラインレッスン</button>
+    </div>
+  </div>
+  <div class="ex-card" style="margin-top:10px">
+    <h3>⏱ 時間を選ぶ</h3>
+    <div class="chip-grid" id="chips-duration">
+      <button class="chip" onclick="selectExDuration(30)">30分</button>
+      <button class="chip" onclick="selectExDuration(60)">60分</button>
+      <button class="chip" onclick="selectExDuration(90)">90分</button>
+      <button class="chip" onclick="selectExDuration(120)">120分</button>
+    </div>
+  </div>
+  <div id="ex-result-card" class="ex-result-card" style="display:none">
+    <div id="ex-result-inner"></div>
+    <button class="btn-record-ex" onclick="recordExercise()">✅ 記録する</button>
+  </div>
+  <div id="ex-log-card" class="ex-card" style="display:none;margin-top:10px;margin-bottom:12px">
+    <h3>📋 今日の運動記録</h3>
+    <div id="ex-log-list"></div>
+  </div>
+</div>
+
+<!-- 設定ビュー -->
+<div id="view-settings" style="display:none;padding-bottom:80px">
+  <div class="setting-card">
+    <h2>⚙️ プロフィール設定</h2>
+    <label class="setting-label">身長 (cm)</label>
+    <input class="setting-input" type="number" id="input-height" placeholder="例：170" min="100" max="250">
+    <label class="setting-label">体重 (kg)</label>
+    <input class="setting-input" type="number" id="input-weight" placeholder="例：60" min="30" max="200">
+    <button class="btn-save" onclick="saveProfile()">保存する</button>
+    <div id="profile-saved-msg" style="display:none;text-align:center;margin-top:10px;color:var(--a-color);font-weight:700;font-size:14px">✅ 保存しました</div>
+  </div>
+  <p class="setting-note">※ 体重データは運動の消費カロリー計算に使用します。<br>データはこの端末にのみ保存され、外部には送信されません。</p>
+</div>
+
+<!-- ボトムナビ（4タブ） -->
+<div class="bnav">
+  <button class="bnav-btn active" id="nav-main" onclick="switchView('main')">
+    <span class="bnav-icon">📷</span>記録
   </button>
-  <button style="flex:1;padding:10px 0 8px;border:none;background:none;font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;line-height:1.5" id="nav-history" onclick="switchView('history')">
-    <span style="font-size:20px;display:block;margin-bottom:2px">📊</span>今月の履歴
+  <button class="bnav-btn" id="nav-history" onclick="switchView('history')">
+    <span class="bnav-icon">📊</span>今月の履歴
+  </button>
+  <button class="bnav-btn" id="nav-exercise" onclick="switchView('exercise')">
+    <span class="bnav-icon">🏃</span>運動
+  </button>
+  <button class="bnav-btn" id="nav-settings" onclick="switchView('settings')">
+    <span class="bnav-icon">⚙️</span>設定
   </button>
 </div>
 
@@ -445,6 +527,7 @@ function updateDailyTotal() {
     const dot = document.getElementById(`dot-${m.id}`);
     if (dot) dot.classList.toggle('visible', done.length > 0);
   });
+  total = Math.max(0, total - getTodayExBCount());
   const el = document.getElementById('daily-total-count');
   if (el) el.textContent = fmtCount(total);
 }
@@ -791,12 +874,128 @@ async function submitDailyB(bCount, date) {
 //  画面切り替え（記録 / 今週の履歴）
 // ═══════════════════════════════════════════
 function switchView(view) {
-  document.getElementById('view-main').style.display    = (view === 'main') ? '' : 'none';
-  document.getElementById('view-history').style.display = (view === 'history') ? '' : 'none';
-  document.getElementById('tab-bar') // タブバーは常に表示
-  document.getElementById('nav-main').style.color    = (view === 'main')    ? 'var(--primary)' : 'var(--text-muted)';
-  document.getElementById('nav-history').style.color = (view === 'history') ? 'var(--primary)' : 'var(--text-muted)';
+  ['main','history','exercise','settings'].forEach(v => {
+    const el = document.getElementById('view-' + v);
+    if (el) el.style.display = (v === view) ? '' : 'none';
+    const btn = document.getElementById('nav-' + v);
+    if (btn) btn.classList.toggle('active', v === view);
+  });
+  document.getElementById('tab-bar').style.display = (view === 'main') ? '' : 'none';
   if (view === 'history') loadHistory();
+  if (view === 'exercise') renderExLog();
+  if (view === 'settings') loadProfileInputs();
+}
+
+// ═══════════════════════════════════════════
+//  プロフィール（設定）
+// ═══════════════════════════════════════════
+const PROFILE_KEY = 'ab-diet-profile-v1';
+
+function saveProfile() {
+  const h = parseFloat(document.getElementById('input-height').value);
+  const w = parseFloat(document.getElementById('input-weight').value);
+  if (!h || !w || h < 100 || w < 20) { alert('身長・体重を正しく入力してください'); return; }
+  localStorage.setItem(PROFILE_KEY, JSON.stringify({ height: h, weight: w }));
+  const msg = document.getElementById('profile-saved-msg');
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 2000);
+}
+
+function loadProfileInputs() {
+  const p = getProfile();
+  if (p) {
+    document.getElementById('input-height').value = p.height;
+    document.getElementById('input-weight').value = p.weight;
+  }
+}
+
+function getProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY)); } catch { return null; }
+}
+
+// ═══════════════════════════════════════════
+//  運動トラッキング
+// ═══════════════════════════════════════════
+const EXERCISE_KEY = 'ab-diet-exercise-v1';
+const MET = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'オンラインレッスン': 4.0 };
+let _exType = null, _exDuration = null;
+
+function selectExType(type) {
+  _exType = type;
+  document.querySelectorAll('#chips-type .chip').forEach(b => {
+    b.classList.toggle('sel', b.textContent.trim().includes(type));
+  });
+  _updateExResult();
+}
+
+function selectExDuration(min) {
+  _exDuration = min;
+  document.querySelectorAll('#chips-duration .chip').forEach(b => {
+    b.classList.toggle('sel', b.textContent.trim() === min + '分');
+  });
+  _updateExResult();
+}
+
+function calcExKcal(type, min) {
+  const p = getProfile();
+  const weight = (p && p.weight) ? p.weight : 60;
+  return Math.round((MET[type] || 4) * weight * (min / 60));
+}
+
+function kcalToExBCount(kcal) {
+  if (kcal >= 400) return 2;
+  if (kcal >= 200) return 1;
+  if (kcal >= 120) return 0.5;
+  return 0;
+}
+
+function _updateExResult() {
+  const card = document.getElementById('ex-result-card');
+  if (!_exType || !_exDuration) { card.style.display = 'none'; return; }
+  const kcal = calcExKcal(_exType, _exDuration);
+  const bc   = kcalToExBCount(kcal);
+  document.getElementById('ex-result-inner').innerHTML = `
+    <div class="ex-result-row"><span class="ex-result-label">消費カロリー</span><span class="ex-result-val">${kcal} kcal</span></div>
+    <div class="ex-result-row"><span class="ex-result-label">Bカウント消費</span><span class="ex-result-val" style="color:var(--a-color)">−${fmtCount(bc)} B</span></div>
+  `;
+  card.style.display = '';
+}
+
+function recordExercise() {
+  if (!_exType || !_exDuration) return;
+  const kcal = calcExKcal(_exType, _exDuration);
+  const bc   = kcalToExBCount(kcal);
+  const today = new Date().toISOString().slice(0,10);
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now() });
+  localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
+  _exType = null; _exDuration = null;
+  document.querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
+  document.getElementById('ex-result-card').style.display = 'none';
+  renderExLog();
+  updateDailyTotal();
+}
+
+function renderExLog() {
+  const today = new Date().toISOString().slice(0,10);
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  const todayLogs = logs.filter(l => l.date === today);
+  const card = document.getElementById('ex-log-card');
+  const list = document.getElementById('ex-log-list');
+  if (todayLogs.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  list.innerHTML = todayLogs.map(l =>
+    `<div class="ex-log-row"><span>${l.type} ${l.min}分</span><span>${l.kcal}kcal / −${fmtCount(l.bc)}B</span></div>`
+  ).join('');
+}
+
+function getTodayExBCount() {
+  const today = new Date().toISOString().slice(0,10);
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  return logs.filter(l => l.date === today).reduce((s, l) => s + l.bc, 0);
 }
 
 const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
