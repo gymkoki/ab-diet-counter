@@ -182,6 +182,23 @@
     .ex-profile-notice { background:#FFF8E1; border:1.5px solid #FFD54F; border-radius:12px; padding:12px 14px; margin:10px 16px 0; font-size:15px; font-weight:700; line-height:1.6; color:#795548; }
     .history-ex-tag { font-size:11px; font-weight:700; color:#2e7d32; background:#e8f5e9; border-radius:6px; padding:2px 7px; display:inline-block; margin-bottom:3px; }
 
+    /* ── 速度ドラム ── */
+    .speed-toggle-row { display:flex; gap:8px; margin-bottom:14px; }
+    .speed-mode-btn { flex:1; padding:11px 4px; border-radius:10px; border:2px solid var(--border); background:none; font-size:15px; font-weight:700; cursor:pointer; color:var(--text); transition:all 0.15s; }
+    .speed-mode-btn.active { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
+    .drum-wrap { position:relative; height:220px; overflow:hidden; border-radius:14px; background:#f2f2f2; margin-bottom:6px; }
+    .drum-roll { height:220px; overflow-y:scroll; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .drum-roll::-webkit-scrollbar { display:none; }
+    .drum-item { height:44px; scroll-snap-align:center; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; color:#c8c8c8; user-select:none; }
+    .drum-item.drum-sel { color:var(--text); font-weight:900; }
+    .drum-pad { pointer-events:none; }
+    .drum-fade-top { position:absolute; top:0; left:0; right:0; height:88px; background:linear-gradient(to bottom,rgba(242,242,242,0.97),rgba(242,242,242,0)); pointer-events:none; z-index:2; }
+    .drum-fade-bot { position:absolute; bottom:0; left:0; right:0; height:88px; background:linear-gradient(to top,rgba(242,242,242,0.97),rgba(242,242,242,0)); pointer-events:none; z-index:2; }
+    .drum-line-top { position:absolute; left:24px; right:24px; top:88px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
+    .drum-line-bot { position:absolute; left:24px; right:24px; top:132px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
+    .drum-speed-label { text-align:center; font-size:14px; font-weight:700; color:var(--text-muted); margin-top:6px; }
+    .ex-del-btn { background:none; border:1.5px solid #ddd; color:#888; border-radius:8px; width:34px; height:34px; font-size:15px; cursor:pointer; flex-shrink:0; }
+
     /* ── 設定ビュー ── */
     .setting-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin:12px 16px 0; }
     .setting-card h2 { font-size:17px; font-weight:800; margin-bottom:18px; }
@@ -289,6 +306,22 @@
       <button class="chip" onclick="selectExDuration(90)">90分</button>
       <button class="chip" onclick="selectExDuration(120)">120分</button>
     </div>
+  </div>
+  <!-- ランニング時のみ表示：速度ドラム -->
+  <div id="speed-section" class="ex-card" style="display:none;margin-top:10px">
+    <h3>⚡ 速度を選ぶ</h3>
+    <div class="speed-toggle-row">
+      <button class="speed-mode-btn active" id="smb-kmh" onclick="setSpeedMode('kmh')">時速 (km/h)</button>
+      <button class="speed-mode-btn" id="smb-pace" onclick="setSpeedMode('pace')">ペース (分/km)</button>
+    </div>
+    <div class="drum-wrap">
+      <div class="drum-fade-top"></div>
+      <div class="drum-line-top"></div>
+      <div class="drum-line-bot"></div>
+      <div class="drum-fade-bot"></div>
+      <div class="drum-roll" id="drum-speed"></div>
+    </div>
+    <div id="drum-speed-label" class="drum-speed-label"></div>
   </div>
   <div id="ex-profile-notice" class="ex-profile-notice" style="display:none">
     ⚠️ 正確な消費カロリーを計算するために、<strong>右下の「設定」から身長・体重を入力してください。</strong><br>
@@ -938,14 +971,104 @@ function getProfile() {
 //  運動トラッキング
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
-const MET = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'オンラインレッスン': 4.0 };
+const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'オンラインレッスン': 4.0 };
 let _exType = null, _exDuration = null;
+
+// ── ドラムロール（速度入力）──
+const DRUM_H = 44, DRUM_PAD = 2;
+let _speedMode = 'kmh', _runSpeedKmh = 8.0, _drumInited = false;
+
+const KMH_LIST = (() => {
+  const r = [];
+  for (let v = 4.0; v <= 30.0; v = Math.round((v + 0.5) * 10) / 10) r.push(v);
+  return r;
+})();
+const PACE_LIST = (() => {
+  const r = [];
+  for (let s = 180; s <= 720; s += 15) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    r.push({ label: `${m}:${sec.toString().padStart(2,'0')}`, sec });
+  }
+  return r;
+})();
+
+function _buildDrum(labels) {
+  const el = document.getElementById('drum-speed');
+  const pad = '<div class="drum-item drum-pad"></div>';
+  el.innerHTML = pad.repeat(DRUM_PAD) + labels.map(l => `<div class="drum-item">${l}</div>`).join('') + pad.repeat(DRUM_PAD);
+}
+
+function _getDrumIdx() {
+  return Math.round(document.getElementById('drum-speed').scrollTop / DRUM_H);
+}
+
+function _highlightDrum(dataIdx) {
+  document.querySelectorAll('#drum-speed .drum-item').forEach((el, i) => {
+    el.classList.toggle('drum-sel', i === dataIdx + DRUM_PAD);
+  });
+}
+
+function _syncSpeedValue(idx) {
+  if (_speedMode === 'kmh') {
+    const v = KMH_LIST[idx] ?? 8.0;
+    _runSpeedKmh = v;
+    document.getElementById('drum-speed-label').textContent = `選択中: ${v.toFixed(1)} km/h`;
+  } else {
+    const p = PACE_LIST[idx];
+    if (p) {
+      _runSpeedKmh = 3600 / p.sec;
+      document.getElementById('drum-speed-label').textContent = `選択中: ${p.label}/km（約 ${_runSpeedKmh.toFixed(1)} km/h）`;
+    }
+  }
+}
+
+function _onDrumScroll() {
+  const idx = _getDrumIdx();
+  _highlightDrum(idx);
+  _syncSpeedValue(idx);
+  _updateExResult();
+}
+
+function setSpeedMode(mode) {
+  _speedMode = mode;
+  document.getElementById('smb-kmh').classList.toggle('active', mode === 'kmh');
+  document.getElementById('smb-pace').classList.toggle('active', mode === 'pace');
+  const drum = document.getElementById('drum-speed');
+  let defIdx;
+  if (mode === 'kmh') {
+    _buildDrum(KMH_LIST.map(v => v.toFixed(1)));
+    defIdx = KMH_LIST.findIndex(v => v >= 8.0);
+  } else {
+    _buildDrum(PACE_LIST.map(p => p.label));
+    defIdx = PACE_LIST.findIndex(p => p.sec >= 360);
+  }
+  requestAnimationFrame(() => {
+    drum.scrollTop = defIdx * DRUM_H;
+    _highlightDrum(defIdx);
+    _syncSpeedValue(defIdx);
+    _updateExResult();
+  });
+}
+
+function _initSpeedSection() {
+  document.getElementById('speed-section').style.display = '';
+  if (!_drumInited) {
+    document.getElementById('drum-speed').addEventListener('scroll', _onDrumScroll, { passive: true });
+    _drumInited = true;
+  }
+  setSpeedMode('kmh');
+}
 
 function selectExType(type) {
   _exType = type;
   document.querySelectorAll('#chips-type .chip').forEach(b => {
     b.classList.toggle('sel', b.textContent.trim().includes(type));
   });
+  if (type === 'ランニング') {
+    _initSpeedSection();
+  } else {
+    document.getElementById('speed-section').style.display = 'none';
+  }
   _updateExResult();
 }
 
@@ -960,7 +1083,8 @@ function selectExDuration(min) {
 function calcExKcal(type, min) {
   const p = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
-  return Math.round((MET[type] || 4) * weight * (min / 60));
+  const met = (type === 'ランニング') ? _runSpeedKmh : (MET_BASE[type] || 4);
+  return Math.round(met * weight * (min / 60));
 }
 
 function kcalToExBCount(kcal) {
@@ -994,17 +1118,32 @@ function recordExercise() {
   const kcal = calcExKcal(_exType, _exDuration);
   const bc   = kcalToExBCount(kcal);
   const today = new Date().toISOString().slice(0,10);
+  const speedLabel = (_exType === 'ランニング')
+    ? (_speedMode === 'kmh'
+        ? `${_runSpeedKmh.toFixed(1)}km/h`
+        : `${PACE_LIST[_getDrumIdx()]?.label ?? ''}／km`)
+    : null;
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now() });
+  logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now(), speedLabel });
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
   _exType = null; _exDuration = null;
   document.querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
+  document.getElementById('speed-section').style.display = 'none';
   document.getElementById('ex-result-card').style.display = 'none';
   document.getElementById('ex-profile-notice').style.display = 'none';
   const savedMsg = document.getElementById('ex-saved-msg');
   savedMsg.style.display = '';
   setTimeout(() => { savedMsg.style.display = 'none'; }, 2000);
+  renderExLog();
+  updateDailyTotal();
+}
+
+function deleteExercise(ts) {
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  logs = logs.filter(l => l.ts !== ts);
+  localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
   renderExLog();
   updateDailyTotal();
 }
@@ -1018,9 +1157,16 @@ function renderExLog() {
   const list = document.getElementById('ex-log-list');
   if (todayLogs.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
-  list.innerHTML = todayLogs.map(l =>
-    `<div class="ex-log-row"><span>${l.type} ${l.min}分</span><span>${l.kcal}kcal / −${fmtCount(l.bc)}B</span></div>`
-  ).join('');
+  list.innerHTML = todayLogs.map(l => {
+    const detail = l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`;
+    return `<div class="ex-log-row">
+      <div>
+        <div style="font-weight:800;font-size:15px">${detail}</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${l.kcal} kcal ／ −${fmtCount(l.bc)} B</div>
+      </div>
+      <button class="ex-del-btn" onclick="deleteExercise(${l.ts})">✕</button>
+    </div>`;
+  }).join('');
 }
 
 function getTodayExBCount() {
@@ -1029,6 +1175,7 @@ function getTodayExBCount() {
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
   return logs.filter(l => l.date === today).reduce((s, l) => s + l.bc, 0);
 }
+
 
 const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
 
