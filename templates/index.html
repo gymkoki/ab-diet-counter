@@ -38,7 +38,7 @@
 
     /* ── タブバー ── */
     .tab-bar { display: flex; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 100; }
-    .tab-btn { flex: 1; padding: 8px 2px 6px; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; border-bottom: 3px solid transparent; transition: border-color 0.15s, color 0.15s; color: var(--text-muted); }
+    .tab-btn { flex: 1; padding: 8px 2px 6px; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; border-bottom: 3px solid transparent; transition: border-color 0.15s, color 0.15s; color: var(--text); }
     .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
     .tab-emoji { font-size: 22px; line-height: 1; }
     .tab-label { font-size: 14px; font-weight: 700; }
@@ -161,7 +161,7 @@
 
     /* ── ボトムナビ（4タブ） ── */
     .bnav { position:fixed; bottom:0; left:0; right:0; display:flex; background:#fff; box-shadow:0 -2px 16px rgba(0,0,0,0.08); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
-    .bnav-btn { flex:1; padding:10px 0 8px; border:none; background:none; font-size:14px; font-weight:800; color:var(--text-muted); cursor:pointer; line-height:1.4; }
+    .bnav-btn { flex:1; padding:10px 0 8px; border:none; background:none; font-size:14px; font-weight:800; color:var(--text); cursor:pointer; line-height:1.4; }
     .bnav-icon { font-size:26px; display:block; margin-bottom:3px; }
     .bnav-btn.active { color:var(--primary); }
 
