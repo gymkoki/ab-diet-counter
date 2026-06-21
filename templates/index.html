@@ -25,23 +25,23 @@
 
     /* ── ヘッダー ── */
     header { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; padding: 10px 16px 0; text-align: center; }
-    .header-title { font-size: 16px; font-weight: 800; white-space: nowrap; padding-bottom: 8px; }
+    .header-title { font-size: 20px; font-weight: 800; white-space: nowrap; padding-bottom: 8px; }
 
     /* ── Bカウント合計バー ── */
     .daily-total-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.18); border-radius: 14px 14px 0 0; padding: 10px 20px; margin-top: 2px; }
     .daily-total-left { display: flex; align-items: center; gap: 8px; }
     .daily-total-icon { font-size: 20px; }
-    .daily-total-label { font-size: 15px; font-weight: 700; }
+    .daily-total-label { font-size: 18px; font-weight: 700; }
     .daily-total-right { display: flex; align-items: baseline; gap: 4px; }
     .daily-total-num { font-size: 40px; font-weight: 900; line-height: 1; }
-    .daily-total-unit { font-size: 15px; font-weight: 700; }
+    .daily-total-unit { font-size: 18px; font-weight: 700; }
 
     /* ── タブバー ── */
     .tab-bar { display: flex; background: var(--surface); box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 100; }
     .tab-btn { flex: 1; padding: 8px 2px 6px; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; border-bottom: 3px solid transparent; transition: border-color 0.15s, color 0.15s; color: var(--text-muted); }
     .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-    .tab-emoji { font-size: 18px; line-height: 1; }
-    .tab-label { font-size: 11px; font-weight: 700; }
+    .tab-emoji { font-size: 22px; line-height: 1; }
+    .tab-label { font-size: 14px; font-weight: 700; }
     .tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); display: none; }
     .tab-dot.visible { display: block; }
     .tab-btn-reset { color: var(--primary); }
@@ -84,28 +84,28 @@
     .meal-add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:20px; cursor:pointer; border:2px dashed var(--border); border-radius:12px; margin:10px 0 4px; transition:border-color 0.2s, background 0.2s; position:relative; }
     .meal-add:hover { border-color:var(--primary); background:#FFF5F0; }
     .meal-add-icon { font-size:26px; }
-    .meal-add h3 { font-size:17px; font-weight:700; }
-    .meal-add p  { font-size:14px; color:var(--text-muted); }
+    .meal-add h3 { font-size:19px; font-weight:700; }
+    .meal-add p  { font-size:16px; color:var(--text-muted); }
 
     /* ── エラー ── */
-    .meal-error { display:none; margin:0 0 12px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:14px; color:#DC2626; }
+    .meal-error { display:none; margin:0 0 12px; background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:12px 14px; font-size:16px; color:#DC2626; ; color:#DC2626; }
 
     /* ── 結果 ── */
     .meal-result { display:none; }
     .meal-b-count { background:#FFF5F0; border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-    .meal-b-count .label { font-size:15px; font-weight:700; color:var(--text-muted); }
+    .meal-b-count .label { font-size:17px; font-weight:700; color:var(--text-muted); }
     .meal-b-count .count { font-size:42px; font-weight:900; color:var(--primary); line-height:1; }
-    .meal-b-count .unit  { font-size:15px; font-weight:600; color:var(--primary); }
+    .meal-b-count .unit  { font-size:17px; font-weight:600; color:var(--primary); }
     .result-photo { width:100%; border-radius:10px; max-height:200px; object-fit:cover; display:block; margin-bottom:12px; }
     .advice-row { display:flex; gap:8px; align-items:flex-start; background:var(--bg); border-radius:10px; padding:12px; margin-bottom:12px; }
     .advice-row .icon { font-size:18px; flex-shrink:0; }
-    .advice-row p { font-size:15px; color:var(--text-muted); line-height:1.6; }
+    .advice-row p { font-size:17px; color:var(--text-muted); line-height:1.6; }
     .food-list-wrap { border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-    .food-list-header { padding:10px 14px; background:var(--bg); font-size:15px; font-weight:700; border-bottom:1px solid var(--border); }
+    .food-list-header { padding:10px 14px; background:var(--bg); font-size:17px; font-weight:700; border-bottom:1px solid var(--border); }
     .food-row { display:grid; grid-template-columns:1fr auto; gap:6px; padding:12px 14px; border-bottom:1px solid var(--border); align-items:start; }
     .food-row:last-child { border-bottom:none; }
-    .food-name { font-size:16px; font-weight:600; margin-bottom:4px; }
-    .food-meta { font-size:13px; color:var(--text-muted); line-height:1.5; }
+    .food-name { font-size:18px; font-weight:600; margin-bottom:4px; }
+    .food-meta { font-size:15px; color:var(--text-muted); line-height:1.5; }
     .food-badge { display:inline-flex; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:700; margin-right:3px; }
     .badge-b { background:#FFF0EB; color:var(--b-color); }
     .badge-a { background:#E8F9F8; color:var(--a-color); }
@@ -115,20 +115,20 @@
     .food-cnt .u { font-size:12px; color:var(--text-muted); }
 
     .item-result-card { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:12px; }
-    .item-result-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border); font-size:15px; font-weight:700; }
+    .item-result-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border); font-size:17px; font-weight:700; }
     .item-result-header .ic-cnt { color:var(--primary); font-size:18px; font-weight:900; }
 
-    .re-analyze { width:100%; margin-top:10px; padding:12px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
+    .re-analyze { width:100%; margin-top:10px; padding:12px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
 
-    .recalc-btn { width:100%; margin-top:8px; padding:11px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+    .recalc-btn { width:100%; margin-top:8px; padding:11px; border-radius:10px; background:none; border:1.5px dashed var(--border); font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
     .recalc-btn:hover { border-color:#6366F1; color:#6366F1; }
     .recalc-form { display:none; margin-top:8px; padding:12px; background:#F5F3FF; border:1.5px solid #C4B5FD; border-radius:12px; }
     .recalc-form.open { display:block; }
-    .recalc-form label { font-size:14px; font-weight:700; color:#5B21B6; display:block; margin-bottom:6px; }
-    .recalc-textarea { width:100%; min-height:80px; padding:10px; border:1px solid #C4B5FD; border-radius:8px; font-size:15px; font-family:inherit; resize:vertical; outline:none; background:white; }
+    .recalc-form label { font-size:16px; font-weight:700; color:#5B21B6; display:block; margin-bottom:6px; }
+    .recalc-textarea { width:100%; min-height:80px; padding:10px; border:1px solid #C4B5FD; border-radius:8px; font-size:17px; font-family:inherit; resize:vertical; outline:none; background:white; }
     .recalc-textarea:focus { border-color:#6366F1; }
-    .btn-recalc { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:15px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
+    .btn-recalc { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:17px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
 
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
@@ -139,35 +139,35 @@
     #reset-overlay.show { display:flex; }
     .reset-dialog { background:white; border-radius:20px; padding:28px 24px; width:100%; max-width:320px; text-align:center; }
     .reset-dialog h3 { font-size:18px; font-weight:800; margin-bottom:8px; }
-    .reset-dialog p { font-size:14px; color:var(--text-muted); margin-bottom:22px; line-height:1.6; }
+    .reset-dialog p { font-size:16px; color:var(--text-muted); margin-bottom:22px; line-height:1.6; }
     .reset-dialog-btns { display:flex; gap:10px; }
-    .btn-cancel { flex:1; padding:13px; border-radius:12px; border:1.5px solid var(--border); background:none; font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; }
-    .btn-reset-ok { flex:1; padding:13px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:15px; font-weight:800; cursor:pointer; }
+    .btn-cancel { flex:1; padding:13px; border-radius:12px; border:1.5px solid var(--border); background:none; font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; }
+    .btn-reset-ok { flex:1; padding:13px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:17px; font-weight:800; cursor:pointer; }
 
     /* ── 履歴 ── */
     .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; }
-    .history-card h2 { font-size:17px; font-weight:800; margin-bottom:4px; }
-    .history-card .history-range { font-size:13px; color:var(--text-muted); margin-bottom:14px; }
+    .history-card h2 { font-size:20px; font-weight:800; margin-bottom:4px; }
+    .history-card .history-range { font-size:15px; color:var(--text-muted); margin-bottom:14px; }
     .history-row { display:flex; align-items:center; justify-content:space-between; padding:14px 4px; border-bottom:1px solid var(--border); }
     .history-row:last-child { border-bottom:none; }
-    .history-date { font-size:16px; font-weight:700; }
-    .history-date .dow { font-size:13px; color:var(--text-muted); font-weight:600; margin-left:4px; }
-    .history-count { font-size:24px; font-weight:900; color:#6366F1; }
-    .history-unit { font-size:12px; font-weight:600; color:#6366F1; opacity:0.8; }
-    .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:14px; line-height:1.8; }
+    .history-date { font-size:18px; font-weight:700; }
+    .history-date .dow { font-size:15px; color:var(--text-muted); font-weight:600; margin-left:4px; }
+    .history-count { font-size:28px; font-weight:900; color:#6366F1; }
+    .history-unit { font-size:14px; font-weight:600; color:#6366F1; opacity:0.8; }
+    .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:16px; line-height:1.8; }
     .history-total { display:flex; align-items:center; justify-content:space-between; background:#F5F3FF; border-radius:12px; padding:14px 16px; margin-top:14px; }
-    .history-total .label { font-size:14px; font-weight:700; color:#5B21B6; }
-    .history-total .count { font-size:28px; font-weight:900; color:#6366F1; }
+    .history-total .label { font-size:16px; font-weight:700; color:#5B21B6; }
+    .history-total .count { font-size:32px; font-weight:900; color:#6366F1; }
 
     /* ── ボトムナビ（4タブ） ── */
     .bnav { position:fixed; bottom:0; left:0; right:0; display:flex; background:#fff; box-shadow:0 -2px 16px rgba(0,0,0,0.08); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
-    .bnav-btn { flex:1; padding:8px 0 6px; border:none; background:none; font-size:11px; font-weight:700; color:var(--text-muted); cursor:pointer; line-height:1.5; }
-    .bnav-icon { font-size:20px; display:block; margin-bottom:2px; }
+    .bnav-btn { flex:1; padding:10px 0 8px; border:none; background:none; font-size:14px; font-weight:800; color:var(--text-muted); cursor:pointer; line-height:1.4; }
+    .bnav-icon { font-size:26px; display:block; margin-bottom:3px; }
     .bnav-btn.active { color:var(--primary); }
 
     /* ── 運動ビュー ── */
     .ex-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; margin:12px 16px 0; }
-    .ex-card h3 { font-size:15px; font-weight:800; margin-bottom:12px; }
+    .ex-card h3 { font-size:17px; font-weight:800; margin-bottom:12px; }
     .chip-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .chip { padding:12px 8px; border-radius:12px; border:2px solid var(--border); background:none; font-size:13px; font-weight:700; cursor:pointer; color:var(--text); text-align:center; transition:all 0.15s; }
     .chip.sel { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
@@ -179,13 +179,13 @@
     .btn-record-ex { width:100%; padding:14px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:16px; font-weight:800; cursor:pointer; margin-top:14px; }
     .ex-log-row { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid var(--border); font-size:14px; font-weight:700; }
     .ex-log-row:last-child { border-bottom:none; }
-    .ex-profile-notice { background:#FFF8E1; border:1.5px solid #FFD54F; border-radius:12px; padding:12px 14px; margin:10px 16px 0; font-size:13px; font-weight:700; line-height:1.6; color:#795548; }
+    .ex-profile-notice { background:#FFF8E1; border:1.5px solid #FFD54F; border-radius:12px; padding:12px 14px; margin:10px 16px 0; font-size:15px; font-weight:700; line-height:1.6; color:#795548; }
     .history-ex-tag { font-size:11px; font-weight:700; color:#2e7d32; background:#e8f5e9; border-radius:6px; padding:2px 7px; display:inline-block; margin-bottom:3px; }
 
     /* ── 設定ビュー ── */
     .setting-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin:12px 16px 0; }
     .setting-card h2 { font-size:17px; font-weight:800; margin-bottom:18px; }
-    .setting-label { font-size:13px; font-weight:700; color:var(--text-muted); margin-bottom:6px; margin-top:14px; display:block; }
+    .setting-label { font-size:15px; font-weight:700; color:var(--text-muted); margin-bottom:6px; margin-top:14px; display:block; }
     .setting-label:first-of-type { margin-top:0; }
     .setting-input { width:100%; padding:13px 14px; border:1.5px solid var(--border); border-radius:10px; font-size:18px; font-family:inherit; outline:none; }
     .setting-input:focus { border-color:var(--primary); }
@@ -212,6 +212,9 @@
       <span class="daily-total-num" id="daily-total-count">0</span>
       <span class="daily-total-unit">カウント</span>
     </div>
+  </div>
+  <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.92)">
+    🏃 運動で <span id="ex-deduct-num" style="font-size:18px;font-weight:900">0</span> カウント消費中
   </div>
 </header>
 
@@ -527,16 +530,27 @@ function buildPanel(m) {
 //  今日のBカウント合計
 // ═══════════════════════════════════════════
 function updateDailyTotal() {
-  let total = 0;
+  let foodTotal = 0;
   MEALS.forEach(m => {
     const done = state[m.id].items.filter(i => i.result);
-    total += done.reduce((s, i) => s + i.result.total_b_count, 0);
+    foodTotal += done.reduce((s, i) => s + i.result.total_b_count, 0);
     const dot = document.getElementById(`dot-${m.id}`);
     if (dot) dot.classList.toggle('visible', done.length > 0);
   });
-  total = Math.max(0, total - getTodayExBCount());
+  const exBc = getTodayExBCount();
+  const net  = Math.max(0, foodTotal - exBc);
   const el = document.getElementById('daily-total-count');
-  if (el) el.textContent = fmtCount(total);
+  if (el) el.textContent = fmtCount(net);
+  const bar   = document.getElementById('ex-deduct-bar');
+  const numEl = document.getElementById('ex-deduct-num');
+  if (bar && numEl) {
+    if (exBc > 0) {
+      numEl.textContent = fmtCount(exBc);
+      bar.style.display = '';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════
