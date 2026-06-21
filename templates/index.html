@@ -986,8 +986,8 @@ const KMH_LIST = (() => {
 const PACE_LIST = (() => {
   const r = [];
   for (let s = 180; s <= 720; s += 15) {
-    const m = Math.floor(s / 60), sec = s % 60;
-    r.push({ label: `${m}:${sec.toString().padStart(2,'0')}`, sec });
+    const m = Math.floor(s / 60), ss = s % 60;
+    r.push({ label: `${m}:${ss.toString().padStart(2,'0')}`, totalSec: s });
   }
   return r;
 })();
@@ -1016,7 +1016,7 @@ function _syncSpeedValue(idx) {
   } else {
     const p = PACE_LIST[idx];
     if (p) {
-      _runSpeedKmh = 3600 / p.sec;
+      _runSpeedKmh = 3600 / p.totalSec;
       document.getElementById('drum-speed-label').textContent = `選択中: ${p.label}/km（約 ${_runSpeedKmh.toFixed(1)} km/h）`;
     }
   }
@@ -1037,10 +1037,10 @@ function setSpeedMode(mode) {
   let defIdx;
   if (mode === 'kmh') {
     _buildDrum(KMH_LIST.map(v => v.toFixed(1)));
-    defIdx = KMH_LIST.findIndex(v => v >= 8.0);
+    defIdx = KMH_LIST.findIndex(v => v >= 8.5); // 8.5km/h ≈ 7:03/kmペース
   } else {
     _buildDrum(PACE_LIST.map(p => p.label));
-    defIdx = PACE_LIST.findIndex(p => p.sec >= 360);
+    defIdx = PACE_LIST.findIndex(p => p.totalSec >= 420); // 7:00/kmペース
   }
   requestAnimationFrame(() => {
     drum.scrollTop = defIdx * DRUM_H;
@@ -1122,6 +1122,7 @@ function _updateExResult() {
 
 function recordExercise() {
   if (!_exType || !_exDuration) return;
+  const met  = (_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4);
   const kcal = calcExKcal(_exType, _exDuration);
   const bc   = kcalToExBCount(kcal);
   const today = new Date().toISOString().slice(0,10);
@@ -1132,7 +1133,7 @@ function recordExercise() {
     : null;
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now(), speedLabel });
+  logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now(), speedLabel, met: Math.round(met * 10) / 10 });
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
   _exType = null; _exDuration = null;
   document.querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
@@ -1169,7 +1170,7 @@ function renderExLog() {
     return `<div class="ex-log-row">
       <div>
         <div style="font-weight:800;font-size:15px">${detail}</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${l.kcal} kcal ／ −${fmtCount(l.bc)} B</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${l.kcal} kcal ／ −${fmtCount(l.bc)} B${l.met ? ` ／ ${l.met} メッツ` : ''}</div>
       </div>
       <button class="ex-del-btn" onclick="deleteExercise(${l.ts})">✕</button>
     </div>`;
