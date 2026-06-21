@@ -197,7 +197,8 @@
     .drum-line-top { position:absolute; left:24px; right:24px; top:88px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
     .drum-line-bot { position:absolute; left:24px; right:24px; top:132px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
     .drum-speed-label { text-align:center; font-size:14px; font-weight:700; color:var(--text-muted); margin-top:6px; }
-    .ex-del-btn { background:none; border:1.5px solid #ddd; color:#888; border-radius:8px; width:34px; height:34px; font-size:15px; cursor:pointer; flex-shrink:0; }
+    .ex-edit-btn { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:17px; cursor:pointer; flex-shrink:0; transition:all 0.15s; }
+    .ex-edit-btn:active { background:#FFF5F0; border-color:var(--primary); color:var(--primary); }
 
     /* ── 設定ビュー ── */
     .setting-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin:12px 16px 0; }
@@ -299,13 +300,15 @@
     </div>
   </div>
   <div class="ex-card" style="margin-top:10px">
-    <h3>⏱ 時間を選ぶ</h3>
-    <div class="chip-grid" id="chips-duration">
-      <button class="chip" onclick="selectExDuration(30)">30分</button>
-      <button class="chip" onclick="selectExDuration(60)">60分</button>
-      <button class="chip" onclick="selectExDuration(90)">90分</button>
-      <button class="chip" onclick="selectExDuration(120)">120分</button>
+    <h3>⏱ 時間を選ぶ（5〜120分）</h3>
+    <div class="drum-wrap">
+      <div class="drum-fade-top"></div>
+      <div class="drum-line-top"></div>
+      <div class="drum-line-bot"></div>
+      <div class="drum-fade-bot"></div>
+      <div class="drum-roll" id="drum-duration"></div>
     </div>
+    <div id="drum-duration-label" class="drum-speed-label"></div>
   </div>
   <!-- ランニング時のみ表示：速度ドラム -->
   <div id="speed-section" class="ex-card" style="display:none;margin-top:10px">
@@ -936,7 +939,7 @@ function switchView(view) {
   });
   document.getElementById('tab-bar').style.display = (view === 'main') ? '' : 'none';
   if (view === 'history') loadHistory();
-  if (view === 'exercise') renderExLog();
+  if (view === 'exercise') { renderExLog(); if (!_drumDurationInited) _initDurationDrum(); }
   if (view === 'settings') loadProfileInputs();
 }
 
@@ -971,12 +974,58 @@ function getProfile() {
 //  運動トラッキング
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
-const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'オンラインレッスン': 4.0 };
-let _exType = null, _exDuration = null;
+const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'オンラインレッスン': 5.0 };
+let _exType = null, _exDuration = 30;
 
-// ── ドラムロール（速度入力）──
+// ── 時間ドラム ──
+const DURATION_LIST = (() => { const r=[]; for(let d=5;d<=120;d+=5) r.push(d); return r; })();
+let _drumDurationInited = false;
+
+function _buildDurationDrum() {
+  const el = document.getElementById('drum-duration');
+  const pad = '<div class="drum-item drum-pad"></div>';
+  el.innerHTML = pad.repeat(DRUM_PAD) + DURATION_LIST.map(d=>`<div class="drum-item">${d}分</div>`).join('') + pad.repeat(DRUM_PAD);
+}
+
+function _getDurationDrumIdx() {
+  return Math.round(document.getElementById('drum-duration').scrollTop / DRUM_H);
+}
+
+function _highlightDurationDrum(dataIdx) {
+  document.querySelectorAll('#drum-duration .drum-item').forEach((el,i) => {
+    el.classList.toggle('drum-sel', i === dataIdx + DRUM_PAD);
+  });
+}
+
+function _onDurationScroll() {
+  const idx = _getDurationDrumIdx();
+  _exDuration = DURATION_LIST[idx] ?? 30;
+  _highlightDurationDrum(idx);
+  document.getElementById('drum-duration-label').textContent = `選択中: ${_exDuration}分`;
+  _updateExResult();
+}
+
+function _initDurationDrum(targetMin) {
+  _buildDurationDrum();
+  if (!_drumDurationInited) {
+    document.getElementById('drum-duration').addEventListener('scroll', _onDurationScroll, { passive: true });
+    _drumDurationInited = true;
+  }
+  const defMin = targetMin ?? 30;
+  let defIdx = DURATION_LIST.indexOf(defMin);
+  if (defIdx < 0) defIdx = DURATION_LIST.indexOf(30);
+  requestAnimationFrame(() => {
+    document.getElementById('drum-duration').scrollTop = defIdx * DRUM_H;
+    _exDuration = DURATION_LIST[defIdx];
+    _highlightDurationDrum(defIdx);
+    document.getElementById('drum-duration-label').textContent = `選択中: ${_exDuration}分`;
+    _updateExResult();
+  });
+}
+
+// ── 速度ドラム ──
 const DRUM_H = 44, DRUM_PAD = 2;
-let _speedMode = 'kmh', _runSpeedKmh = 8.0, _drumInited = false;
+let _speedMode = 'kmh', _runSpeedKmh = 8.5, _drumInited = false;
 
 const KMH_LIST = (() => {
   const r = [];
@@ -1010,7 +1059,7 @@ function _highlightDrum(dataIdx) {
 
 function _syncSpeedValue(idx) {
   if (_speedMode === 'kmh') {
-    const v = KMH_LIST[idx] ?? 8.0;
+    const v = KMH_LIST[idx] ?? 8.5;
     _runSpeedKmh = v;
     document.getElementById('drum-speed-label').textContent = `選択中: ${v.toFixed(1)} km/h`;
   } else {
@@ -1037,10 +1086,10 @@ function setSpeedMode(mode) {
   let defIdx;
   if (mode === 'kmh') {
     _buildDrum(KMH_LIST.map(v => v.toFixed(1)));
-    defIdx = KMH_LIST.findIndex(v => v >= 8.5); // 8.5km/h ≈ 7:03/kmペース
+    defIdx = KMH_LIST.findIndex(v => v >= 8.5);
   } else {
     _buildDrum(PACE_LIST.map(p => p.label));
-    defIdx = PACE_LIST.findIndex(p => p.totalSec >= 420); // 7:00/kmペース
+    defIdx = PACE_LIST.findIndex(p => p.totalSec >= 420);
   }
   requestAnimationFrame(() => {
     drum.scrollTop = defIdx * DRUM_H;
@@ -1050,13 +1099,28 @@ function setSpeedMode(mode) {
   });
 }
 
-function _initSpeedSection() {
+function _initSpeedSection(targetKmh) {
   document.getElementById('speed-section').style.display = '';
   if (!_drumInited) {
     document.getElementById('drum-speed').addEventListener('scroll', _onDrumScroll, { passive: true });
     _drumInited = true;
   }
-  setSpeedMode('kmh');
+  if (targetKmh) {
+    _speedMode = 'kmh';
+    document.getElementById('smb-kmh').classList.add('active');
+    document.getElementById('smb-pace').classList.remove('active');
+    _buildDrum(KMH_LIST.map(v => v.toFixed(1)));
+    const nearest = KMH_LIST.reduce((b, v) => Math.abs(v - targetKmh) < Math.abs(b - targetKmh) ? v : b, KMH_LIST[0]);
+    const idx = KMH_LIST.indexOf(nearest);
+    requestAnimationFrame(() => {
+      document.getElementById('drum-speed').scrollTop = idx * DRUM_H;
+      _highlightDrum(idx);
+      _syncSpeedValue(idx);
+      _updateExResult();
+    });
+  } else {
+    setSpeedMode('kmh');
+  }
 }
 
 function selectExType(type) {
@@ -1072,17 +1136,7 @@ function selectExType(type) {
   _updateExResult();
 }
 
-function selectExDuration(min) {
-  _exDuration = min;
-  document.querySelectorAll('#chips-duration .chip').forEach(b => {
-    b.classList.toggle('sel', b.textContent.trim() === min + '分');
-  });
-  _updateExResult();
-}
-
 function runningMET(speedKmh) {
-  // ACSMランニング方程式: VO2(mL/kg/min) = 0.2 × speed(m/min) + 3.5
-  // MET = VO2 / 3.5  ／  speed(m/min) = speedKmh × 1000/60
   return (0.2 * speedKmh * (1000 / 60) + 3.5) / 3.5;
 }
 
@@ -1090,7 +1144,6 @@ function calcExKcal(type, min) {
   const p = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
   const met = (type === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[type] || 4);
-  // 消費カロリー = MET × 体重(kg) × 時間(h)
   return Math.round(met * weight * (min / 60));
 }
 
@@ -1120,26 +1173,75 @@ function _updateExResult() {
   card.style.display = '';
 }
 
+// ── 記録・編集 ──
+let _editingTs = null;
+
+function editExercise(ts) {
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  const log = logs.find(l => l.ts === ts);
+  if (!log) return;
+  _editingTs = ts;
+
+  _exType = log.type;
+  document.querySelectorAll('#chips-type .chip').forEach(b => {
+    b.classList.toggle('sel', b.textContent.trim().includes(log.type));
+  });
+  if (log.type === 'ランニング') {
+    _initSpeedSection(log.speedKmh || null);
+  } else {
+    document.getElementById('speed-section').style.display = 'none';
+  }
+
+  const dIdx = DURATION_LIST.indexOf(log.min);
+  if (dIdx >= 0) {
+    requestAnimationFrame(() => {
+      document.getElementById('drum-duration').scrollTop = dIdx * DRUM_H;
+      _exDuration = log.min;
+      _highlightDurationDrum(dIdx);
+      document.getElementById('drum-duration-label').textContent = `選択中: ${_exDuration}分`;
+      _updateExResult();
+    });
+  }
+
+  document.querySelector('.btn-record-ex').textContent = '✏️ 記録を更新する';
+  document.getElementById('view-exercise').scrollIntoView({ behavior: 'smooth' });
+}
+
 function recordExercise() {
   if (!_exType || !_exDuration) return;
-  const met  = (_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4);
-  const kcal = calcExKcal(_exType, _exDuration);
-  const bc   = kcalToExBCount(kcal);
-  const today = new Date().toISOString().slice(0,10);
+  const met    = (_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4);
+  const p      = getProfile();
+  const weight = (p && p.weight) ? p.weight : 60;
+  const kcal   = Math.round(met * weight * (_exDuration / 60));
+  const bc     = kcalToExBCount(kcal);
+  const today  = new Date().toISOString().slice(0,10);
   const speedLabel = (_exType === 'ランニング')
     ? (_speedMode === 'kmh'
         ? `${_runSpeedKmh.toFixed(1)}km/h`
         : `${PACE_LIST[_getDrumIdx()]?.label ?? ''}／km`)
     : null;
+  const speedKmh = (_exType === 'ランニング') ? _runSpeedKmh : null;
+
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now(), speedLabel, met: Math.round(met * 10) / 10 });
+
+  if (_editingTs !== null) {
+    const i = logs.findIndex(l => l.ts === _editingTs);
+    if (i >= 0) logs[i] = { ...logs[i], type: _exType, min: _exDuration, kcal, bc, speedLabel, speedKmh, met: Math.round(met * 10) / 10 };
+    _editingTs = null;
+    document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
+  } else {
+    logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now(), speedLabel, speedKmh, met: Math.round(met * 10) / 10 });
+  }
+
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
-  _exType = null; _exDuration = null;
-  document.querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
+  _exType = null; _exDuration = 30;
+  document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
   document.getElementById('speed-section').style.display = 'none';
   document.getElementById('ex-result-card').style.display = 'none';
   document.getElementById('ex-profile-notice').style.display = 'none';
+  _initDurationDrum(30);
   const savedMsg = document.getElementById('ex-saved-msg');
   savedMsg.style.display = '';
   setTimeout(() => { savedMsg.style.display = 'none'; }, 2000);
@@ -1152,6 +1254,11 @@ function deleteExercise(ts) {
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
   logs = logs.filter(l => l.ts !== ts);
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
+  if (_editingTs === ts) {
+    _editingTs = null;
+    document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
+    document.getElementById('ex-result-card').style.display = 'none';
+  }
   renderExLog();
   updateDailyTotal();
 }
@@ -1172,7 +1279,7 @@ function renderExLog() {
         <div style="font-weight:800;font-size:15px">${detail}</div>
         <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${l.kcal} kcal ／ −${fmtCount(l.bc)} B${l.met ? ` ／ ${l.met} メッツ` : ''}</div>
       </div>
-      <button class="ex-del-btn" onclick="deleteExercise(${l.ts})">✕</button>
+      <button class="ex-edit-btn" onclick="editExercise(${l.ts})">✏️</button>
     </div>`;
   }).join('');
 }
@@ -1183,7 +1290,6 @@ function getTodayExBCount() {
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
   return logs.filter(l => l.date === today).reduce((s, l) => s + l.bc, 0);
 }
-
 
 const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
 
