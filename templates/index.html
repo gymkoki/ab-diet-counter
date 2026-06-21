@@ -177,8 +177,10 @@
     .ex-result-label { font-size:13px; font-weight:700; color:var(--text-muted); }
     .ex-result-val { font-size:20px; font-weight:900; color:var(--primary); }
     .btn-record-ex { width:100%; padding:14px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:16px; font-weight:800; cursor:pointer; margin-top:14px; }
-    .ex-log-row { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid var(--border); }
+    .ex-log-row { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid var(--border); font-size:14px; font-weight:700; }
     .ex-log-row:last-child { border-bottom:none; }
+    .ex-profile-notice { background:#FFF8E1; border:1.5px solid #FFD54F; border-radius:12px; padding:12px 14px; margin:10px 16px 0; font-size:13px; font-weight:700; line-height:1.6; color:#795548; }
+    .history-ex-tag { font-size:11px; font-weight:700; color:#2e7d32; background:#e8f5e9; border-radius:6px; padding:2px 7px; display:inline-block; margin-bottom:3px; }
 
     /* ── 設定ビュー ── */
     .setting-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin:12px 16px 0; }
@@ -285,10 +287,15 @@
       <button class="chip" onclick="selectExDuration(120)">120分</button>
     </div>
   </div>
+  <div id="ex-profile-notice" class="ex-profile-notice" style="display:none">
+    ⚠️ 正確な消費カロリーを計算するために、<strong>右下の「設定」から身長・体重を入力してください。</strong><br>
+    <span style="font-size:12px;color:var(--text-muted)">未入力の場合は体重60kgで概算します。</span>
+  </div>
   <div id="ex-result-card" class="ex-result-card" style="display:none">
     <div id="ex-result-inner"></div>
-    <button class="btn-record-ex" onclick="recordExercise()">✅ 記録する</button>
+    <button class="btn-record-ex" onclick="recordExercise()">💾 この運動を保存する</button>
   </div>
+  <div id="ex-saved-msg" style="display:none;text-align:center;padding:14px;background:#e8f5e9;border-radius:12px;margin:10px 16px 0;color:#388e3c;font-weight:800;font-size:15px">✅ 保存しました！</div>
   <div id="ex-log-card" class="ex-card" style="display:none;margin-top:10px;margin-bottom:12px">
     <h3>📋 今日の運動記録</h3>
     <div id="ex-log-list"></div>
@@ -950,8 +957,11 @@ function kcalToExBCount(kcal) {
 }
 
 function _updateExResult() {
-  const card = document.getElementById('ex-result-card');
-  if (!_exType || !_exDuration) { card.style.display = 'none'; return; }
+  const card   = document.getElementById('ex-result-card');
+  const notice = document.getElementById('ex-profile-notice');
+  if (!_exType || !_exDuration) { card.style.display = 'none'; notice.style.display = 'none'; return; }
+  const hasProfile = !!getProfile();
+  notice.style.display = hasProfile ? 'none' : '';
   const kcal = calcExKcal(_exType, _exDuration);
   const bc   = kcalToExBCount(kcal);
   document.getElementById('ex-result-inner').innerHTML = `
@@ -973,6 +983,10 @@ function recordExercise() {
   _exType = null; _exDuration = null;
   document.querySelectorAll('.chip').forEach(b => b.classList.remove('sel'));
   document.getElementById('ex-result-card').style.display = 'none';
+  document.getElementById('ex-profile-notice').style.display = 'none';
+  const savedMsg = document.getElementById('ex-saved-msg');
+  savedMsg.style.display = '';
+  setTimeout(() => { savedMsg.style.display = 'none'; }, 2000);
   renderExLog();
   updateDailyTotal();
 }
@@ -1019,11 +1033,21 @@ async function loadHistory() {
       listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>「↺ 完了」タブで1日の記録を保存すると、ここに表示されます。</div>';
       return;
     }
-    listEl.innerHTML = daily.map(d => `
+    let exLogs = [];
+    try { exLogs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+    const exByDate = {};
+    exLogs.forEach(l => { exByDate[l.date] = (exByDate[l.date] || 0) + l.bc; });
+    listEl.innerHTML = daily.map(d => {
+      const exBc = exByDate[d.date] || 0;
+      const exHtml = exBc > 0
+        ? `<div class="history-ex-tag">🏃 運動で −${fmtCount(exBc)}B 消費</div>`
+        : '';
+      return `
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
-        <div><span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span></div>
-      </div>`).join('');
+        <div style="text-align:right">${exHtml}<span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span></div>
+      </div>`;
+    }).join('');
     const avg = data.days_count > 0 ? data.total / data.days_count : 0;
     totalCountEl.textContent = `${fmtCount(avg)} カウント / 日`;
     totalEl.style.display = 'flex';
