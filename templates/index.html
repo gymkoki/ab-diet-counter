@@ -213,7 +213,7 @@
 
 <div id="view-history" style="display:none">
   <div class="history-card">
-    <h2>📊 今週のBカウント履歴</h2>
+    <h2>📊 今月のBカウント履歴（直近30日）</h2>
     <div class="history-range" id="history-range">読み込み中…</div>
     <div id="history-list"></div>
     <div class="history-total" id="history-total" style="display:none">
@@ -228,7 +228,7 @@
     <span style="font-size:20px;display:block;margin-bottom:2px">📷</span>記録
   </button>
   <button style="flex:1;padding:10px 0 8px;border:none;background:none;font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;line-height:1.5" id="nav-history" onclick="switchView('history')">
-    <span style="font-size:20px;display:block;margin-bottom:2px">📊</span>今週の履歴
+    <span style="font-size:20px;display:block;margin-bottom:2px">📊</span>今月の履歴
   </button>
 </div>
 
@@ -782,14 +782,14 @@ async function loadHistory() {
   listEl.innerHTML = '';
   totalEl.style.display = 'none';
   try {
-    const res  = await fetch(`/api/weekly-b?user_id=${encodeURIComponent(USER_ID)}`);
+    const res  = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(USER_ID)}`);
     const data = await res.json();
     const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
     const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
-    rangeEl.textContent = `${fmtDate(data.week_start)} 〜 ${fmtDate(data.week_end)}`;
-    const daily = (data.daily||[]).slice().sort((a,b) => a.date.localeCompare(b.date));
+    rangeEl.textContent = `${fmtDate(data.date_start)} 〜 ${fmtDate(data.date_end)}（直近30日）`;
+    const daily = (data.daily||[]).slice().sort((a,b) => b.date.localeCompare(a.date));
     if (daily.length === 0) {
-      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>「↺ リセット」タブで1日の記録を保存すると、ここに表示されます。</div>';
+      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>「↺ 完了」タブで1日の記録を保存すると、ここに表示されます。</div>';
       return;
     }
     listEl.innerHTML = daily.map(d => `
@@ -797,7 +797,7 @@ async function loadHistory() {
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
         <div><span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span></div>
       </div>`).join('');
-    const avg = data.days_count > 0 ? data.week_total / data.days_count : 0;
+    const avg = data.days_count > 0 ? data.total / data.days_count : 0;
     totalCountEl.textContent = `${fmtCount(avg)} カウント / 日`;
     totalEl.style.display = 'flex';
   } catch(e) {

@@ -511,16 +511,16 @@ def post_daily_b():
 
 
 @app.route("/api/weekly-b")
-def get_weekly_b():
-    """今週（月〜日）のBカウント合計と日数を返す"""
+@app.route("/api/monthly-b")
+def get_monthly_b():
+    """直近30日間のBカウント履歴を返す"""
     uid = request.args.get("user_id", "")
     if not uid:
-        return jsonify({"week_total": 0, "days_count": 0})
+        return jsonify({"total": 0, "days_count": 0, "daily": [], "date_start": "", "date_end": ""})
 
     now = datetime.datetime.now(JST)
-    # 今週の月曜日を計算
-    week_start = (now - datetime.timedelta(days=now.weekday())).strftime("%Y-%m-%d")
-    week_end   = (now + datetime.timedelta(days=6 - now.weekday())).strftime("%Y-%m-%d")
+    date_end   = now.strftime("%Y-%m-%d")
+    date_start = (now - datetime.timedelta(days=29)).strftime("%Y-%m-%d")
 
     conn = _get_conn()
     try:
@@ -529,21 +529,21 @@ def get_weekly_b():
             f"""SELECT date, b_count FROM daily_b_count
                WHERE user_id={PH} AND date>={PH} AND date<={PH}
                ORDER BY date""",
-            (uid, week_start, week_end)
+            (uid, date_start, date_end)
         )
         rows = cur.fetchall()
     finally:
         conn.close()
 
-    week_total = sum(r[1] for r in rows)
+    total      = sum(r[1] for r in rows)
     days_count = len(rows)
-    daily = [{"date": r[0], "b_count": r[1]} for r in rows]
+    daily      = [{"date": r[0], "b_count": r[1]} for r in rows]
     return jsonify({
-        "week_total": week_total,
+        "total":      total,
         "days_count": days_count,
-        "daily": daily,
-        "week_start": week_start,
-        "week_end": week_end,
+        "daily":      daily,
+        "date_start": date_start,
+        "date_end":   date_end,
     })
 
 
