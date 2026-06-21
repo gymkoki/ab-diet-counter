@@ -56,6 +56,17 @@
     .meal-panel.active { display: block; }
     .container { padding: 12px 16px 48px; }
 
+    /* ── ホーム画面追加バナー ── */
+    #home-banner { display:none; position:fixed; bottom:76px; left:12px; right:12px; z-index:200; background:#1A1A2E; color:white; border-radius:16px; padding:14px 16px; box-shadow:0 4px 24px rgba(0,0,0,0.3); }
+    .home-banner-inner { display:flex; align-items:flex-start; gap:12px; }
+    .home-banner-icon { font-size:28px; flex-shrink:0; }
+    .home-banner-body { flex:1; }
+    .home-banner-title { font-size:14px; font-weight:800; margin-bottom:4px; }
+    .home-banner-desc { font-size:12px; opacity:0.8; line-height:1.6; }
+    .home-banner-arrow { display:flex; align-items:center; gap:4px; margin-top:6px; font-size:12px; font-weight:700; color:#FF6B35; }
+    .home-banner-close { background:rgba(255,255,255,0.15); border:none; color:white; width:28px; height:28px; border-radius:50%; font-size:16px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .home-banner-tip { position:absolute; bottom:-10px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:10px solid transparent; border-right:10px solid transparent; border-top:10px solid #1A1A2E; }
+
     /* ── 写真ストリップ ── */
     .meal-strip { display:flex; gap:10px; padding:4px 0 4px; flex-wrap:wrap; }
     .meal-thumb { position:relative; width:88px; height:88px; flex-shrink:0; border-radius:12px; overflow:hidden; background:var(--bg); border:2px solid var(--border); }
@@ -237,6 +248,23 @@
 <div id="lightbox" onclick="closeLightbox()">
   <button id="lightbox-close" onclick="closeLightbox()">✕</button>
   <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+</div>
+
+<!-- ホーム画面追加バナー（各端末2回まで） -->
+<div id="home-banner">
+  <div class="home-banner-inner">
+    <div class="home-banner-icon">📱</div>
+    <div class="home-banner-body">
+      <div class="home-banner-title">ホーム画面に追加すると便利です！</div>
+      <div class="home-banner-desc">iPhoneの場合：Safari下部の
+        <span style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:4px;padding:0 4px">共有 □↑</span>
+        →「ホーム画面に追加」をタップ
+      </div>
+      <div class="home-banner-desc" style="margin-top:2px">Androidの場合：ブラウザメニュー → 「ホーム画面に追加」</div>
+    </div>
+    <button class="home-banner-close" onclick="closeHomeBanner()">✕</button>
+  </div>
+  <div class="home-banner-tip"></div>
 </div>
 
 <!-- アップデートお知らせ（各端末1回のみ表示） -->
@@ -835,6 +863,24 @@ function esc(str) {
 })();
 
 // ═══════════════════════════════════════════
+//  ホーム画面追加バナー（各端末2回まで）
+// ═══════════════════════════════════════════
+const HOME_BANNER_KEY = 'ab-diet-home-banner-count';
+function closeHomeBanner() {
+  document.getElementById('home-banner').style.display = 'none';
+}
+function maybeShowHomeBanner() {
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  if (isStandalone) return;
+  const count = parseInt(localStorage.getItem(HOME_BANNER_KEY) || '0', 10);
+  if (count >= 2) return;
+  localStorage.setItem(HOME_BANNER_KEY, String(count + 1));
+  setTimeout(() => {
+    document.getElementById('home-banner').style.display = 'block';
+  }, 2000);
+}
+
+// ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
 const NOTICE_KEY = 'ab-diet-notice-v2';
@@ -853,6 +899,7 @@ loadStats();
 if (!localStorage.getItem(NOTICE_KEY)) {
   document.getElementById('update-notice-overlay').style.display = 'flex';
 }
+maybeShowHomeBanner();
 </script>
 </body>
 </html>
