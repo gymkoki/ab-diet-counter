@@ -1080,10 +1080,17 @@ function selectExDuration(min) {
   _updateExResult();
 }
 
+function runningMET(speedKmh) {
+  // ACSMランニング方程式: VO2(mL/kg/min) = 0.2 × speed(m/min) + 3.5
+  // MET = VO2 / 3.5  ／  speed(m/min) = speedKmh × 1000/60
+  return (0.2 * speedKmh * (1000 / 60) + 3.5) / 3.5;
+}
+
 function calcExKcal(type, min) {
   const p = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
-  const met = (type === 'ランニング') ? _runSpeedKmh : (MET_BASE[type] || 4);
+  const met = (type === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[type] || 4);
+  // 消費カロリー = MET × 体重(kg) × 時間(h)
   return Math.round(met * weight * (min / 60));
 }
 
