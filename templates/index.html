@@ -242,9 +242,6 @@
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.92)">
     🏃 運動でマイナス <span id="ex-deduct-num" style="font-size:18px;font-weight:900">0</span> カウント
   </div>
-  <div id="goal-target-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.95)">
-    🎯 目標 <span id="goal-target-text"></span>
-  </div>
 </header>
 
 <!-- タブバー -->
@@ -660,28 +657,6 @@ function updateDailyTotal() {
     }
   }
 
-  // 目標Bカウントの表示（性別・目標が設定されている場合）
-  const gbar  = document.getElementById('goal-target-bar');
-  const gtext = document.getElementById('goal-target-text');
-  const tgt   = getGoalTarget(getProfile());
-  if (gbar && gtext) {
-    if (tgt) {
-      let status;
-      if (tgt.goalKey === 'bulk') {
-        status = net >= tgt.min ? '✅ 達成' : `あと B${fmtCount(tgt.min - net)}`;
-      } else if (tgt.goalKey === 'cut') {
-        status = net <= tgt.max ? '✅ 範囲内' : '⚠️ オーバー';
-      } else { // maintain
-        if (net < tgt.min)      status = 'やや少なめ';
-        else if (net <= tgt.max) status = '✅ 範囲内';
-        else                     status = '⚠️ オーバー';
-      }
-      gtext.textContent = `B${tgt.label}（${tgt.goalName}）／ 現在 ${status}`;
-      gbar.style.display = '';
-    } else {
-      gbar.style.display = 'none';
-    }
-  }
 }
 
 // ═══════════════════════════════════════════
