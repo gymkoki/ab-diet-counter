@@ -4,7 +4,8 @@ import base64
 import json
 import datetime
 import threading
-from flask import Flask, render_template, request, jsonify
+from functools import wraps
+from flask import Flask, render_template, request, jsonify, Response
 import anthropic
 from dotenv import load_dotenv, set_key
 
@@ -20,7 +21,9 @@ app = Flask(__name__)
 # ── 画像の縮小・圧縮（AI分析の高速化）────────────────────
 # Claude Visionは画像サイズが大きいほど処理（トークン化）に時間がかかるため、
 # 分析前に長辺を最大1024pxへ縮小し、JPEGで圧縮してから送信する。
-MAX_IMAGE_DIMENSION = 512
+# ※ 512pxでは「エクレアとアンパン」のような見た目が似た食品の細部が潰れ
+#   誤認識が増えるため、1024pxへ引き上げて認識精度を優先する。
+MAX_IMAGE_DIMENSION = 1024
 JPEG_QUALITY = 85
 
 
@@ -157,6 +160,28 @@ def init_db():
 
 init_db()
 
+# ── 管理者認証 ──────────────────────────────────────────────
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
+
+# 食事分析1回あたりの概算コスト（円）。Opus 4.8・画像1024px・出力1000トークン想定。
+# システムプロンプト実測5,455トークン＋画像約1,050＋出力約1,000で約$0.058≒¥8.7。
+# プロンプトキャッシュが効くと¥4〜5。平均的な¥7をデフォルトとする。
+# 為替やモデルを変えたら環境変数 COST_PER_ANALYSIS_JPY で調整可能。
+COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "7"))
+
+def _admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or auth.password != ADMIN_PASSWORD:
+            return Response(
+                "管理者認証が必要です",
+                401,
+                {"WWW-Authenticate": 'Basic realm="AB Diet Admin"'},
+            )
+        return f(*args, **kwargs)
+    return decorated
+
 ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて特定し、以下のルールに基づいてBカウントを計算してください。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -226,6 +251,33 @@ B食材例：
 - 清涼飲料水・ジュース・アルコール（1人前120kcal以上）
 - 油・バター・ラード（まとまった量）
 - ベシャメルソース・クリームソース（1人前150g≒200kcal）
+
+━━━━━━━━━━━━━━━━━━━━━━━
+■ STEP1.5：量の見積もり【最重要・誤差を減らす】
+━━━━━━━━━━━━━━━━━━━━━━━
+Bカウントは「実際に食べた量」で決まる。料理名や食材から安易に「標準1人前」を当てはめると
+少量の食材を大きく過大評価してしまうため、必ず写真に写っている量だけで判断すること。
+
+【量を推定する手順】
+1. 「1人前」「標準量」を初期値にしない。写真に写っている実際の量を観察してグラム数を見積もる。
+2. 写真内の基準物とサイズを比較して実重量を推定する：
+   - 箸の幅 ≒ 5mm、一般的な皿の直径 ≒ 20〜26cm、茶碗の直径 ≒ 11〜12cm
+   - ティースプーン ≒ 5ml、大さじ ≒ 15ml、500mlペットボトルの高さ ≒ 21cm
+3. 薄切り・少量の食材は特に過大評価しやすい。「枚数 × 1枚あたりの重量」で計算する：
+   - ベーコン薄切り1枚 ≒ 8〜10g（約16〜20kcal）。例）1枚だけなら約10g・約18kcal。
+   - ハム1枚 ≒ 10g、ロースハム薄切り1枚 ≒ 約20kcal
+   - スライスチーズ1枚 ≒ 18g（約60kcal）、ベビーチーズ1個 ≒ 15g
+   - 薬味・ねぎ・ごま・少量のソースなどは「ごく少量」として扱う
+4. 各食材について必ず「推定グラム数 → 推定kcal」を明示し、その実kcalでSTEP2を適用する。
+   amount欄とreason欄に推定グラム数と推定kcalを必ず書くこと。
+5. 量が少ないときは遠慮なく少量と判定してよい（0カウント・0.5カウント・A食材化を恐れない）。
+
+【ベーコンの量別の判定例】
+- ベーコン1枚（約10g・約18kcal）→ 120kcal未満 → 0カウント
+- ベーコン3枚（約30g・約55kcal）→ 120kcal未満 → 0カウント
+- ベーコン1人前（約60g・約110kcal）→ 120kcal未満 → 0カウント
+- ベーコン大量（約120g・約220kcal）→ 200kcal超 → 1カウント
+※ベーコンは100gあたり約185kcal（A食材寄り）だが脂質が多いため、写真の実量で必ず判定する。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 ■ STEP2：B食材のBカウント計算【最重要】
@@ -402,8 +454,143 @@ def index():
 
 
 @app.route("/admin")
+@_admin_required
 def admin():
     return render_template("admin.html")
+
+
+@app.route("/api/admin/overview")
+@_admin_required
+def admin_overview():
+    now = datetime.datetime.now(JST)
+    today_start = now.strftime("%Y-%m-%dT00:00:00")
+    month_start_ts = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%dT00:00:00")
+    month_start_dt = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(DISTINCT user_id) FROM usage_log")
+        total_users = cur.fetchone()[0] or 0
+
+        cur.execute(
+            f"SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at >= {PH}",
+            (month_start_ts,),
+        )
+        mau = cur.fetchone()[0] or 0
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM usage_log WHERE created_at >= {PH}",
+            (today_start,),
+        )
+        today_analyses = cur.fetchone()[0] or 0
+
+        cur.execute(
+            f"SELECT AVG(b_count) FROM daily_b_count WHERE date >= {PH}",
+            (month_start_dt,),
+        )
+        avg_b_row = cur.fetchone()[0]
+    finally:
+        conn.close()
+
+    return jsonify({
+        "total_users": total_users,
+        "mau": mau,
+        "today_analyses": today_analyses,
+        "avg_b_count": round(float(avg_b_row), 2) if avg_b_row is not None else None,
+        "cost_per_analysis_jpy": COST_PER_ANALYSIS_JPY,
+        "est_cost_today_jpy": round(today_analyses * COST_PER_ANALYSIS_JPY),
+    })
+
+
+@app.route("/api/admin/daily-trend")
+@_admin_required
+def admin_daily_trend():
+    now = datetime.datetime.now(JST)
+    start_dt = now.date() - datetime.timedelta(days=29)
+    start_ts = start_dt.strftime("%Y-%m-%dT00:00:00")
+    start_str = start_dt.strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT SUBSTR(created_at, 1, 10) AS dt,
+                       COUNT(DISTINCT user_id) AS users, COUNT(*) AS analyses
+               FROM usage_log WHERE created_at >= {PH}
+               GROUP BY dt ORDER BY dt""",
+            (start_ts,),
+        )
+        rows = cur.fetchall()
+        usage_by_day    = {row[0]: row[1] for row in rows}
+        analyses_by_day = {row[0]: row[2] for row in rows}
+
+        cur.execute(
+            f"""SELECT date, AVG(b_count)
+               FROM daily_b_count WHERE date >= {PH}
+               GROUP BY date ORDER BY date""",
+            (start_str,),
+        )
+        b_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+    all_dates = []
+    d = start_dt
+    end = now.date()
+    while d <= end:
+        all_dates.append(d.strftime("%Y-%m-%d"))
+        d += datetime.timedelta(days=1)
+
+    return jsonify({
+        "dates": all_dates,
+        "active_users": [usage_by_day.get(dt, 0) for dt in all_dates],
+        "analyses": [analyses_by_day.get(dt, 0) for dt in all_dates],
+        "est_costs_jpy": [round(analyses_by_day.get(dt, 0) * COST_PER_ANALYSIS_JPY) for dt in all_dates],
+        "avg_b_counts": [b_by_day.get(dt) for dt in all_dates],
+    })
+
+
+@app.route("/api/admin/users")
+@_admin_required
+def admin_users():
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT user_id, COUNT(*) AS days, AVG(b_count) AS avg_b, MAX(date) AS last_active
+               FROM daily_b_count GROUP BY user_id ORDER BY last_active DESC"""
+        )
+        b_stats = {
+            row[0]: {
+                "days": row[1],
+                "avg_b": round(float(row[2]), 2) if row[2] is not None else None,
+                "last_active": row[3],
+            }
+            for row in cur.fetchall()
+        }
+
+        cur.execute(
+            "SELECT user_id, COUNT(*) FROM usage_log GROUP BY user_id"
+        )
+        analysis_counts = {row[0]: row[1] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+    all_ids = set(b_stats.keys()) | set(analysis_counts.keys())
+    users = []
+    for uid in all_ids:
+        bs = b_stats.get(uid, {})
+        users.append({
+            "user_id_short": uid[:8] + "…",
+            "days_recorded": bs.get("days", 0),
+            "avg_b_count": bs.get("avg_b"),
+            "analyses_count": analysis_counts.get(uid, 0),
+            "last_active": bs.get("last_active", ""),
+        })
+    users.sort(key=lambda x: x["last_active"] or "", reverse=True)
+
+    return jsonify({"users": users})
 
 
 @app.route("/api/status")
@@ -586,7 +773,7 @@ def analyze():
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-8",
             max_tokens=2500,
             system=[
                 {
@@ -665,7 +852,7 @@ def reanalyze():
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-8",
             max_tokens=2500,
             system=[
                 {

@@ -3,112 +3,457 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>管理者設定 — ABダイエット Bカウンター</title>
+  <title>Bカウンター 管理ダッシュボード</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
-      background: #F7F4EF; min-height: 100vh;
-      display: flex; align-items: center; justify-content: center; padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+      background: #F3F4F6;
+      color: #111827;
+      min-height: 100vh;
+    }
+    header {
+      background: linear-gradient(135deg, #FF6B35 0%, #e55a25 100%);
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(255,107,53,0.3);
+    }
+    header h1 { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
+    .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    #last-updated { font-size: 12px; opacity: 0.85; }
+    .refresh-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .refresh-btn:hover { background: rgba(255,255,255,0.35); }
+
+    main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+
+    /* ── KPI Cards ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .kpi-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 18px 16px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      text-align: center;
+    }
+    .kpi-icon { font-size: 22px; margin-bottom: 6px; }
+    .kpi-label { font-size: 11px; font-weight: 700; color: #6B7280; margin-bottom: 6px; letter-spacing: 0.4px; }
+    .kpi-value { font-size: 34px; font-weight: 900; color: #FF6B35; line-height: 1; }
+    .kpi-sub { font-size: 11px; color: #9CA3AF; margin-top: 4px; }
+
+    /* ── Charts ── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 20px;
     }
     .card {
-      background: #fff; border-radius: 20px; padding: 36px 32px;
-      max-width: 420px; width: 100%;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.1);
+      background: #fff;
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
     }
-    h1 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-    .sub { font-size: 13px; color: #6B7280; line-height: 1.7; margin-bottom: 24px; }
-    label { font-size: 13px; font-weight: 700; display: block; margin-bottom: 6px; }
-    input {
-      width: 100%; padding: 12px 14px; border-radius: 10px;
-      border: 1.5px solid #E5E7EB; font-size: 14px; font-family: monospace;
-      outline: none; transition: border-color 0.2s;
+    .card h2 {
+      font-size: 14px;
+      font-weight: 800;
+      color: #374151;
+      margin-bottom: 14px;
     }
-    input:focus { border-color: #FF6B35; }
-    .hint { font-size: 11px; color: #9CA3AF; margin-top: 6px; line-height: 1.6; }
-    #status-badge {
-      display: inline-block; padding: 4px 12px; border-radius: 20px;
-      font-size: 12px; font-weight: 700; margin-bottom: 20px;
+
+    /* ── Users Table ── */
+    .users-card { margin-bottom: 20px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      text-align: left;
+      padding: 9px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #6B7280;
+      border-bottom: 2px solid #E5E7EB;
+      white-space: nowrap;
     }
-    .badge-ok { background: #D1FAE5; color: #065F46; }
-    .badge-ng { background: #FEE2E2; color: #991B1B; }
-    #error { margin-top: 10px; padding: 10px 14px; background: #FEF2F2; border-radius: 8px; font-size: 13px; color: #DC2626; display: none; }
-    #success { margin-top: 10px; padding: 10px 14px; background: #D1FAE5; border-radius: 8px; font-size: 13px; color: #065F46; display: none; }
-    button {
-      width: 100%; margin-top: 20px; padding: 14px; border-radius: 12px; border: none;
-      cursor: pointer; background: linear-gradient(135deg, #FF6B35, #FF4500);
-      color: white; font-size: 15px; font-weight: 700; transition: opacity 0.2s;
+    tbody tr { border-bottom: 1px solid #F3F4F6; transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #FFF9F7; }
+    tbody td { padding: 11px 12px; vertical-align: middle; }
+    .uid { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; color: #374151; }
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #FFF5F0;
+      color: #FF6B35;
     }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .back { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #6B7280; text-decoration: none; }
-    .back:hover { color: #FF6B35; }
+
+    /* ── API Key Section ── */
+    .apikey-card { margin-bottom: 20px; }
+    .apikey-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+    .apikey-input {
+      flex: 1;
+      min-width: 200px;
+      padding: 10px 14px;
+      border: 1.5px solid #E5E7EB;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .apikey-input:focus { border-color: #FF6B35; }
+    .apikey-save {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #FF6B35, #e55a25);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .apikey-save:disabled { opacity: 0.5; cursor: not-allowed; }
+    .api-status {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .status-ok { background: #D1FAE5; color: #065F46; }
+    .status-ng { background: #FEE2E2; color: #991B1B; }
+    .api-msg { margin-top: 8px; font-size: 13px; }
+    .api-msg.ok { color: #065F46; }
+    .api-msg.err { color: #DC2626; }
+
+    /* ── Utility ── */
+    .spinner {
+      width: 26px; height: 26px;
+      border: 3px solid #F3F4F6;
+      border-top-color: #FF6B35;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .no-data { text-align: center; color: #9CA3AF; padding: 28px 0; font-size: 14px; }
+    .back-link { display: inline-block; margin-bottom: 16px; font-size: 13px; color: #6B7280; text-decoration: none; }
+    .back-link:hover { color: #FF6B35; }
+
+    @media (max-width: 900px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      header { flex-direction: column; gap: 8px; }
+      .header-right { align-items: center; }
+      main { padding: 12px; }
+      .kpi-value { font-size: 28px; }
+    }
   </style>
 </head>
 <body>
-<div class="card">
-  <h1>🔑 管理者設定</h1>
-  <p class="sub">このページはアプリの管理者専用です。<br>一般ユーザーには共有しないでください。</p>
 
-  <div id="status-badge">確認中…</div>
+<header>
+  <h1>🏋️ Bカウンター 管理ダッシュボード</h1>
+  <div class="header-right">
+    <span id="last-updated">読み込み中…</span>
+    <button class="refresh-btn" onclick="refresh()">↺ 今すぐ更新</button>
+  </div>
+</header>
 
-  <label for="key-input">Anthropic APIキー</label>
-  <input type="password" id="key-input" placeholder="sk-ant-..." autocomplete="off">
-  <div class="hint">console.anthropic.com → API Keys から発行できます。</div>
+<main>
+  <a href="/" class="back-link">← アプリに戻る</a>
 
-  <div id="error"></div>
-  <div id="success"></div>
+  <!-- KPI -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-icon">👥</div>
+      <div class="kpi-label">総ユーザー数</div>
+      <div class="kpi-value" id="kpi-total">-</div>
+      <div class="kpi-sub">累計</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">📅</div>
+      <div class="kpi-label">月間アクティブ</div>
+      <div class="kpi-value" id="kpi-mau">-</div>
+      <div class="kpi-sub">直近30日</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">📸</div>
+      <div class="kpi-label">今日の食事分析</div>
+      <div class="kpi-value" id="kpi-today">-</div>
+      <div class="kpi-sub">回</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">💴</div>
+      <div class="kpi-label">今日の推定コスト</div>
+      <div class="kpi-value" id="kpi-cost">-</div>
+      <div class="kpi-sub" id="kpi-cost-sub">概算</div>
+    </div>
+  </div>
 
-  <button id="save-btn" onclick="save()">保存する</button>
-  <a href="/" class="back">← アプリに戻る</a>
-</div>
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="card">
+      <h2>📸 日別 食事分析回数 ＝ 推定コスト（直近30日）</h2>
+      <canvas id="chart-analyses" height="180"></canvas>
+      <div id="cost-note" style="font-size:11px;color:#9CA3AF;margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2>📊 日別アクティブユーザー（直近30日）</h2>
+      <canvas id="chart-users" height="180"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <h2>🍽️ 日別平均Bカウント（直近30日）</h2>
+    <canvas id="chart-b" height="120"></canvas>
+  </div>
+
+  <!-- Users Table -->
+  <div class="card users-card">
+    <h2>👤 ユーザー別統計</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ユーザーID（先頭8文字）</th>
+            <th>B記録日数</th>
+            <th>平均Bカウント / 日</th>
+            <th>食事分析回数</th>
+            <th>最終利用日</th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody">
+          <tr><td colspan="5"><div class="spinner"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- API Key Setup -->
+  <div class="card apikey-card">
+    <h2>🔑 APIキー設定</h2>
+    <div id="api-status-badge" class="api-status">確認中…</div>
+    <div class="apikey-row">
+      <input type="password" id="key-input" class="apikey-input"
+             placeholder="sk-ant-…" autocomplete="off"
+             onkeydown="if(event.key==='Enter') saveKey()">
+      <button id="save-btn" class="apikey-save" onclick="saveKey()">保存する</button>
+    </div>
+    <div id="api-msg" class="api-msg" style="display:none"></div>
+  </div>
+</main>
+
 <script>
-  async function checkStatus() {
-    const res = await fetch("/api/status");
-    const data = await res.json();
-    const badge = document.getElementById("status-badge");
-    if (data.configured) {
-      badge.textContent = "✓ APIキー設定済み";
-      badge.className = "status-badge badge-ok";
-    } else {
-      badge.textContent = "✗ APIキー未設定";
-      badge.className = "status-badge badge-ng";
+  let chartUsers = null, chartB = null, chartAnalyses = null;
+
+  function fmtLabel(dateStr) {
+    const [, m, d] = dateStr.split('-');
+    return `${parseInt(m)}/${parseInt(d)}`;
+  }
+
+  async function loadOverview() {
+    const r = await fetch('/api/admin/overview');
+    if (!r.ok) throw new Error('overview');
+    const d = await r.json();
+    document.getElementById('kpi-total').textContent = d.total_users ?? '-';
+    document.getElementById('kpi-mau').textContent   = d.mau ?? '-';
+    document.getElementById('kpi-today').textContent = d.today_analyses ?? '-';
+    document.getElementById('kpi-cost').textContent  =
+      d.est_cost_today_jpy != null ? `¥${d.est_cost_today_jpy.toLocaleString()}` : '-';
+    if (d.cost_per_analysis_jpy != null) {
+      document.getElementById('kpi-cost-sub').textContent = `概算（1回 ¥${d.cost_per_analysis_jpy}）`;
     }
   }
-  checkStatus();
 
-  document.getElementById("key-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") save();
-  });
+  async function loadTrend() {
+    const r = await fetch('/api/admin/daily-trend');
+    if (!r.ok) throw new Error('trend');
+    const d = await r.json();
+    const labels = d.dates.map(fmtLabel);
 
-  async function save() {
-    const key = document.getElementById("key-input").value.trim();
-    const errEl = document.getElementById("error");
-    const okEl = document.getElementById("success");
-    const btn = document.getElementById("save-btn");
-    errEl.style.display = "none";
-    okEl.style.display = "none";
+    // 日別 食事分析回数（＝コスト）
+    if (chartAnalyses) chartAnalyses.destroy();
+    chartAnalyses = new Chart(document.getElementById('chart-analyses'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: '食事分析回数',
+          data: d.analyses,
+          backgroundColor: 'rgba(99,102,241,0.8)',
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              afterLabel: (ctx) => {
+                const yen = (d.est_costs_jpy && d.est_costs_jpy[ctx.dataIndex]) || 0;
+                return `推定コスト ¥${yen.toLocaleString()}`;
+              }
+            }
+          }
+        },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }
+      }
+    });
+    const totalAnalyses = d.analyses.reduce((s, n) => s + n, 0);
+    const totalCost     = (d.est_costs_jpy || []).reduce((s, n) => s + n, 0);
+    document.getElementById('cost-note').textContent =
+      `直近30日 合計 ${totalAnalyses.toLocaleString()} 回 ／ 推定コスト 約 ¥${totalCost.toLocaleString()}（棒にカーソルで日別コスト表示）`;
+
+    if (chartUsers) chartUsers.destroy();
+    chartUsers = new Chart(document.getElementById('chart-users'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'アクティブユーザー数',
+          data: d.active_users,
+          backgroundColor: 'rgba(255,107,53,0.75)',
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }
+      }
+    });
+
+    if (chartB) chartB.destroy();
+    chartB = new Chart(document.getElementById('chart-b'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: '平均Bカウント',
+          data: d.avg_b_counts,
+          borderColor: '#6366F1',
+          backgroundColor: 'rgba(99,102,241,0.1)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          spanGaps: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  async function loadUsers() {
+    const r = await fetch('/api/admin/users');
+    if (!r.ok) throw new Error('users');
+    const d = await r.json();
+    const tbody = document.getElementById('users-tbody');
+
+    if (!d.users || d.users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="no-data">データがまだありません</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = d.users.map(u => `
+      <tr>
+        <td class="uid">${u.user_id_short}</td>
+        <td>${u.days_recorded} 日</td>
+        <td>${u.avg_b_count != null
+          ? `<span class="badge">${u.avg_b_count.toFixed(1)} B</span>`
+          : '<span style="color:#9CA3AF">-</span>'}</td>
+        <td>${u.analyses_count} 回</td>
+        <td style="color:#6B7280">${u.last_active || '-'}</td>
+      </tr>
+    `).join('');
+  }
+
+  async function loadApiStatus() {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    const badge = document.getElementById('api-status-badge');
+    if (d.configured) {
+      badge.textContent = '✓ APIキー設定済み';
+      badge.className = 'api-status status-ok';
+    } else {
+      badge.textContent = '✗ APIキー未設定';
+      badge.className = 'api-status status-ng';
+    }
+  }
+
+  async function saveKey() {
+    const key = document.getElementById('key-input').value.trim();
+    const msgEl = document.getElementById('api-msg');
+    const btn = document.getElementById('save-btn');
+    msgEl.style.display = 'none';
     btn.disabled = true;
-    btn.textContent = "保存中…";
+    btn.textContent = '保存中…';
 
-    const res = await fetch("/api/setup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const r = await fetch('/api/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: key }),
     });
-    const data = await res.json();
+    const d = await r.json();
     btn.disabled = false;
-    btn.textContent = "保存する";
+    btn.textContent = '保存する';
 
-    if (data.error) {
-      errEl.textContent = data.error;
-      errEl.style.display = "block";
+    if (d.error) {
+      msgEl.textContent = d.error;
+      msgEl.className = 'api-msg err';
     } else {
-      okEl.textContent = "✓ 保存しました！アプリが使えるようになりました。";
-      okEl.style.display = "block";
-      document.getElementById("key-input").value = "";
-      checkStatus();
+      msgEl.textContent = '✓ 保存しました。';
+      msgEl.className = 'api-msg ok';
+      document.getElementById('key-input').value = '';
+      loadApiStatus();
+    }
+    msgEl.style.display = 'block';
+  }
+
+  async function refresh() {
+    try {
+      await Promise.all([loadOverview(), loadTrend(), loadUsers(), loadApiStatus()]);
+      const now = new Date();
+      document.getElementById('last-updated').textContent =
+        `最終更新: ${now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+    } catch (e) {
+      document.getElementById('last-updated').textContent = 'エラーが発生しました';
+      console.error(e);
     }
   }
+
+  refresh();
+  setInterval(refresh, 5 * 60 * 1000);
 </script>
 </body>
 </html>

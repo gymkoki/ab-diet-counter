@@ -209,6 +209,10 @@
     .setting-input:focus { border-color:var(--primary); }
     .btn-save { width:100%; padding:14px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:16px; font-weight:800; cursor:pointer; margin-top:18px; }
     .setting-note { font-size:12px; color:var(--text-muted); line-height:1.7; margin:10px 16px 0; }
+    .seg-row { display:flex; gap:8px; }
+    .seg-btn { flex:1; padding:12px 6px; border:1.5px solid var(--border); border-radius:10px; background:var(--surface); font-size:15px; font-weight:700; color:var(--text); cursor:pointer; transition:all .15s; }
+    .seg-btn.sel { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
+    .goal-preview { margin-top:16px; padding:12px 14px; background:#FFF5F0; border-radius:10px; font-size:15px; font-weight:800; color:var(--primary); text-align:center; line-height:1.5; }
 
     /* ── lightbox ── */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
@@ -232,7 +236,10 @@
     </div>
   </div>
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.92)">
-    🏃 運動で <span id="ex-deduct-num" style="font-size:18px;font-weight:900">0</span> カウント消費中
+    🏃 運動でマイナス <span id="ex-deduct-num" style="font-size:18px;font-weight:900">0</span> カウント
+  </div>
+  <div id="goal-target-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.95)">
+    🎯 目標 <span id="goal-target-text"></span>
   </div>
 </header>
 
@@ -349,10 +356,22 @@
     <input class="setting-input" type="number" id="input-height" placeholder="例：170" min="100" max="250">
     <label class="setting-label">体重 (kg)</label>
     <input class="setting-input" type="number" id="input-weight" placeholder="例：60" min="30" max="200">
+    <label class="setting-label">性別</label>
+    <div class="seg-row" id="seg-gender">
+      <button class="seg-btn" data-val="male"   onclick="selectGender('male')">男性</button>
+      <button class="seg-btn" data-val="female" onclick="selectGender('female')">女性</button>
+    </div>
+    <label class="setting-label">目標</label>
+    <div class="seg-row" id="seg-goal">
+      <button class="seg-btn" data-val="cut"      onclick="selectGoal('cut')">減量</button>
+      <button class="seg-btn" data-val="maintain" onclick="selectGoal('maintain')">体重維持</button>
+      <button class="seg-btn" data-val="bulk"     onclick="selectGoal('bulk')">増量</button>
+    </div>
+    <div id="goal-preview" class="goal-preview" style="display:none"></div>
     <button class="btn-save" onclick="saveProfile()">保存する</button>
     <div id="profile-saved-msg" style="display:none;text-align:center;margin-top:10px;color:var(--a-color);font-weight:700;font-size:14px">✅ 保存しました</div>
   </div>
-  <p class="setting-note">※ 体重データは運動の消費カロリー計算に使用します。<br>データはこの端末にのみ保存され、外部には送信されません。</p>
+  <p class="setting-note">※ 体重データは運動の消費カロリー計算に使用します。<br>※ 性別・目標は、1日の目標Bカウントの判定に使用します。<br>データはこの端末にのみ保存され、外部には送信されません。</p>
 </div>
 
 <!-- ボトムナビ（4タブ） -->
@@ -398,14 +417,19 @@
 <!-- アップデートお知らせ（各端末1回のみ表示） -->
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
-    <div style="font-size:22px;margin-bottom:10px">📢 最近のアップデート</div>
-    <p style="font-size:14px;line-height:1.8;color:#374151;margin-bottom:20px">
-      以前のアップデートで写真の読み込みを高速化するため、AIモデルを変更しましたが、画像認識の精度が落ちてしまいました。<br><br>
-      精度を元に戻すため、より高精度なAIモデルに切り替えました。その影響で、写真のBカウント計算に<strong>10秒ほど</strong>お時間をいただくようになりました。<br><br>
-      ご不便をおかけして申し訳ありません。<br>
-      <span style="color:#6B7280">（奥松）</span>
-    </p>
-    <button onclick="closeUpdateNotice()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#FF6B35,#FF4500);color:white;font-size:16px;font-weight:800;cursor:pointer">OK</button>
+    <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">TODAY'S UPDATE</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🏃 運動機能を追加しました</div>
+    <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <span style="font-size:20px;flex-shrink:0">💪</span>
+        <span>下部の<strong>「運動」タブ</strong>から、その日の運動メニューが記録できるようになりました。</span>
+      </div>
+      <div style="display:flex;gap:10px">
+        <span style="font-size:20px;flex-shrink:0">📉</span>
+        <span>運動量に応じて、<strong>1日のBカウントが運動した分だけマイナス</strong>になる仕組みも実装しました。</span>
+      </div>
+    </div>
+    <button onclick="closeUpdateNotice()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#FF6B35,#FF4500);color:white;font-size:16px;font-weight:800;cursor:pointer">OK、わかった！</button>
   </div>
 </div>
 
@@ -491,7 +515,7 @@ const _progressTimers = {};
 // ═══════════════════════════════════════════
 function saveState() {
   try {
-    const data = { savedAt: Date.now() };
+    const data = { savedAt: Date.now(), stateDate: getTodayJST() };
     MEALS.forEach(m => {
       data[m.id] = {
         items: state[m.id].items
@@ -518,6 +542,43 @@ function loadSavedState() {
     const allIds = MEALS.flatMap(m => state[m.id].items.map(i => i.id));
     if (allIds.length) itemIdSeq = Math.max(...allIds);
   } catch(e) { console.warn('load failed', e); }
+}
+
+// 日付が変わっていたら、前日の記録を履歴へ自動保存してリセットする。
+// （「完了」を押し忘れても履歴が貯まるようにする）
+function flushPreviousDayIfNeeded() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return; }
+  if (!data) return;
+
+  // 保存日を特定（旧データは savedAt から推定）
+  let savedDate = data.stateDate;
+  if (!savedDate && data.savedAt) {
+    savedDate = new Date(data.savedAt).toLocaleDateString('ja-JP', {
+      timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).replace(/\//g, '-');
+  }
+  if (!savedDate || savedDate === getTodayJST()) return;  // 今日のデータなら何もしない
+
+  // 前日の食事Bカウント合計を集計
+  let foodTotal = 0;
+  MEALS.forEach(m => {
+    if (data[m.id] && data[m.id].items) {
+      foodTotal += data[m.id].items
+        .filter(i => i.result)
+        .reduce((s, i) => s + (i.result.total_b_count || 0), 0);
+    }
+  });
+
+  // 運動分を差し引いた純カウントを履歴へ保存
+  if (foodTotal > 0) {
+    const exBc = getExBCountForDate(savedDate);
+    const net  = Math.max(0, foodTotal - exBc);
+    submitDailyB(net, savedDate);
+  }
+
+  // 新しい1日のためにクリア
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 // ═══════════════════════════════════════════
@@ -587,6 +648,29 @@ function updateDailyTotal() {
       bar.style.display = 'none';
     }
   }
+
+  // 目標Bカウントの表示（性別・目標が設定されている場合）
+  const gbar  = document.getElementById('goal-target-bar');
+  const gtext = document.getElementById('goal-target-text');
+  const tgt   = getGoalTarget(getProfile());
+  if (gbar && gtext) {
+    if (tgt) {
+      let status;
+      if (tgt.goalKey === 'bulk') {
+        status = net >= tgt.min ? '✅ 達成' : `あと B${fmtCount(tgt.min - net)}`;
+      } else if (tgt.goalKey === 'cut') {
+        status = net <= tgt.max ? '✅ 範囲内' : '⚠️ オーバー';
+      } else { // maintain
+        if (net < tgt.min)      status = 'やや少なめ';
+        else if (net <= tgt.max) status = '✅ 範囲内';
+        else                     status = '⚠️ オーバー';
+      }
+      gtext.textContent = `B${tgt.label}（${tgt.goalName}）／ 現在 ${status}`;
+      gbar.style.display = '';
+    } else {
+      gbar.style.display = 'none';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -603,7 +687,10 @@ async function doReset() {
     const done = state[m.id].items.filter(i => i.result);
     return sum + done.reduce((s, i) => s + i.result.total_b_count, 0);
   }, 0);
-  if (total > 0) await submitDailyB(total, getTodayJST());
+  if (total > 0) {
+    const net = Math.max(0, total - getTodayExBCount());
+    await submitDailyB(net, getTodayJST());
+  }
   MEALS.forEach(m => { state[m.id].items = []; });
   localStorage.removeItem(STORAGE_KEY);
   MEALS.forEach(m => {
@@ -806,7 +893,21 @@ async function reanalyzeItem(mealId, itemId) {
   const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ 再計算中…'; }
+
+  // 進捗％を表示（写真のサムネイルとボタンの両方）
+  item.loading = true;
+  item.loadingPct = 0;
+  renderStrip(mealId);
+  if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0%'; }
+  const timer = setInterval(() => {
+    const p = item.loadingPct || 0;
+    if (p < 40)      item.loadingPct = Math.min(40, p + 5);
+    else if (p < 70) item.loadingPct = Math.min(70, p + 2);
+    else if (p < 88) item.loadingPct = Math.min(88, p + 0.8);
+    if (btn) btn.textContent = `🔄 再計算中… ${Math.round(item.loadingPct)}%`;
+    renderStrip(mealId);
+  }, 400);
+
   const blob = dataURLtoBlob(item.previewSrc);
   const formData = new FormData();
   formData.append('image', blob, 'image.jpg');
@@ -815,12 +916,29 @@ async function reanalyzeItem(mealId, itemId) {
   try {
     const res = await fetch('/reanalyze', { method: 'POST', body: formData });
     const data = await res.json();
-    if (data.error) { showError(mealId, data.error); }
-    else { item.result = data; renderResults(mealId); saveState(); }
+    clearInterval(timer);
+    item.loadingPct = 100;
+    if (btn) btn.textContent = '🔄 再計算中… 100%';
+    renderStrip(mealId);
+    await new Promise(r => setTimeout(r, 300));
+    item.loading = false;
+    if (data.error) {
+      renderStrip(mealId);
+      showError(mealId, data.error);
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
+    } else {
+      item.result = data;
+      renderStrip(mealId);
+      renderResults(mealId);
+      saveState();
+    }
   } catch(e) {
+    clearInterval(timer);
+    item.loading = false;
+    renderStrip(mealId);
     showError(mealId, '通信エラーが発生しました。再度お試しください。');
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
   }
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
 }
 
 function showError(mealId, msg) {
@@ -948,21 +1066,81 @@ function switchView(view) {
 // ═══════════════════════════════════════════
 const PROFILE_KEY = 'ab-diet-profile-v1';
 
+// 性別・目標ごとの1日の目標Bカウント
+const GOAL_TARGETS = {
+  female: {
+    cut:      { label: '4回以内', min: 0, max: 4 },
+    maintain: { label: '5〜6回',  min: 5, max: 6 },
+    bulk:     { label: '6回以上', min: 6, max: Infinity },
+  },
+  male: {
+    cut:      { label: '6回以内', min: 0, max: 6 },
+    maintain: { label: '7〜8回',  min: 7, max: 8 },
+    bulk:     { label: '8回以上', min: 8, max: Infinity },
+  },
+};
+const GOAL_NAMES = { cut: '減量', maintain: '体重維持', bulk: '増量' };
+
+let _selGender = null, _selGoal = null;
+
+function selectGender(g) {
+  _selGender = g;
+  document.querySelectorAll('#seg-gender .seg-btn').forEach(b => b.classList.toggle('sel', b.dataset.val === g));
+  updateGoalPreview();
+}
+function selectGoal(g) {
+  _selGoal = g;
+  document.querySelectorAll('#seg-goal .seg-btn').forEach(b => b.classList.toggle('sel', b.dataset.val === g));
+  updateGoalPreview();
+}
+function updateGoalPreview() {
+  const el = document.getElementById('goal-preview');
+  if (!el) return;
+  if (_selGender && _selGoal) {
+    const t = GOAL_TARGETS[_selGender][_selGoal];
+    el.textContent = `あなたの目標：1日 B${t.label}（${GOAL_NAMES[_selGoal]}）`;
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// プロフィールから目標を取得（性別・目標が未設定なら null）
+function getGoalTarget(p) {
+  if (!p || !p.gender || !p.goal) return null;
+  const t = GOAL_TARGETS[p.gender] && GOAL_TARGETS[p.gender][p.goal];
+  if (!t) return null;
+  return { ...t, goalKey: p.goal, goalName: GOAL_NAMES[p.goal] };
+}
+
 function saveProfile() {
-  const h = parseFloat(document.getElementById('input-height').value);
-  const w = parseFloat(document.getElementById('input-weight').value);
-  if (!h || !w || h < 100 || w < 20) { alert('身長・体重を正しく入力してください'); return; }
-  localStorage.setItem(PROFILE_KEY, JSON.stringify({ height: h, weight: w }));
+  const hv = document.getElementById('input-height').value;
+  const wv = document.getElementById('input-weight').value;
+  const h = parseFloat(hv);
+  const w = parseFloat(wv);
+  const profile = getProfile() || {};
+  // 身長・体重は入力があれば検証して保存（任意）
+  if (hv) { if (!h || h < 100) { alert('身長を正しく入力してください'); return; } profile.height = h; }
+  if (wv) { if (!w || w < 20)  { alert('体重を正しく入力してください'); return; } profile.weight = w; }
+  if (_selGender) profile.gender = _selGender;
+  if (_selGoal)   profile.goal   = _selGoal;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   const msg = document.getElementById('profile-saved-msg');
   msg.style.display = 'block';
   setTimeout(() => msg.style.display = 'none', 2000);
+  updateDailyTotal();   // ヘッダーの目標表示を更新
 }
 
 function loadProfileInputs() {
   const p = getProfile();
   if (p) {
-    document.getElementById('input-height').value = p.height;
-    document.getElementById('input-weight').value = p.weight;
+    if (p.height) document.getElementById('input-height').value = p.height;
+    if (p.weight) document.getElementById('input-weight').value = p.weight;
+    _selGender = p.gender || null;
+    _selGoal   = p.goal   || null;
+    if (_selGender) selectGender(_selGender);
+    if (_selGoal)   selectGoal(_selGoal);
+    updateGoalPreview();
   }
 }
 
@@ -1215,7 +1393,7 @@ function recordExercise() {
   const weight = (p && p.weight) ? p.weight : 60;
   const kcal   = Math.round(met * weight * (_exDuration / 60));
   const bc     = kcalToExBCount(kcal);
-  const today  = new Date().toISOString().slice(0,10);
+  const today  = getTodayJST();
   const speedLabel = (_exType === 'ランニング')
     ? (_speedMode === 'kmh'
         ? `${_runSpeedKmh.toFixed(1)}km/h`
@@ -1264,7 +1442,7 @@ function deleteExercise(ts) {
 }
 
 function renderExLog() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = getTodayJST();
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
   const todayLogs = logs.filter(l => l.date === today);
@@ -1284,11 +1462,14 @@ function renderExLog() {
   }).join('');
 }
 
-function getTodayExBCount() {
-  const today = new Date().toISOString().slice(0,10);
+function getExBCountForDate(date) {
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  return logs.filter(l => l.date === today).reduce((s, l) => s + l.bc, 0);
+  return logs.filter(l => l.date === date).reduce((s, l) => s + l.bc, 0);
+}
+
+function getTodayExBCount() {
+  return getExBCountForDate(getTodayJST());
 }
 
 const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
@@ -1385,7 +1566,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v2';
+const NOTICE_KEY = 'ab-diet-notice-v3';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
@@ -1394,6 +1575,7 @@ function closeUpdateNotice() {
 // ═══════════════════════════════════════════
 //  Init
 // ═══════════════════════════════════════════
+flushPreviousDayIfNeeded();
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
 updateDailyTotal();
@@ -1402,6 +1584,31 @@ if (!localStorage.getItem(NOTICE_KEY)) {
   document.getElementById('update-notice-overlay').style.display = 'flex';
 }
 maybeShowHomeBanner();
+
+// ═══════════════════════════════════════════
+//  24時（日付変更）で自動リセット
+//  アプリを開いたままでも、日付が変わったら前日分を保存して
+//  食事・運動の表示をすべてリセットする。
+// ═══════════════════════════════════════════
+let _currentDay = getTodayJST();
+setInterval(() => {
+  const today = getTodayJST();
+  if (today === _currentDay) return;
+  _currentDay = today;
+  // 前日の食事Bカウントを履歴へ保存し、localStorageをクリア
+  flushPreviousDayIfNeeded();
+  // 食事の表示をリセット
+  MEALS.forEach(m => {
+    state[m.id].items = [];
+    renderStrip(m.id);
+    renderResults(m.id);
+    const errEl = document.getElementById(`err-${m.id}`);
+    if (errEl) errEl.style.display = 'none';
+  });
+  // 運動の表示をリセット（記録はJST日付で持つため自動で当日のみ表示になる）
+  renderExLog();
+  updateDailyTotal();
+}, 30 * 1000);
 </script>
 </body>
 </html>
