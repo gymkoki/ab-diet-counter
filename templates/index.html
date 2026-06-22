@@ -138,7 +138,6 @@
     .btn-text-submit { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:16px; font-weight:800; cursor:pointer; }
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:#F5F3FF; border-radius:10px; padding:12px 14px; font-size:15px; line-height:1.6; color:#4338CA; margin-bottom:12px; }
-    .pfc-row { background:#ECFDF5; border-radius:10px; padding:10px 14px; font-size:14px; font-weight:700; color:#047857; margin-bottom:12px; }
 
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
@@ -836,7 +835,6 @@ function renderResults(mealId) {
         ${item.previewSrc
           ? `<img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div class="text-entry-recap">📝 入力内容：${esc(item.text||'')}</div>`}
-        ${item.result.pfc ? `<div class="pfc-row">🥗 PFC（目安）：${esc(item.result.pfc)}</div>` : ''}
         <div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice||'')}</p></div>
         <div class="food-list-wrap">
           <div class="food-list-header">食材の内訳</div>

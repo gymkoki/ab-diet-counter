@@ -614,12 +614,26 @@ def _advice_context(gender, goal):
     desc = _GOAL_ADVICE.get(gender, {}).get(goal)
     if not desc:
         return None
+    if goal == "cut":
+        direction = (
+            "この人は減量が目標です。advice欄では、B食材（高カロリーな食材）を"
+            "減らす・量を控える・A食材に置き換える方向で、具体的かつ前向きに提案してください。"
+        )
+    elif goal == "bulk":
+        direction = (
+            "この人は増量が目標です。advice欄では、B食材をしっかり摂って"
+            "増やす方向で、具体的かつ前向きに提案してください。"
+        )
+    else:
+        direction = (
+            "この人は体重維持が目標です。advice欄では、今のB食材の量・バランスを"
+            "保つ方向で、具体的かつ前向きに提案してください。"
+        )
     return (
         "━━━━━━━━━━━━━━━━━━━━━━━\n"
         "【このユーザーの目標】\n"
         f"{desc}\n"
-        "上記を踏まえ、advice欄はこの目標に沿った具体的で前向きな一言にしてください"
-        "（減量目標なら量やB食材を控える提案、増量目標ならしっかり食べる提案、維持目標ならバランス維持の提案など）。\n"
+        f"{direction}\n"
         "【重要】kcalやBカウントの判定基準は一切変更しないこと。変えるのはadvice欄の文面だけ。\n"
         "━━━━━━━━━━━━━━━━━━━━━━━"
     )
@@ -945,7 +959,7 @@ def reanalyze():
 
 @app.route("/analyze-text", methods=["POST"])
 def analyze_text():
-    """写真を撮り忘れたとき用：食事内容を文章で受け取り、Bカウントと大まかなPFCを推定する。"""
+    """写真を撮り忘れたとき用：食事内容を文章で受け取り、Bカウントを推定する。"""
     client = get_client()
     if client is None:
         return jsonify({"error": "APIキーが設定されていません。設定画面から登録してください。"}), 401
@@ -979,10 +993,8 @@ def analyze_text():
 【食べたもの（ユーザー入力）】
 {text}
 
-【出力の追加要件】
-- 通常のJSON（foods / total_b_count / advice）に加えて、"pfc" フィールドを必ず含めること。
-- "pfc" には大まかなPFCバランスを「P約○g ・ F約○g ・ C約○g」の1行形式で記載する。
-- 写真がないため推定が大まかになる旨を、advice欄の最後に一言添えること。
+写真がないため推定が大まかになる旨を、advice欄の最後に一言添えてください。
+出力は通常のJSON（foods / total_b_count / advice）のみで構いません。
 ━━━━━━━━━━━━━━━━━━━━━━━"""
 
     text_content = [{"type": "text", "text": text_prompt}]
