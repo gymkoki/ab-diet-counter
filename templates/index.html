@@ -130,6 +130,15 @@
     .recalc-textarea:focus { border-color:#6366F1; }
     .btn-recalc { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:17px; font-weight:800; cursor:pointer; transition:opacity 0.2s; }
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
+    .text-entry-btn { width:100%; margin:8px 0 4px; padding:12px; border:1.5px dashed var(--border); border-radius:12px; background:none; font-size:15px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+    .text-entry-btn:active { border-color:#6366F1; color:#6366F1; background:#F5F3FF; }
+    .text-entry-form { margin:4px 0 8px; padding:12px; background:#F5F3FF; border:1.5px solid #C4B5FD; border-radius:12px; }
+    .text-entry-textarea { width:100%; min-height:84px; padding:10px; border:1px solid #C4B5FD; border-radius:8px; font-size:16px; font-family:inherit; resize:vertical; outline:none; background:white; }
+    .text-entry-textarea:focus { border-color:#6366F1; }
+    .btn-text-submit { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:16px; font-weight:800; cursor:pointer; }
+    .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
+    .text-entry-recap { background:#F5F3FF; border-radius:10px; padding:12px 14px; font-size:15px; line-height:1.6; color:#4338CA; margin-bottom:12px; }
+    .pfc-row { background:#ECFDF5; border-radius:10px; padding:10px 14px; font-size:14px; font-weight:700; color:#047857; margin-bottom:12px; }
 
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
@@ -529,7 +538,7 @@ function saveState() {
       data[m.id] = {
         items: state[m.id].items
           .filter(i => i.result)
-          .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result }))
+          .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text }))
       };
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -613,6 +622,11 @@ function buildPanel(m) {
         <div class="meal-add-icon">${m.emoji}</div>
         <h3>${m.label}の写真を追加</h3>
         <p>タップして写真を選ぶ</p>
+      </div>
+      <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 撮影し忘れたので文章で入力</button>
+      <div class="text-entry-form" id="textform-${m.id}" style="display:none">
+        <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
+        <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
       </div>
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
@@ -716,6 +730,64 @@ function removeItem(mealId, itemId) {
 }
 
 // ═══════════════════════════════════════════
+//  文章で入力（写真を撮り忘れたとき）
+// ═══════════════════════════════════════════
+function toggleTextForm(mealId) {
+  const f = document.getElementById(`textform-${mealId}`);
+  if (!f) return;
+  const isHidden = (getComputedStyle(f).display === 'none');
+  f.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) document.getElementById(`textinput-${mealId}`)?.focus();
+}
+
+async function submitTextEntry(mealId) {
+  const ta = document.getElementById(`textinput-${mealId}`);
+  const text = ta && ta.value ? ta.value.trim() : '';
+  if (!text) { ta && ta.focus(); return; }
+
+  const id = ++itemIdSeq;
+  const item = { id, file:null, previewSrc:null, result:null, loading:true, error:null, isText:true, text };
+  state[mealId].items.push(item);
+
+  // フォームを閉じる
+  ta.value = '';
+  document.getElementById(`textform-${mealId}`).style.display = 'none';
+
+  item.loadingPct = 0;
+  _startProgress(mealId, id);
+  renderStrip(mealId);
+
+  const formData = new FormData();
+  formData.append('text', text);
+  formData.append('user_id', USER_ID);
+  { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
+
+  try {
+    const res  = await fetch('/analyze-text', { method:'POST', body:formData });
+    const data = await res.json();
+    _stopProgress(mealId, id);
+    renderStrip(mealId);
+    await new Promise(r => setTimeout(r, 300));
+    item.loading = false;
+    if (data.error) {
+      state[mealId].items = state[mealId].items.filter(i => i.id !== id);
+      showError(mealId, data.error);
+    } else {
+      item.result = data;
+    }
+  } catch(e) {
+    _stopProgress(mealId, id);
+    item.loading = false;
+    state[mealId].items = state[mealId].items.filter(i => i.id !== id);
+    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+  }
+  renderStrip(mealId);
+  renderResults(mealId);
+  saveState();
+  loadStats();
+}
+
+// ═══════════════════════════════════════════
 //  Render strip
 // ═══════════════════════════════════════════
 function renderStrip(mealId) {
@@ -727,7 +799,7 @@ function renderStrip(mealId) {
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">📷</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
           <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
@@ -761,18 +833,22 @@ function renderResults(mealId) {
         </div>
       </div>
       <div style="padding:10px 14px 14px">
-        <img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">
+        ${item.previewSrc
+          ? `<img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
+          : `<div class="text-entry-recap">📝 入力内容：${esc(item.text||'')}</div>`}
+        ${item.result.pfc ? `<div class="pfc-row">🥗 PFC（目安）：${esc(item.result.pfc)}</div>` : ''}
         <div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice||'')}</p></div>
         <div class="food-list-wrap">
           <div class="food-list-header">食材の内訳</div>
           ${buildFoodRows(item.result.foods)}
         </div>
+        ${item.previewSrc ? `
         <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
         <div class="recalc-form" id="recalc-form-${mealId}-${item.id}">
           <label>補足・訂正内容を入力してください</label>
           <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：このヨーグルトは無脂肪ヨーグルトなのでA食材です。"></textarea>
           <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
-        </div>
+        </div>` : ''}
       </div>
     </div>`).join('');
 

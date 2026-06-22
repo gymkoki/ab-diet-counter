@@ -943,5 +943,87 @@ def reanalyze():
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
 
 
+@app.route("/analyze-text", methods=["POST"])
+def analyze_text():
+    """写真を撮り忘れたとき用：食事内容を文章で受け取り、Bカウントと大まかなPFCを推定する。"""
+    client = get_client()
+    if client is None:
+        return jsonify({"error": "APIキーが設定されていません。設定画面から登録してください。"}), 401
+
+    text = (request.form.get("text", "") or "").strip()
+    if not text:
+        return jsonify({"error": "食べた内容を入力してください"}), 400
+
+    # 利用ログ記録（写真分析と同じく1回としてカウント）
+    uid = request.form.get("user_id", "")
+    if uid:
+        ts = datetime.datetime.now(JST).isoformat()
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO usage_log (user_id, created_at) VALUES ({PH}, {PH})",
+                    (uid, ts)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    text_prompt = f"""━━━━━━━━━━━━━━━━━━━━━━━
+【テキスト入力モード・写真なし】
+ユーザーは食事の写真を撮り忘れたため、食べた内容を文章で入力しました。
+以下の説明から食材と量を推定し、システムプロンプトのABダイエットのルールに従ってBカウントを判定してください。
+量が明記されていない場合は、一般的な1人前として推定してください。
+
+【食べたもの（ユーザー入力）】
+{text}
+
+【出力の追加要件】
+- 通常のJSON（foods / total_b_count / advice）に加えて、"pfc" フィールドを必ず含めること。
+- "pfc" には大まかなPFCバランスを「P約○g ・ F約○g ・ C約○g」の1行形式で記載する。
+- 写真がないため推定が大まかになる旨を、advice欄の最後に一言添えること。
+━━━━━━━━━━━━━━━━━━━━━━━"""
+
+    text_content = [{"type": "text", "text": text_prompt}]
+    adv = _advice_context(request.form.get("gender", ""), request.form.get("goal", ""))
+    if adv:
+        text_content.append({"type": "text", "text": adv})
+
+    try:
+        response = client.messages.create(
+            model="claude-opus-4-8",
+            max_tokens=2500,
+            system=[
+                {
+                    "type": "text",
+                    "text": ANALYSIS_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": text_content}],
+        )
+
+        result_text = response.content[0].text.strip()
+        if result_text.startswith("```"):
+            lines = result_text.split("\n")[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            result_text = "\n".join(lines)
+
+        try:
+            result = json.loads(result_text)
+        except json.JSONDecodeError:
+            result = json.loads(repair_json(result_text))
+        return jsonify(result)
+
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
+    except anthropic.AuthenticationError:
+        return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
+    except anthropic.APIError as e:
+        return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
