@@ -213,6 +213,10 @@
     .seg-btn { flex:1; padding:12px 6px; border:1.5px solid var(--border); border-radius:10px; background:var(--surface); font-size:15px; font-weight:700; color:var(--text); cursor:pointer; transition:all .15s; }
     .seg-btn.sel { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
     .goal-preview { margin-top:16px; padding:12px 14px; background:#FFF5F0; border-radius:10px; font-size:15px; font-weight:800; color:var(--primary); text-align:center; line-height:1.5; }
+    .summary-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); }
+    .summary-row:last-child { border-bottom:none; }
+    .summary-row .lbl { font-size:15px; color:var(--text-muted); font-weight:700; }
+    .summary-row .val { font-size:17px; font-weight:800; color:var(--text); }
 
     /* ── lightbox ── */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
@@ -350,6 +354,13 @@
 
 <!-- 設定ビュー -->
 <div id="view-settings" style="display:none;padding-bottom:80px">
+  <div class="setting-card" id="profile-summary-card" style="display:none">
+    <h2>📋 現在の設定</h2>
+    <div class="summary-row"><span class="lbl">身長</span><span class="val" id="sum-height">-</span></div>
+    <div class="summary-row"><span class="lbl">体重</span><span class="val" id="sum-weight">-</span></div>
+    <div class="summary-row"><span class="lbl">性別</span><span class="val" id="sum-gender">-</span></div>
+    <div class="summary-row"><span class="lbl">目標とする体格</span><span class="val" id="sum-goal">-</span></div>
+  </div>
   <div class="setting-card">
     <h2>⚙️ プロフィール設定</h2>
     <label class="setting-label">身長 (cm)</label>
@@ -1128,7 +1139,26 @@ function saveProfile() {
   const msg = document.getElementById('profile-saved-msg');
   msg.style.display = 'block';
   setTimeout(() => msg.style.display = 'none', 2000);
-  updateDailyTotal();   // ヘッダーの目標表示を更新
+  renderProfileSummary();   // 「現在の設定」を更新
+  updateDailyTotal();       // ヘッダーの目標表示を更新
+}
+
+// 「現在の設定」カードに保存済みの値を表示
+function renderProfileSummary() {
+  const card = document.getElementById('profile-summary-card');
+  if (!card) return;
+  const p = getProfile();
+  if (!p || (!p.height && !p.weight && !p.gender && !p.goal)) {
+    card.style.display = 'none';
+    return;
+  }
+  const genderLabel = p.gender === 'male' ? '男性' : p.gender === 'female' ? '女性' : '未設定';
+  const goalLabel   = p.goal ? GOAL_NAMES[p.goal] : '未設定';
+  document.getElementById('sum-height').textContent = p.height ? `${p.height} cm` : '未設定';
+  document.getElementById('sum-weight').textContent = p.weight ? `${p.weight} kg` : '未設定';
+  document.getElementById('sum-gender').textContent = genderLabel;
+  document.getElementById('sum-goal').textContent   = goalLabel;
+  card.style.display = '';
 }
 
 function loadProfileInputs() {
@@ -1142,6 +1172,7 @@ function loadProfileInputs() {
     if (_selGoal)   selectGoal(_selGoal);
     updateGoalPreview();
   }
+  renderProfileSummary();
 }
 
 function getProfile() {
