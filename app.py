@@ -593,6 +593,38 @@ def admin_users():
     return jsonify({"users": users})
 
 
+# ── 性別・目標に合わせたアドバイス用コンテキスト ──────────────
+# 判定基準（kcal/Bカウント計算）は変えず、advice欄だけ目標に寄せる。
+_GOAL_ADVICE = {
+    "female": {
+        "cut":      "女性・減量目標（1日の目標Bカウントは4回以内）",
+        "maintain": "女性・体重維持目標（1日の目標Bカウントは5〜6回）",
+        "bulk":     "女性・増量目標（1日の目標Bカウントは6回以上）",
+    },
+    "male": {
+        "cut":      "男性・減量目標（1日の目標Bカウントは6回以内）",
+        "maintain": "男性・体重維持目標（1日の目標Bカウントは7〜8回）",
+        "bulk":     "男性・増量目標（1日の目標Bカウントは8回以上）",
+    },
+}
+
+
+def _advice_context(gender, goal):
+    """ユーザーの性別・目標から、advice欄をパーソナライズする指示文を返す。未設定ならNone。"""
+    desc = _GOAL_ADVICE.get(gender, {}).get(goal)
+    if not desc:
+        return None
+    return (
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "【このユーザーの目標】\n"
+        f"{desc}\n"
+        "上記を踏まえ、advice欄はこの目標に沿った具体的で前向きな一言にしてください"
+        "（減量目標なら量やB食材を控える提案、増量目標ならしっかり食べる提案、維持目標ならバランス維持の提案など）。\n"
+        "【重要】kcalやBカウントの判定基準は一切変更しないこと。変えるのはadvice欄の文面だけ。\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+
 @app.route("/api/status")
 def status():
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -771,6 +803,21 @@ def analyze():
 
     base64_image, media_type = prepare_image_for_api(image_data, media_type)
 
+    # 性別・目標に合わせたアドバイス指示（設定済みのときのみ付与）
+    user_content = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": base64_image,
+            },
+        },
+    ]
+    adv = _advice_context(request.form.get("gender", ""), request.form.get("goal", ""))
+    if adv:
+        user_content.append({"type": "text", "text": adv})
+
     try:
         response = client.messages.create(
             model="claude-opus-4-8",
@@ -785,16 +832,7 @@ def analyze():
             messages=[
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": base64_image,
-                            },
-                        },
-                    ],
+                    "content": user_content,
                 }
             ],
         )
@@ -850,6 +888,24 @@ def reanalyze():
 この補足情報を最優先して、ABダイエットルールに基づき再計算してください。
 ━━━━━━━━━━━━━━━━━━━━━━━"""
 
+    reanalyze_content = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": base64_image,
+            },
+        },
+        {
+            "type": "text",
+            "text": correction_text,
+        },
+    ]
+    adv = _advice_context(request.form.get("gender", ""), request.form.get("goal", ""))
+    if adv:
+        reanalyze_content.append({"type": "text", "text": adv})
+
     try:
         response = client.messages.create(
             model="claude-opus-4-8",
@@ -864,20 +920,7 @@ def reanalyze():
             messages=[
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": base64_image,
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": correction_text,
-                        },
-                    ],
+                    "content": reanalyze_content,
                 }
             ],
         )

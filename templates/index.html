@@ -426,17 +426,18 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
     <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">TODAY'S UPDATE</div>
-    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🏃 運動機能を追加しました</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎯 あなたに合わせたアドバイス機能</div>
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
       <div style="display:flex;gap:10px;margin-bottom:12px">
-        <span style="font-size:20px;flex-shrink:0">💪</span>
-        <span>下部の<strong>「運動」タブ</strong>から、その日の運動メニューが記録できるようになりました。</span>
+        <span style="font-size:20px;flex-shrink:0">⚙️</span>
+        <span>右下の<strong>「設定」</strong>から、<strong>性別</strong>と<strong>目標とする体格（減量・体重維持・増量）</strong>を選べるようになりました。</span>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📉</span>
-        <span>運動量に応じて、<strong>1日のBカウントが運動した分だけマイナス</strong>になる仕組みも実装しました。</span>
+        <span style="font-size:20px;flex-shrink:0">💡</span>
+        <span>選んだ内容に合わせて、<strong>あなた専用のアドバイス</strong>が表示されるようにシステムを再調整しました。ぜひ設定してみてください。</span>
       </div>
     </div>
+    <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
     <button onclick="closeUpdateNotice()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#FF6B35,#FF4500);color:white;font-size:16px;font-weight:800;cursor:pointer">OK、わかった！</button>
   </div>
 </div>
@@ -835,6 +836,7 @@ async function analyzeItem(mealId, itemId) {
   const formData = new FormData();
   formData.append('image', item.file);
   formData.append('user_id', USER_ID);
+  { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res  = await fetch('/analyze', { method:'POST', body:formData });
     const data = await res.json();
@@ -899,6 +901,7 @@ async function reanalyzeItem(mealId, itemId) {
   formData.append('image', blob, 'image.jpg');
   formData.append('correction', correction);
   formData.append('user_id', USER_ID);
+  { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res = await fetch('/reanalyze', { method: 'POST', body: formData });
     const data = await res.json();
@@ -1572,7 +1575,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v3';
+const NOTICE_KEY = 'ab-diet-notice-v4';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
