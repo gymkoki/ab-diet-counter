@@ -163,11 +163,10 @@ init_db()
 # ── 管理者認証 ──────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
 
-# 食事分析1回あたりの概算コスト（円）。Opus 4.8・画像1024px・出力1000トークン想定。
-# システムプロンプト実測5,455トークン＋画像約1,050＋出力約1,000で約$0.058≒¥8.7。
-# プロンプトキャッシュが効くと¥4〜5。平均的な¥7をデフォルトとする。
-# 為替やモデルを変えたら環境変数 COST_PER_ANALYSIS_JPY で調整可能。
-COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "7"))
+# 食事分析1回あたりの概算コスト（円）。通常解析はHaiku 4.5（入力$1/出力$5）。
+# 画像1024px・出力約1000トークンで約$0.012≒¥1.8。再計算(Sonnet)は別途だが頻度低。
+# 平均的な¥2をデフォルトとする。為替やモデルを変えたら COST_PER_ANALYSIS_JPY で調整。
+COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "2"))
 
 def _admin_required(f):
     @wraps(f)
@@ -834,7 +833,7 @@ def analyze():
 
     try:
         response = client.messages.create(
-            model="claude-opus-4-8",
+            model="claude-haiku-4-5",   # 通常解析はコスト重視でHaiku
             max_tokens=2500,
             system=[
                 {
@@ -922,7 +921,7 @@ def reanalyze():
 
     try:
         response = client.messages.create(
-            model="claude-opus-4-8",
+            model="claude-sonnet-4-6",   # 再計算（修正時）は精度重視でSonnet
             max_tokens=2500,
             system=[
                 {
@@ -1004,7 +1003,7 @@ def analyze_text():
 
     try:
         response = client.messages.create(
-            model="claude-opus-4-8",
+            model="claude-haiku-4-5",   # 文章入力もコスト重視でHaiku
             max_tokens=2500,
             system=[
                 {

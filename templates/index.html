@@ -843,7 +843,7 @@ function renderResults(mealId) {
         ${item.previewSrc ? `
         <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
         <div class="recalc-form" id="recalc-form-${mealId}-${item.id}">
-          <label>補足・訂正内容を入力してください</label>
+          <label>気になる点・訂正を入力（より高精度なAIで計算し直します）</label>
           <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：このヨーグルトは無脂肪ヨーグルトなのでA食材です。"></textarea>
           <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
