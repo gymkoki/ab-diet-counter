@@ -225,6 +225,8 @@
     .summary-row:last-child { border-bottom:none; }
     .summary-row .lbl { font-size:15px; color:var(--text-muted); font-weight:700; }
     .summary-row .val { font-size:17px; font-weight:800; color:var(--text); }
+    .btn-reedit { width:100%; margin-top:18px; padding:13px; border-radius:12px; border:1.5px solid var(--primary); background:var(--surface); color:var(--primary); font-size:15px; font-weight:800; cursor:pointer; }
+    .btn-reedit:active { background:#FFF5F0; }
 
     /* ── lightbox ── */
     #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; cursor:zoom-out; }
@@ -368,8 +370,9 @@
     <div class="summary-row"><span class="lbl">体重</span><span class="val" id="sum-weight">-</span></div>
     <div class="summary-row"><span class="lbl">性別</span><span class="val" id="sum-gender">-</span></div>
     <div class="summary-row"><span class="lbl">目標とする体格</span><span class="val" id="sum-goal">-</span></div>
+    <button class="btn-reedit" onclick="openProfileEdit()">✏️ 再編集する</button>
   </div>
-  <div class="setting-card">
+  <div class="setting-card" id="profile-edit-card">
     <h2>⚙️ プロフィール設定</h2>
     <label class="setting-label">身長 (cm)</label>
     <input class="setting-input" type="number" id="input-height" placeholder="例：170" min="100" max="250">
@@ -390,7 +393,6 @@
     <button class="btn-save" onclick="saveProfile()">保存する</button>
     <div id="profile-saved-msg" style="display:none;text-align:center;margin-top:10px;color:var(--a-color);font-weight:700;font-size:14px">✅ 保存しました</div>
   </div>
-  <p class="setting-note">※ 体重データは運動の消費カロリー計算に使用します。<br>※ 性別・目標は、1日の目標Bカウントの判定に使用します。<br>データはこの端末にのみ保存され、外部には送信されません。</p>
 </div>
 
 <!-- ボトムナビ（4タブ） -->
@@ -1210,13 +1212,16 @@ function saveProfile() {
   updateDailyTotal();       // ヘッダーの目標表示を更新
 }
 
-// 「現在の設定」カードに保存済みの値を表示
+// 「現在の設定」カードに保存済みの値を表示。設定済みなら編集フォームは隠す。
 function renderProfileSummary() {
   const card = document.getElementById('profile-summary-card');
+  const editCard = document.getElementById('profile-edit-card');
   if (!card) return;
   const p = getProfile();
-  if (!p || (!p.height && !p.weight && !p.gender && !p.goal)) {
+  const hasProfile = p && (p.height || p.weight || p.gender || p.goal);
+  if (!hasProfile) {
     card.style.display = 'none';
+    if (editCard) editCard.style.display = '';   // 初回は入力フォームを表示
     return;
   }
   const genderLabel = p.gender === 'male' ? '男性' : p.gender === 'female' ? '女性' : '未設定';
@@ -1226,6 +1231,16 @@ function renderProfileSummary() {
   document.getElementById('sum-gender').textContent = genderLabel;
   document.getElementById('sum-goal').textContent   = goalLabel;
   card.style.display = '';
+  if (editCard) editCard.style.display = 'none';  // 設定済みなら編集フォームは隠す
+}
+
+// 「再編集する」ボタンで入力フォームを表示
+function openProfileEdit() {
+  const editCard = document.getElementById('profile-edit-card');
+  if (editCard) {
+    editCard.style.display = '';
+    editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function loadProfileInputs() {
