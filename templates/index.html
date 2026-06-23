@@ -250,6 +250,9 @@
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.92)">
     🏃 運動でマイナス <span id="ex-deduct-num" style="font-size:18px;font-weight:900">0</span> カウント
   </div>
+  <div id="goal-target-bar" style="display:none;text-align:center;padding:2px 20px 8px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.85)">
+    🎯 目標 <span id="goal-target-text"></span>
+  </div>
 </header>
 
 <!-- タブバー -->
@@ -671,6 +674,18 @@ function updateDailyTotal() {
     }
   }
 
+  // 目標Bカウントを小さく表示（回数のみ・達成判定はしない）
+  const gbar  = document.getElementById('goal-target-bar');
+  const gtext = document.getElementById('goal-target-text');
+  const tgt   = getGoalTarget(getProfile());
+  if (gbar && gtext) {
+    if (tgt) {
+      gtext.textContent = `B${tgt.label}`;
+      gbar.style.display = '';
+    } else {
+      gbar.style.display = 'none';
+    }
+  }
 }
 
 // ═══════════════════════════════════════════
