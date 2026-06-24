@@ -138,6 +138,12 @@
     .btn-text-submit { width:100%; margin-top:8px; padding:13px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366F1,#4F46E5); color:white; font-size:16px; font-weight:800; cursor:pointer; }
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:#F5F3FF; border-radius:10px; padding:12px 14px; font-size:15px; line-height:1.6; color:#4338CA; margin-bottom:12px; }
+    .oil-btn { display:block; margin:6px auto 2px; padding:7px 16px; border:1px solid var(--border); border-radius:20px; background:none; font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+    .oil-btn:active { border-color:#D97706; color:#D97706; background:#FFFBEB; }
+    .oil-menu { display:flex; gap:8px; margin:6px 0 8px; }
+    .oil-opt { flex:1; padding:10px 4px; border:1.5px solid #FCD34D; border-radius:10px; background:#FFFBEB; font-size:14px; font-weight:800; color:#92400E; cursor:pointer; line-height:1.3; }
+    .oil-opt span { display:block; font-size:11px; font-weight:700; color:#B45309; margin-top:2px; }
+    .oil-opt:active { background:#FEF3C7; }
 
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
@@ -542,7 +548,7 @@ function saveState() {
       data[m.id] = {
         items: state[m.id].items
           .filter(i => i.result)
-          .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text }))
+          .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, isOil:i.isOil, oilLabel:i.oilLabel }))
       };
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -632,6 +638,13 @@ function buildPanel(m) {
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
       </div>
+      ${m.id !== 'snack' ? `
+      <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">🫗 油を手動追加</button>
+      <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
+        <button class="oil-opt" onclick="addOil('${m.id}',0)">小さじ2<span>B 0</span></button>
+        <button class="oil-opt" onclick="addOil('${m.id}',1)">大さじ1強<span>B 0.5</span></button>
+        <button class="oil-opt" onclick="addOil('${m.id}',2)">大さじ2<span>B 1</span></button>
+      </div>` : ''}
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
     </div>
@@ -746,6 +759,43 @@ function removeItem(mealId, itemId) {
 }
 
 // ═══════════════════════════════════════════
+//  油を手動追加（画像解析では量が分かりにくいため）
+// ═══════════════════════════════════════════
+const OIL_OPTIONS = [
+  { label:'小さじ2',   bc:0,   kcal:80  },
+  { label:'大さじ1強', bc:0.5, kcal:150 },
+  { label:'大さじ2',   bc:1,   kcal:220 },
+];
+
+function toggleOilMenu(mealId) {
+  const menu = document.getElementById(`oilmenu-${mealId}`);
+  if (!menu) return;
+  menu.style.display = (getComputedStyle(menu).display === 'none') ? 'flex' : 'none';
+}
+
+function addOil(mealId, idx) {
+  const o = OIL_OPTIONS[idx];
+  if (!o) return;
+  const id = ++itemIdSeq;
+  const item = {
+    id, file:null, previewSrc:null, loading:false, error:null,
+    isOil:true, oilLabel:o.label,
+    result: {
+      foods: [{ name:'油（手動追加）', category:'B', kcal_per_serving:o.kcal, amount:o.label, b_count:o.bc, reason:`油 ${o.label}（手動追加）` }],
+      total_b_count: o.bc,
+      advice: '',
+    },
+  };
+  state[mealId].items.push(item);
+  const menu = document.getElementById(`oilmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  renderStrip(mealId);
+  renderResults(mealId);
+  updateDailyTotal();
+  saveState();
+}
+
+// ═══════════════════════════════════════════
 //  文章で入力（写真を撮り忘れたとき）
 // ═══════════════════════════════════════════
 function toggleTextForm(mealId) {
@@ -815,7 +865,7 @@ function renderStrip(mealId) {
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isText ? '📝' : '📷'}</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? '🫗' : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
           <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
@@ -851,8 +901,10 @@ function renderResults(mealId) {
       <div style="padding:10px 14px 14px">
         ${item.previewSrc
           ? `<img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div class="text-entry-recap">📝 入力内容：${esc(item.text||'')}</div>`}
-        <div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice||'')}</p></div>
+          : item.isOil
+            ? `<div class="text-entry-recap">🫗 油を手動追加：${esc(item.oilLabel||'')}（B${fmtCount(item.result.total_b_count)}）</div>`
+            : `<div class="text-entry-recap">📝 入力内容：${esc(item.text||'')}</div>`}
+        ${item.result.advice ? `<div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice)}</p></div>` : ''}
         <div class="food-list-wrap">
           <div class="food-list-header">食材の内訳</div>
           ${buildFoodRows(item.result.foods)}
