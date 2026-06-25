@@ -471,15 +471,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
     <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">TODAY'S UPDATE</div>
-    <div style="font-size:20px;font-weight:900;margin-bottom:16px">⚖️ 体重の記録ができるようになりました</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート</div>
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
       <div style="display:flex;gap:10px;margin-bottom:12px">
         <span style="font-size:20px;flex-shrink:0">⚖️</span>
         <span>上部の<strong>「体重」ボタン</strong>から、<strong>今日の体重</strong>を記録できるようになりました。</span>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📊</span>
-        <span>記録したBカウントと体重は、画面右下の<strong>「履歴」タブ</strong>からまとめてご覧いただけます。</span>
+        <span style="font-size:20px;flex-shrink:0">🍳</span>
+        <span>AIの画像認識では<strong>油の量が分からないことも多い</strong>ため、油がカウントされていないときは<strong>「油を手動追加」ボタン</strong>から手動で油を追加できるようになりました。</span>
       </div>
     </div>
     <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -653,13 +653,12 @@ function buildPanel(m) {
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
       </div>
-      ${m.id !== 'snack' ? `
-      <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">🫗 油を手動追加</button>
+      <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">${oilIcon(18)} 油を手動追加</button>
       <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
         <button class="oil-opt" onclick="addOil('${m.id}',0)">小さじ2<span>B 0</span></button>
         <button class="oil-opt" onclick="addOil('${m.id}',1)">大さじ1強<span>B 0.5</span></button>
         <button class="oil-opt" onclick="addOil('${m.id}',2)">大さじ2<span>B 1</span></button>
-      </div>` : ''}
+      </div>
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
     </div>
@@ -782,6 +781,15 @@ const OIL_OPTIONS = [
   { label:'大さじ2',   bc:1,   kcal:220 },
 ];
 
+// 油ボトルのアイコン（油であることが伝わるSVGイラスト）
+function oilIcon(size) {
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" style="vertical-align:-0.18em" aria-hidden="true">`
+    + `<rect x="9.3" y="2" width="5.4" height="3" rx="1" fill="#92400E"/>`
+    + `<path d="M9 5h6l1 3v11.5A2.5 2.5 0 0 1 13.5 22h-3A2.5 2.5 0 0 1 8 19.5V8z" fill="#FCD34D" stroke="#B45309" stroke-width="1.3"/>`
+    + `<path d="M12 10.3c1.5 1.9 2.4 3.1 2.4 4.4a2.4 2.4 0 1 1-4.8 0c0-1.3.9-2.5 2.4-4.4z" fill="#D97706"/>`
+    + `</svg>`;
+}
+
 function toggleOilMenu(mealId) {
   const menu = document.getElementById(`oilmenu-${mealId}`);
   if (!menu) return;
@@ -880,7 +888,7 @@ function renderStrip(mealId) {
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? '🫗' : item.isText ? '📝' : '📷'}</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? oilIcon(34) : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
           <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
@@ -917,7 +925,7 @@ function renderResults(mealId) {
         ${item.previewSrc
           ? `<img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : item.isOil
-            ? `<div class="text-entry-recap">🫗 油を手動追加：${esc(item.oilLabel||'')}（B${fmtCount(item.result.total_b_count)}）</div>`
+            ? `<div class="text-entry-recap">${oilIcon(16)} 油を手動追加：${esc(item.oilLabel||'')}（B${fmtCount(item.result.total_b_count)}）</div>`
             : `<div class="text-entry-recap">📝 入力内容：${esc(item.text||'')}</div>`}
         ${item.result.advice ? `<div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice)}</p></div>` : ''}
         <div class="food-list-wrap">
@@ -1211,7 +1219,9 @@ function openWeightModal() {
   inp.value = (today != null) ? today : ((p && p.weight) ? p.weight : '');
   if (note) note.textContent = (today != null) ? `今日は ${today} kg で記録済み（上書きできます）` : '';
   ov.classList.add('show');
-  setTimeout(() => inp.focus(), 50);
+  // ボタンのタップ操作と同じ呼び出し内で即フォーカス（スマホで数字キーボードがすぐ開く）
+  inp.focus();
+  inp.select();
 }
 
 function closeWeightModal() {
@@ -1814,7 +1824,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v5';
+const NOTICE_KEY = 'ab-diet-notice-v6';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
