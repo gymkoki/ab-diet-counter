@@ -169,6 +169,18 @@
     .history-count { font-size:28px; font-weight:900; color:#6366F1; }
     .history-unit { font-size:14px; font-weight:600; color:#6366F1; opacity:0.8; }
     .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:16px; line-height:1.8; }
+    .history-weight { font-size:14px; font-weight:800; color:#2563EB; margin-top:3px; }
+    #weight-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; padding:24px; }
+    #weight-overlay.show { display:flex; }
+    .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; }
+    .weight-dialog h3 { font-size:19px; font-weight:900; margin-bottom:18px; }
+    .weight-dialog-row { display:flex; align-items:center; justify-content:center; gap:10px; }
+    .weight-input { width:150px; padding:12px 14px; border:1.5px solid var(--border); border-radius:12px; font-size:26px; font-weight:800; font-family:inherit; text-align:center; outline:none; }
+    .weight-input:focus { border-color:var(--primary); }
+    .weight-unit { font-size:18px; font-weight:700; color:var(--text-muted); }
+    #weight-current-note { font-size:13px; color:var(--text-muted); margin-top:10px; min-height:16px; }
+    .weight-save-btn { width:100%; margin-top:14px; padding:14px; border:none; border-radius:12px; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:16px; font-weight:800; cursor:pointer; }
+    .weight-cancel { width:100%; margin-top:8px; padding:10px; border:none; border-radius:12px; background:none; color:var(--text-muted); font-size:14px; font-weight:700; cursor:pointer; }
     .history-total { display:flex; align-items:center; justify-content:space-between; background:#F5F3FF; border-radius:12px; padding:14px 16px; margin-top:14px; }
     .history-total .label { font-size:16px; font-weight:700; color:#5B21B6; }
     .history-total .count { font-size:32px; font-weight:900; color:#6366F1; }
@@ -285,9 +297,9 @@
     <span class="tab-label">間食</span>
     <span class="tab-dot" id="dot-snack"></span>
   </button>
-  <button class="tab-btn tab-btn-reset" onclick="confirmReset()">
-    <span class="tab-reset-icon">↺</span>
-    <span class="tab-label">完了</span>
+  <button class="tab-btn tab-btn-reset" onclick="openWeightModal()">
+    <span class="tab-emoji">⚖️</span>
+    <span class="tab-label">体重</span>
   </button>
 </div>
 
@@ -305,7 +317,7 @@
 
 <div id="view-history" style="display:none">
   <div class="history-card">
-    <h2>📊 今月のBカウント履歴（直近30日）</h2>
+    <h2>📊 Bカウント＆体重の履歴（直近30日）</h2>
     <div class="history-range" id="history-range">読み込み中…</div>
     <div id="history-list"></div>
     <div class="history-total" id="history-total" style="display:none">
@@ -424,6 +436,20 @@
   <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
 </div>
 
+<!-- 体重入力モーダル -->
+<div id="weight-overlay" onclick="closeWeightModal()">
+  <div class="weight-dialog" onclick="event.stopPropagation()">
+    <h3>⚖️ 今日の体重</h3>
+    <div class="weight-dialog-row">
+      <input type="number" step="0.1" min="20" max="200" id="weight-input-today" class="weight-input" placeholder="例：60.5" inputmode="decimal">
+      <span class="weight-unit">kg</span>
+    </div>
+    <div id="weight-current-note"></div>
+    <button class="weight-save-btn" onclick="saveTodayWeight()">保存する</button>
+    <button class="weight-cancel" onclick="closeWeightModal()">閉じる</button>
+  </div>
+</div>
+
 <!-- ホーム画面追加バナー（各端末2回まで） -->
 <div id="home-banner">
   <div class="home-banner-inner">
@@ -461,17 +487,6 @@
   </div>
 </div>
 
-<!-- リセット確認ダイアログ -->
-<div id="reset-overlay" onclick="cancelReset()">
-  <div class="reset-dialog" onclick="event.stopPropagation()">
-    <h3>↺ 1日を完了</h3>
-    <p>今日の記録をすべて保存します。<br>保存すると、Bカウントの履歴をご覧になれます。</p>
-    <div class="reset-dialog-btns">
-      <button class="btn-cancel" onclick="cancelReset()">キャンセル</button>
-      <button class="btn-reset-ok" onclick="doReset()">完了する</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // ═══════════════════════════════════════════
@@ -1178,6 +1193,59 @@ async function submitDailyB(bCount, date) {
 }
 
 // ═══════════════════════════════════════════
+//  体重の記録
+// ═══════════════════════════════════════════
+const WEIGHT_LOG_KEY = 'ab-diet-weightlog-v1';   // { 'YYYY-MM-DD': weight }
+
+function getWeightLog() {
+  try { return JSON.parse(localStorage.getItem(WEIGHT_LOG_KEY)) || {}; } catch { return {}; }
+}
+
+function openWeightModal() {
+  const ov  = document.getElementById('weight-overlay');
+  const inp = document.getElementById('weight-input-today');
+  const note = document.getElementById('weight-current-note');
+  if (!ov || !inp) return;
+  const today = getWeightLog()[getTodayJST()];
+  const p = getProfile();
+  inp.value = (today != null) ? today : ((p && p.weight) ? p.weight : '');
+  if (note) note.textContent = (today != null) ? `今日は ${today} kg で記録済み（上書きできます）` : '';
+  ov.classList.add('show');
+  setTimeout(() => inp.focus(), 50);
+}
+
+function closeWeightModal() {
+  const ov = document.getElementById('weight-overlay');
+  if (ov) ov.classList.remove('show');
+}
+
+function saveTodayWeight() {
+  const inp = document.getElementById('weight-input-today');
+  const w = parseFloat(inp.value);
+  if (!w || w < 20 || w > 300) { alert('体重を正しく入力してください'); return; }
+  const date = getTodayJST();
+  const log = getWeightLog();
+  log[date] = w;
+  localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(log));
+  // プロフィールの体重も最新に更新（運動の消費カロリー計算用）
+  const p = getProfile() || {};
+  p.weight = w;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+  submitDailyWeight(w, date);
+  closeWeightModal();
+}
+
+async function submitDailyWeight(weight, date) {
+  try {
+    await fetch('/api/daily-weight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, weight, date })
+    });
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════
 //  画面切り替え（記録 / 今週の履歴）
 // ═══════════════════════════════════════════
 function switchView(view) {
@@ -1653,9 +1721,18 @@ async function loadHistory() {
     const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
     const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
     rangeEl.textContent = `${fmtDate(data.date_start)} 〜 ${fmtDate(data.date_end)}（直近30日）`;
-    const daily = (data.daily||[]).slice().sort((a,b) => b.date.localeCompare(a.date));
+
+    // サーバーの履歴に、端末ローカルの体重記録も重ねる（当日分などを即反映）
+    const byDate = {};
+    (data.daily||[]).forEach(d => { byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight }; });
+    const wlog = getWeightLog();
+    Object.keys(wlog).forEach(date => {
+      if (!byDate[date]) byDate[date] = { date, b_count:null, weight:wlog[date] };
+      else if (byDate[date].weight == null) byDate[date].weight = wlog[date];
+    });
+    const daily = Object.values(byDate).sort((a,b) => b.date.localeCompare(a.date));
     if (daily.length === 0) {
-      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>「↺ 完了」タブで1日の記録を保存すると、ここに表示されます。</div>';
+      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
       return;
     }
     let exLogs = [];
@@ -1667,10 +1744,16 @@ async function loadHistory() {
       const exHtml = exBc > 0
         ? `<div class="history-ex-tag">🏃 運動で −${fmtCount(exBc)}B 消費</div>`
         : '';
+      const countHtml = (d.b_count != null)
+        ? `<span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span>`
+        : `<span class="history-unit">記録なし</span>`;
+      const weightHtml = (d.weight != null)
+        ? `<div class="history-weight">⚖️ ${d.weight} kg</div>`
+        : '';
       return `
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
-        <div style="text-align:right">${exHtml}<span class="history-count">${fmtCount(d.b_count)}</span><span class="history-unit"> カウント</span></div>
+        <div style="text-align:right">${exHtml}${countHtml}${weightHtml}</div>
       </div>`;
     }).join('');
     const avg = data.days_count > 0 ? data.total / data.days_count : 0;

@@ -135,6 +135,16 @@ def init_db():
                     UNIQUE(user_id, date)
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_weight (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    date       TEXT   NOT NULL,
+                    weight     REAL   NOT NULL,
+                    created_at TEXT   NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usage_log (
@@ -149,6 +159,16 @@ def init_db():
                     user_id    TEXT    NOT NULL,
                     date       TEXT    NOT NULL,
                     b_count    REAL    NOT NULL,
+                    created_at TEXT    NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_weight (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    date       TEXT    NOT NULL,
+                    weight     REAL    NOT NULL,
                     created_at TEXT    NOT NULL,
                     UNIQUE(user_id, date)
                 )
@@ -742,10 +762,49 @@ def post_daily_b():
     return jsonify({"ok": True})
 
 
+@app.route("/api/daily-weight", methods=["POST"])
+def post_daily_weight():
+    """今日の体重を記録（タップ入力時に呼ばれる）"""
+    data = request.get_json()
+    uid    = (data or {}).get("user_id", "").strip()
+    weight = (data or {}).get("weight", 0)
+    date   = (data or {}).get("date", "")   # YYYY-MM-DD (JST)
+    try:
+        weight = float(weight)
+    except (TypeError, ValueError):
+        weight = 0
+    if not uid or not date or weight <= 0:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_weight (user_id, date, weight, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET weight=%s, created_at=%s""",
+                    (uid, date, weight, ts, weight, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_weight (user_id, date, weight, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET weight=excluded.weight, created_at=excluded.created_at""",
+                    (uid, date, weight, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/weekly-b")
 @app.route("/api/monthly-b")
 def get_monthly_b():
-    """直近30日間のBカウント履歴を返す"""
+    """直近30日間のBカウント履歴＋体重を返す"""
     uid = request.args.get("user_id", "")
     if not uid:
         return jsonify({"total": 0, "days_count": 0, "daily": [], "date_start": "", "date_end": ""})
@@ -763,13 +822,28 @@ def get_monthly_b():
                ORDER BY date""",
             (uid, date_start, date_end)
         )
-        rows = cur.fetchall()
+        b_rows = cur.fetchall()
+
+        cur.execute(
+            f"""SELECT date, weight FROM daily_weight
+               WHERE user_id={PH} AND date>={PH} AND date<={PH}
+               ORDER BY date""",
+            (uid, date_start, date_end)
+        )
+        w_rows = cur.fetchall()
     finally:
         conn.close()
 
-    total      = sum(r[1] for r in rows)
-    days_count = len(rows)
-    daily      = [{"date": r[0], "b_count": r[1]} for r in rows]
+    b_by_date = {r[0]: r[1] for r in b_rows}
+    w_by_date = {r[0]: r[1] for r in w_rows}
+
+    total      = sum(b_by_date.values())
+    days_count = len(b_by_date)
+    all_dates  = sorted(set(b_by_date) | set(w_by_date))
+    daily      = [
+        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d)}
+        for d in all_dates
+    ]
     return jsonify({
         "total":      total,
         "days_count": days_count,
