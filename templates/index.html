@@ -174,6 +174,9 @@
     #weight-overlay.show, #hist-edit-overlay.show { display:flex; }
     .hist-edit-btn { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:16px; cursor:pointer; flex-shrink:0; margin-left:10px; }
     .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:#FFF5F0; }
+    #past-edit-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#FEF3C7; border:1.5px solid #FCD34D; color:#92400E; border-radius:12px; margin:12px 16px 0; padding:10px 14px; font-size:14px; font-weight:800; }
+    #past-edit-banner button { background:#92400E; color:white; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
+    .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:12px; border:none; background:linear-gradient(135deg,#10B981,#059669); color:white; font-size:15px; font-weight:800; cursor:pointer; }
     .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; }
     .weight-dialog h3 { font-size:19px; font-weight:900; margin-bottom:18px; }
     .weight-dialog-row { display:flex; align-items:center; justify-content:center; gap:10px; }
@@ -268,7 +271,7 @@
   <div class="daily-total-bar">
     <div class="daily-total-left">
       <span class="daily-total-icon">🍽️</span>
-      <span class="daily-total-label">今日のBカウント合計</span>
+      <span class="daily-total-label" id="daily-total-label">今日のBカウント合計</span>
     </div>
     <div class="daily-total-right">
       <span class="daily-total-num" id="daily-total-count">0</span>
@@ -317,6 +320,10 @@
 </div>
 
 <div id="view-main">
+  <div id="past-edit-banner" style="display:none">
+    <span>📝 <span id="past-edit-date"></span> の食事を編集中</span>
+    <button onclick="exitPastEdit()">編集を終える</button>
+  </div>
   <div id="panel-breakfast" class="meal-panel active"></div>
   <div id="panel-lunch"     class="meal-panel"></div>
   <div id="panel-dinner"    class="meal-panel"></div>
@@ -347,7 +354,8 @@
     <input type="number" step="0.5" min="0" max="30" id="hist-edit-bcount" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal">
     <label class="setting-label" style="text-align:left;margin-top:12px">体重 (kg)</label>
     <input type="number" step="any" min="20" max="200" id="hist-edit-weight" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal" placeholder="未記録">
-    <button class="weight-save-btn" onclick="saveHistEdit()">保存する</button>
+    <button class="weight-save-btn" onclick="saveHistEdit()">数値を保存する</button>
+    <button class="btn-hist-meal-edit" id="hist-meal-edit-btn" style="display:none" onclick="enterPastEdit(_histEditDate)">🍽️ この日の食事を編集（写真・明細）</button>
     <button class="weight-cancel" onclick="closeHistEdit()">閉じる</button>
   </div>
 </div>
@@ -591,34 +599,72 @@ const _progressTimers = {};
 // ═══════════════════════════════════════════
 //  LocalStorage
 // ═══════════════════════════════════════════
-function saveState() {
+// 過去日編集モード（null=今日 / 'YYYY-MM-DD'=その日を編集中）
+let _editingDate = null;
+function currentDate() { return _editingDate || getTodayJST(); }
+
+// state を保存用ペイロードに変換（食材明細＋写真サムネ）
+function buildMealsPayload() {
+  const data = {};
+  MEALS.forEach(m => {
+    data[m.id] = {
+      items: state[m.id].items
+        .filter(i => i.result)
+        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, isOil:i.isOil, oilLabel:i.oilLabel }))
+    };
+  });
+  return data;
+}
+
+let _mealSyncTimer = null;
+function scheduleMealSync(date, payload) {
+  clearTimeout(_mealSyncTimer);
+  _mealSyncTimer = setTimeout(() => submitDailyMeals(date, payload), 1500);
+}
+async function submitDailyMeals(date, payload) {
   try {
-    const data = { savedAt: Date.now(), stateDate: getTodayJST() };
-    MEALS.forEach(m => {
-      data[m.id] = {
-        items: state[m.id].items
-          .filter(i => i.result)
-          .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, isOil:i.isOil, oilLabel:i.oilLabel }))
-      };
+    await fetch('/api/daily-meals', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, date, payload })
     });
+  } catch(e) {}
+}
+
+function saveState() {
+  const payload = buildMealsPayload();
+  if (_editingDate) {
+    // 過去日編集中：サーバーのその日へ保存（今日のローカルは触らない）
+    scheduleMealSync(_editingDate, payload);
+    const foodTotal = MEALS.reduce((s,m) => s + state[m.id].items.filter(i=>i.result).reduce((a,i)=>a+(i.result.total_b_count||0),0), 0);
+    const net = Math.max(0, foodTotal - getExBCountForDate(_editingDate));
+    submitDailyB(net, _editingDate);
+    return;
+  }
+  // 今日：従来通りローカルへ保存し、サーバーにも同期（翌日以降の編集用）
+  try {
+    const data = { savedAt: Date.now(), stateDate: getTodayJST(), ...payload };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch(e) { console.warn('save failed', e); }
+  scheduleMealSync(getTodayJST(), payload);
+}
+
+// ペイロード（サーバー or localStorage）から state を復元
+function loadStateFromPayload(data) {
+  MEALS.forEach(m => { state[m.id].items = []; });
+  MEALS.forEach(m => {
+    if (data && data[m.id] && data[m.id].items && data[m.id].items.length) {
+      state[m.id].items = data[m.id].items.map(i => ({ ...i, file:null, loading:false, error:null }));
+    }
+  });
+  const allIds = MEALS.flatMap(m => state[m.id].items.map(i => i.id));
+  if (allIds.length) itemIdSeq = Math.max(itemIdSeq, ...allIds);
 }
 
 function loadSavedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-    const data = JSON.parse(raw);
-    MEALS.forEach(m => {
-      if (data[m.id] && data[m.id].items && data[m.id].items.length) {
-        state[m.id].items = data[m.id].items.map(i => ({
-          ...i, file:null, loading:false, error:null
-        }));
-      }
-    });
-    const allIds = MEALS.flatMap(m => state[m.id].items.map(i => i.id));
-    if (allIds.length) itemIdSeq = Math.max(...allIds);
+    loadStateFromPayload(JSON.parse(raw));
   } catch(e) { console.warn('load failed', e); }
 }
 
@@ -723,7 +769,7 @@ function updateDailyTotal() {
     const dot = document.getElementById(`dot-${m.id}`);
     if (dot) dot.classList.toggle('visible', done.length > 0);
   });
-  const exBc = getTodayExBCount();
+  const exBc = getExBCountForDate(currentDate());
   const net  = Math.max(0, foodTotal - exBc);
   const el = document.getElementById('daily-total-count');
   if (el) el.textContent = fmtCount(net);
@@ -1897,6 +1943,12 @@ function renderWeightChart(daily) {
 // ── 履歴の編集（過去の日のBカウント・体重を修正）──
 let _histDaily = {}, _histEditDate = null;
 
+function _daysAgoFromToday(date) {
+  const today = new Date(getTodayJST()+'T00:00:00');
+  const d = new Date(date+'T00:00:00');
+  return Math.round((today - d) / 86400000);
+}
+
 function openHistEdit(date) {
   _histEditDate = date;
   const d = _histDaily[date] || { b_count:null, weight:null };
@@ -1904,7 +1956,62 @@ function openHistEdit(date) {
   document.getElementById('hist-edit-date').textContent = `${dt.getMonth()+1}/${dt.getDate()}`;
   document.getElementById('hist-edit-bcount').value = (d.b_count != null) ? d.b_count : '';
   document.getElementById('hist-edit-weight').value = (d.weight != null) ? d.weight : '';
+  // 過去1〜3日は食事の写真・明細まで編集できる
+  const diff = _daysAgoFromToday(date);
+  document.getElementById('hist-meal-edit-btn').style.display = (diff >= 1 && diff <= 3) ? '' : 'none';
   document.getElementById('hist-edit-overlay').classList.add('show');
+}
+
+// 過去日の食事を本物の記録画面で編集する
+async function enterPastEdit(date) {
+  closeHistEdit();
+  if (!_editingDate) saveState();   // 今日の状態を保存しておく
+  let payload = null;
+  try {
+    const r = await fetch(`/api/daily-meals?user_id=${encodeURIComponent(USER_ID)}&date=${encodeURIComponent(date)}`);
+    const d = await r.json();
+    payload = d.payload;
+  } catch(e) {}
+  if (!payload) { alert('この日の食事データが見つかりませんでした（保存される前の記録は編集できません）。'); return; }
+  _editingDate = date;
+  loadStateFromPayload(payload);
+  MEALS.forEach(m => { renderStrip(m.id); renderResults(m.id); });
+  updatePastEditBanner();
+  updateDailyTotal();
+  switchView('main');
+  switchMeal('breakfast');
+  window.scrollTo(0, 0);
+}
+
+function exitPastEdit() {
+  const date = _editingDate;
+  clearTimeout(_mealSyncTimer);   // 保留中の同期を止め、最新を即送信
+  if (date) {
+    submitDailyMeals(date, buildMealsPayload());
+    const foodTotal = MEALS.reduce((s,m) => s + state[m.id].items.filter(i=>i.result).reduce((a,i)=>a+(i.result.total_b_count||0),0), 0);
+    submitDailyB(Math.max(0, foodTotal - getExBCountForDate(date)), date);
+  }
+  _editingDate = null;
+  MEALS.forEach(m => { state[m.id].items = []; });
+  loadSavedState();
+  MEALS.forEach(m => { renderStrip(m.id); renderResults(m.id); });
+  updatePastEditBanner();
+  updateDailyTotal();
+  switchView('history');
+}
+
+function updatePastEditBanner() {
+  const banner = document.getElementById('past-edit-banner');
+  const label  = document.getElementById('daily-total-label');
+  if (_editingDate) {
+    const dt = new Date(_editingDate+'T00:00:00');
+    document.getElementById('past-edit-date').textContent = `${dt.getMonth()+1}/${dt.getDate()}`;
+    banner.style.display = 'flex';
+    if (label) label.textContent = `${dt.getMonth()+1}/${dt.getDate()} のBカウント合計`;
+  } else {
+    banner.style.display = 'none';
+    if (label) label.textContent = '今日のBカウント合計';
+  }
 }
 
 function closeHistEdit() {
@@ -2014,6 +2121,7 @@ let _currentDay = getTodayJST();
 setInterval(() => {
   const today = getTodayJST();
   if (today === _currentDay) return;
+  if (_editingDate) return;   // 過去日を編集中はリセットしない
   _currentDay = today;
   // 前日の食事Bカウントを履歴へ保存し、localStorageをクリア
   flushPreviousDayIfNeeded();

@@ -145,6 +145,16 @@ def init_db():
                     UNIQUE(user_id, date)
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_meals (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    date       TEXT   NOT NULL,
+                    payload    TEXT   NOT NULL,
+                    created_at TEXT   NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usage_log (
@@ -169,6 +179,16 @@ def init_db():
                     user_id    TEXT    NOT NULL,
                     date       TEXT    NOT NULL,
                     weight     REAL    NOT NULL,
+                    created_at TEXT    NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_meals (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    date       TEXT    NOT NULL,
+                    payload    TEXT    NOT NULL,
                     created_at TEXT    NOT NULL,
                     UNIQUE(user_id, date)
                 )
@@ -877,6 +897,67 @@ def get_monthly_b():
         "date_start": date_start,
         "date_end":   date_end,
     })
+
+
+# 食事の明細＋写真サムネを日別に保存（過去3日分のみ保持し、それ以前は自動削除）
+MEALS_RETAIN_DAYS = 3
+
+
+@app.route("/api/daily-meals", methods=["POST"])
+def post_daily_meals():
+    data = request.get_json(silent=True) or {}
+    uid     = (data.get("user_id") or "").strip()
+    date    = (data.get("date") or "").strip()
+    payload = data.get("payload")
+    if not uid or not date or payload is None:
+        return jsonify({"error": "パラメータ不足"}), 400
+    payload_str = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    ts = datetime.datetime.now(JST).isoformat()
+    cutoff = (datetime.datetime.now(JST) - datetime.timedelta(days=MEALS_RETAIN_DAYS)).strftime("%Y-%m-%d")
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_meals (user_id, date, payload, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET payload=%s, created_at=%s""",
+                    (uid, date, payload_str, ts, payload_str, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_meals (user_id, date, payload, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET payload=excluded.payload, created_at=excluded.created_at""",
+                    (uid, date, payload_str, ts)
+                )
+            cur.execute(f"DELETE FROM daily_meals WHERE user_id={PH} AND date < {PH}", (uid, cutoff))
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/daily-meals")
+def get_daily_meals():
+    uid  = request.args.get("user_id", "")
+    date = request.args.get("date", "")
+    if not uid or not date:
+        return jsonify({"payload": None})
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT payload FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, date))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"payload": None})
+    try:
+        return jsonify({"payload": json.loads(row[0])})
+    except Exception:
+        return jsonify({"payload": None})
 
 
 @app.route("/analyze", methods=["POST"])
