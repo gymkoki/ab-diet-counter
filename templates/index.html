@@ -170,8 +170,10 @@
     .history-unit { font-size:14px; font-weight:600; color:#6366F1; opacity:0.8; }
     .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:16px; line-height:1.8; }
     .history-weight { font-size:14px; font-weight:800; color:#2563EB; margin-top:3px; }
-    #weight-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; padding:24px; }
-    #weight-overlay.show { display:flex; }
+    #weight-overlay, #hist-edit-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; padding:24px; }
+    #weight-overlay.show, #hist-edit-overlay.show { display:flex; }
+    .hist-edit-btn { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:16px; cursor:pointer; flex-shrink:0; margin-left:10px; }
+    .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:#FFF5F0; }
     .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; }
     .weight-dialog h3 { font-size:19px; font-weight:900; margin-bottom:18px; }
     .weight-dialog-row { display:flex; align-items:center; justify-content:center; gap:10px; }
@@ -206,6 +208,12 @@
     .ex-log-row { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid var(--border); font-size:14px; font-weight:700; }
     .ex-log-row:last-child { border-bottom:none; }
     .ex-profile-notice { background:#FFF8E1; border:1.5px solid #FFD54F; border-radius:12px; padding:12px 14px; margin:10px 16px 0; font-size:15px; font-weight:700; line-height:1.6; color:#795548; }
+    .floor-row { display:flex; align-items:center; justify-content:center; gap:20px; padding:8px 0 4px; }
+    .floor-btn { width:54px; height:54px; border-radius:50%; border:2px solid var(--primary); background:var(--surface); color:var(--primary); font-size:28px; font-weight:900; cursor:pointer; line-height:1; }
+    .floor-btn:active { background:#FFF5F0; }
+    .floor-val { min-width:90px; text-align:center; }
+    .floor-val #floor-num { font-size:40px; font-weight:900; color:var(--primary); }
+    .floor-unit { font-size:20px; font-weight:800; color:var(--primary); margin-left:4px; }
     .history-ex-tag { font-size:11px; font-weight:700; color:#2e7d32; background:#e8f5e9; border-radius:6px; padding:2px 7px; display:inline-block; margin-bottom:3px; }
 
     /* ── 速度ドラム ── */
@@ -317,13 +325,30 @@
 
 <div id="view-history" style="display:none">
   <div class="history-card">
-    <h2>📊 Bカウント＆体重の履歴（直近30日）</h2>
+    <h2>📊 Bカウント＆体重の履歴（直近50日）</h2>
     <div class="history-range" id="history-range">読み込み中…</div>
-    <div id="history-list"></div>
     <div class="history-total" id="history-total" style="display:none">
-      <span class="label">1日平均</span>
+      <span class="label">1日平均Bカウント</span>
       <span class="count" id="history-total-count">-</span>
     </div>
+    <div id="weight-chart-wrap" style="display:none;margin-top:16px">
+      <div style="font-size:14px;font-weight:800;color:#2563EB;margin-bottom:6px">⚖️ 体重の推移</div>
+      <div id="weight-chart"></div>
+    </div>
+    <div id="history-list" style="margin-top:16px"></div>
+  </div>
+</div>
+
+<!-- 履歴の編集モーダル -->
+<div id="hist-edit-overlay" onclick="closeHistEdit()">
+  <div class="weight-dialog" onclick="event.stopPropagation()">
+    <h3>✏️ <span id="hist-edit-date"></span> の記録を編集</h3>
+    <label class="setting-label" style="text-align:left">Bカウント</label>
+    <input type="number" step="0.5" min="0" max="30" id="hist-edit-bcount" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal">
+    <label class="setting-label" style="text-align:left;margin-top:12px">体重 (kg)</label>
+    <input type="number" step="any" min="20" max="200" id="hist-edit-weight" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal" placeholder="未記録">
+    <button class="weight-save-btn" onclick="saveHistEdit()">保存する</button>
+    <button class="weight-cancel" onclick="closeHistEdit()">閉じる</button>
   </div>
 </div>
 
@@ -335,10 +360,11 @@
       <button class="chip" onclick="selectExType('散歩')">🚶 散歩</button>
       <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
       <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
-      <button class="chip" onclick="selectExType('オンラインレッスン')">💻 オンラインレッスン</button>
+      <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジムオンラインレッスン</button>
+      <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
     </div>
   </div>
-  <div class="ex-card" style="margin-top:10px">
+  <div class="ex-card" id="duration-section" style="margin-top:10px">
     <h3>⏱ 時間を選ぶ（5〜120分）</h3>
     <div class="drum-wrap">
       <div class="drum-fade-top"></div>
@@ -348,6 +374,15 @@
       <div class="drum-roll" id="drum-duration"></div>
     </div>
     <div id="drum-duration-label" class="drum-speed-label"></div>
+  </div>
+  <!-- 階段選択時のみ表示：階数 -->
+  <div id="floor-section" class="ex-card" style="display:none;margin-top:10px">
+    <h3>🪜 何階分のぼった？</h3>
+    <div class="floor-row">
+      <button class="floor-btn" onclick="changeFloors(-1)">−</button>
+      <div class="floor-val"><span id="floor-num">10</span><span class="floor-unit">階</span></div>
+      <button class="floor-btn" onclick="changeFloors(1)">＋</button>
+    </div>
   </div>
   <!-- ランニング時のみ表示：速度ドラム -->
   <div id="speed-section" class="ex-card" style="display:none;margin-top:10px">
@@ -1395,8 +1430,18 @@ function getProfile() {
 //  運動トラッキング
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
-const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'オンラインレッスン': 5.0 };
-let _exType = null, _exDuration = 30;
+const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'リオールジムオンラインレッスン': 5.0 };
+let _exType = null, _exDuration = 30, _exFloors = 10;
+
+// 階段：1階のぼるのに約15秒、MET8として消費kcalを算出（体重×階数×0.0333）
+const STAIR_KCAL_PER_FLOOR_PER_KG = 8 * (0.25 / 60);  // ≒0.0333 kcal/kg/階
+
+function changeFloors(d) {
+  _exFloors = Math.max(1, Math.min(200, _exFloors + d));
+  const el = document.getElementById('floor-num');
+  if (el) el.textContent = _exFloors;
+  _updateExResult();
+}
 
 // ── 時間ドラム ──
 const DURATION_LIST = (() => { const r=[]; for(let d=5;d<=120;d+=5) r.push(d); return r; })();
@@ -1549,6 +1594,10 @@ function selectExType(type) {
   document.querySelectorAll('#chips-type .chip').forEach(b => {
     b.classList.toggle('sel', b.textContent.trim().includes(type));
   });
+  const isStair = (type === '階段');
+  // 階段は「時間」ではなく「階数」で入力
+  document.getElementById('duration-section').style.display = isStair ? 'none' : '';
+  document.getElementById('floor-section').style.display = isStair ? '' : 'none';
   if (type === 'ランニング') {
     _initSpeedSection();
   } else {
@@ -1564,6 +1613,9 @@ function runningMET(speedKmh) {
 function calcExKcal(type, min) {
   const p = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
+  if (type === '階段') {
+    return Math.round(weight * _exFloors * STAIR_KCAL_PER_FLOOR_PER_KG);
+  }
   const met = (type === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[type] || 4);
   return Math.round(met * weight * (min / 60));
 }
@@ -1582,7 +1634,8 @@ function kcalToExBCount(kcal) {
 function _updateExResult() {
   const card   = document.getElementById('ex-result-card');
   const notice = document.getElementById('ex-profile-notice');
-  if (!_exType || !_exDuration) { card.style.display = 'none'; notice.style.display = 'none'; return; }
+  const ready = _exType && (_exType === '階段' ? _exFloors > 0 : _exDuration);
+  if (!ready) { card.style.display = 'none'; notice.style.display = 'none'; return; }
   const hasProfile = !!getProfile();
   notice.style.display = hasProfile ? 'none' : '';
   const kcal = calcExKcal(_exType, _exDuration);
@@ -1608,21 +1661,30 @@ function editExercise(ts) {
   document.querySelectorAll('#chips-type .chip').forEach(b => {
     b.classList.toggle('sel', b.textContent.trim().includes(log.type));
   });
+  const isStair = (log.type === '階段');
+  document.getElementById('duration-section').style.display = isStair ? 'none' : '';
+  document.getElementById('floor-section').style.display = isStair ? '' : 'none';
   if (log.type === 'ランニング') {
     _initSpeedSection(log.speedKmh || null);
   } else {
     document.getElementById('speed-section').style.display = 'none';
   }
 
-  const dIdx = DURATION_LIST.indexOf(log.min);
-  if (dIdx >= 0) {
-    requestAnimationFrame(() => {
-      document.getElementById('drum-duration').scrollTop = dIdx * DRUM_H;
-      _exDuration = log.min;
-      _highlightDurationDrum(dIdx);
-      document.getElementById('drum-duration-label').textContent = `選択中: ${_exDuration}分`;
-      _updateExResult();
-    });
+  if (isStair) {
+    _exFloors = log.floors || 10;
+    document.getElementById('floor-num').textContent = _exFloors;
+    _updateExResult();
+  } else {
+    const dIdx = DURATION_LIST.indexOf(log.min);
+    if (dIdx >= 0) {
+      requestAnimationFrame(() => {
+        document.getElementById('drum-duration').scrollTop = dIdx * DRUM_H;
+        _exDuration = log.min;
+        _highlightDurationDrum(dIdx);
+        document.getElementById('drum-duration-label').textContent = `選択中: ${_exDuration}分`;
+        _updateExResult();
+      });
+    }
   }
 
   document.querySelector('.btn-record-ex').textContent = '✏️ 記録を更新する';
@@ -1630,11 +1692,12 @@ function editExercise(ts) {
 }
 
 function recordExercise() {
-  if (!_exType || !_exDuration) return;
-  const met    = (_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4);
+  const isStair = (_exType === '階段');
+  if (!_exType || (isStair ? !_exFloors : !_exDuration)) return;
   const p      = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
-  const kcal   = Math.round(met * weight * (_exDuration / 60));
+  const met    = isStair ? null : ((_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4));
+  const kcal   = calcExKcal(_exType, _exDuration);
   const bc     = kcalToExBCount(kcal);
   const today  = getTodayJST();
   const speedLabel = (_exType === 'ランニング')
@@ -1643,23 +1706,29 @@ function recordExercise() {
         : `${PACE_LIST[_getDrumIdx()]?.label ?? ''}／km`)
     : null;
   const speedKmh = (_exType === 'ランニング') ? _runSpeedKmh : null;
+  const floors = isStair ? _exFloors : null;
+  const minVal = isStair ? null : _exDuration;
+  const metVal = met != null ? Math.round(met * 10) / 10 : null;
 
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
 
   if (_editingTs !== null) {
     const i = logs.findIndex(l => l.ts === _editingTs);
-    if (i >= 0) logs[i] = { ...logs[i], type: _exType, min: _exDuration, kcal, bc, speedLabel, speedKmh, met: Math.round(met * 10) / 10 };
+    if (i >= 0) logs[i] = { ...logs[i], type: _exType, min: minVal, floors, kcal, bc, speedLabel, speedKmh, met: metVal };
     _editingTs = null;
     document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
   } else {
-    logs.push({ date: today, type: _exType, min: _exDuration, kcal, bc, ts: Date.now(), speedLabel, speedKmh, met: Math.round(met * 10) / 10 });
+    logs.push({ date: today, type: _exType, min: minVal, floors, kcal, bc, ts: Date.now(), speedLabel, speedKmh, met: metVal });
   }
 
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
-  _exType = null; _exDuration = 30;
+  _exType = null; _exDuration = 30; _exFloors = 10;
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
   document.getElementById('speed-section').style.display = 'none';
+  document.getElementById('floor-section').style.display = 'none';
+  document.getElementById('duration-section').style.display = '';
+  document.getElementById('floor-num').textContent = _exFloors;
   document.getElementById('ex-result-card').style.display = 'none';
   document.getElementById('ex-profile-notice').style.display = 'none';
   _initDurationDrum(30);
@@ -1694,7 +1763,9 @@ function renderExLog() {
   if (todayLogs.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
   list.innerHTML = todayLogs.map(l => {
-    const detail = l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`;
+    const detail = (l.type === '階段')
+      ? `${l.type} ${l.floors}階`
+      : (l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`);
     return `<div class="ex-log-row">
       <div>
         <div style="font-weight:800;font-size:15px">${detail}</div>
@@ -1730,7 +1801,7 @@ async function loadHistory() {
     const data = await res.json();
     const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
     const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
-    rangeEl.textContent = `${fmtDate(data.date_start)} 〜 ${fmtDate(data.date_end)}（直近30日）`;
+    rangeEl.textContent = `${fmtDate(data.date_start)} 〜 ${fmtDate(data.date_end)}（直近50日）`;
 
     // サーバーの履歴に、端末ローカルの体重記録も重ねる（当日分などを即反映）
     const byDate = {};
@@ -1741,6 +1812,20 @@ async function loadHistory() {
       else if (byDate[date].weight == null) byDate[date].weight = wlog[date];
     });
     const daily = Object.values(byDate).sort((a,b) => b.date.localeCompare(a.date));
+
+    // 平均（上部）
+    if (data.days_count > 0) {
+      totalCountEl.textContent = `${fmtCount(data.total / data.days_count)} カウント / 日`;
+      totalEl.style.display = 'flex';
+    }
+
+    // 体重の折れ線グラフ
+    renderWeightChart(daily);
+
+    // 編集用に保持
+    _histDaily = {};
+    daily.forEach(d => { _histDaily[d.date] = d; });
+
     if (daily.length === 0) {
       listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
       return;
@@ -1763,15 +1848,92 @@ async function loadHistory() {
       return `
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
-        <div style="text-align:right">${exHtml}${countHtml}${weightHtml}</div>
+        <div style="display:flex;align-items:center">
+          <div style="text-align:right">${exHtml}${countHtml}${weightHtml}</div>
+          <button class="hist-edit-btn" onclick="openHistEdit('${d.date}')" title="この日の記録を編集">✏️</button>
+        </div>
       </div>`;
     }).join('');
-    const avg = data.days_count > 0 ? data.total / data.days_count : 0;
-    totalCountEl.textContent = `${fmtCount(avg)} カウント / 日`;
-    totalEl.style.display = 'flex';
   } catch(e) {
     rangeEl.textContent = '読み込みに失敗しました';
   }
+}
+
+// 体重の折れ線グラフ（SVG・外部ライブラリ不使用）
+function renderWeightChart(daily) {
+  const wrap = document.getElementById('weight-chart-wrap');
+  const host = document.getElementById('weight-chart');
+  if (!wrap || !host) return;
+  const pts = (daily||[]).filter(d => d.weight != null).slice().sort((a,b) => a.date.localeCompare(b.date));
+  if (pts.length < 2) {
+    if (pts.length === 1) {
+      wrap.style.display = '';
+      host.innerHTML = `<div style="font-size:13px;color:var(--text-muted);padding:6px 0">体重を2日以上記録すると推移グラフが表示されます（現在 ${pts[0].weight} kg）</div>`;
+    } else {
+      wrap.style.display = 'none';
+    }
+    return;
+  }
+  wrap.style.display = '';
+  const W = 320, H = 150, padL = 32, padR = 12, padT = 12, padB = 24;
+  const ws = pts.map(p => p.weight);
+  let min = Math.min(...ws), max = Math.max(...ws);
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const X = i => padL + (W - padL - padR) * (i / (pts.length - 1));
+  const Y = w => padT + (H - padT - padB) * (1 - (w - min) / range);
+  const line = pts.map((p,i) => `${X(i).toFixed(1)},${Y(p.weight).toFixed(1)}`).join(' ');
+  const dots = pts.map((p,i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.weight).toFixed(1)}" r="3" fill="#2563EB"/>`).join('');
+  const fmtD = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
+  const yLab = `<text x="2" y="${(Y(max)+4).toFixed(1)}" font-size="10" fill="#9CA3AF">${max}</text>`
+             + `<text x="2" y="${(Y(min)+4).toFixed(1)}" font-size="10" fill="#9CA3AF">${min}</text>`;
+  const xLab = `<text x="${X(0).toFixed(1)}" y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="start">${fmtD(pts[0].date)}</text>`
+             + `<text x="${X(pts.length-1).toFixed(1)}" y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="end">${fmtD(pts[pts.length-1].date)}</text>`;
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`
+    + `<polyline points="${line}" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+    + `${dots}${yLab}${xLab}</svg>`;
+}
+
+// ── 履歴の編集（過去の日のBカウント・体重を修正）──
+let _histDaily = {}, _histEditDate = null;
+
+function openHistEdit(date) {
+  _histEditDate = date;
+  const d = _histDaily[date] || { b_count:null, weight:null };
+  const dt = new Date(date+'T00:00:00');
+  document.getElementById('hist-edit-date').textContent = `${dt.getMonth()+1}/${dt.getDate()}`;
+  document.getElementById('hist-edit-bcount').value = (d.b_count != null) ? d.b_count : '';
+  document.getElementById('hist-edit-weight').value = (d.weight != null) ? d.weight : '';
+  document.getElementById('hist-edit-overlay').classList.add('show');
+}
+
+function closeHistEdit() {
+  document.getElementById('hist-edit-overlay').classList.remove('show');
+}
+
+async function saveHistEdit() {
+  if (!_histEditDate) return;
+  const date = _histEditDate;
+  const bRaw = document.getElementById('hist-edit-bcount').value;
+  const wRaw = document.getElementById('hist-edit-weight').value;
+  const tasks = [];
+  if (bRaw !== '') {
+    const b = parseFloat(bRaw);
+    if (!isNaN(b) && b >= 0) tasks.push(submitDailyB(b, date));
+  }
+  if (wRaw !== '') {
+    const w = parseFloat(wRaw);
+    if (!isNaN(w) && w >= 20 && w <= 300) {
+      const log = getWeightLog();
+      log[date] = w;
+      localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(log));
+      tasks.push(submitDailyWeight(w, date));
+    }
+  }
+  await Promise.all(tasks);
+  closeHistEdit();
+  loadHistory();
+  updateDailyTotal();
 }
 
 // ═══════════════════════════════════════════

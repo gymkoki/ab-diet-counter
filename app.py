@@ -837,7 +837,7 @@ def get_monthly_b():
 
     now = datetime.datetime.now(JST)
     date_end   = now.strftime("%Y-%m-%d")
-    date_start = (now - datetime.timedelta(days=29)).strftime("%Y-%m-%d")
+    date_start = (now - datetime.timedelta(days=49)).strftime("%Y-%m-%d")
 
     conn = _get_conn()
     try:
