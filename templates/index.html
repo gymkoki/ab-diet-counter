@@ -515,16 +515,20 @@
 <!-- アップデートお知らせ（各端末1回のみ表示） -->
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
-    <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">TODAY'S UPDATE</div>
-    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート</div>
+    <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">UPDATE</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.6</div>
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
       <div style="display:flex;gap:10px;margin-bottom:12px">
-        <span style="font-size:20px;flex-shrink:0">⚖️</span>
-        <span>上部の<strong>「体重」ボタン</strong>から、<strong>今日の体重</strong>を記録できるようになりました。</span>
+        <span style="font-size:20px;flex-shrink:0">✏️</span>
+        <span>食事の記録が、<strong>過去3日前まで編集できる</strong>ようになりました（履歴の✏️から写真・明細を修正できます）。</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <span style="font-size:20px;flex-shrink:0">📊</span>
+        <span>「履歴」タブに、<strong>体重とBカウントの推移グラフ</strong>を新しく追加しました。</span>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🍳</span>
-        <span>AIの画像認識では<strong>油の量が分からないことも多い</strong>ため、油がカウントされていないときは<strong>「油を手動追加」ボタン</strong>から手動で油を追加できるようになりました。</span>
+        <span style="font-size:20px;flex-shrink:0">🪜</span>
+        <span>運動の種目に<strong>「階段」</strong>を追加しました（のぼった階数で消費を計算します）。</span>
       </div>
     </div>
     <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -2116,7 +2120,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v6';
+const NOTICE_KEY = 'ab-diet-notice-v7';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
