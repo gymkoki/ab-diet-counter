@@ -1964,7 +1964,10 @@ function renderWeightChart(daily) {
   const xLab = `<text x="${X(0).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="start">${fmtD(pts[0].date)}</text>`
     + `<text x="${X(pts.length-1).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="end">${fmtD(pts[pts.length-1].date)}</text>`;
 
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${wLine}${bLine}${wDots}${bDots}${leftLab}${rightLab}${xLab}</svg>`;
+  const axisL = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
+  const axisR = `<line x1="${W-padR}" y1="${padT}" x2="${W-padR}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
+  const axisX = `<line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${axisL}${axisR}${axisX}${wLine}${bLine}${wDots}${bDots}${leftLab}${rightLab}${xLab}</svg>`;
 }
 
 // ── 履歴の編集（過去の日のBカウント・体重を修正）──
