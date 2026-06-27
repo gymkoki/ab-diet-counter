@@ -223,16 +223,16 @@
     .speed-toggle-row { display:flex; gap:8px; margin-bottom:14px; }
     .speed-mode-btn { flex:1; padding:11px 4px; border-radius:10px; border:2px solid var(--border); background:none; font-size:15px; font-weight:700; cursor:pointer; color:var(--text); transition:all 0.15s; }
     .speed-mode-btn.active { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
-    .drum-wrap { position:relative; height:220px; overflow:hidden; border-radius:14px; background:#f2f2f2; margin-bottom:6px; }
-    .drum-roll { height:220px; overflow-y:scroll; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .drum-wrap { position:relative; height:132px; overflow:hidden; border-radius:14px; background:#f2f2f2; margin-bottom:6px; }
+    .drum-roll { height:132px; overflow-y:scroll; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
     .drum-roll::-webkit-scrollbar { display:none; }
     .drum-item { height:44px; scroll-snap-align:center; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; color:#c8c8c8; user-select:none; }
     .drum-item.drum-sel { color:var(--text); font-weight:900; }
     .drum-pad { pointer-events:none; }
-    .drum-fade-top { position:absolute; top:0; left:0; right:0; height:88px; background:linear-gradient(to bottom,rgba(242,242,242,0.97),rgba(242,242,242,0)); pointer-events:none; z-index:2; }
-    .drum-fade-bot { position:absolute; bottom:0; left:0; right:0; height:88px; background:linear-gradient(to top,rgba(242,242,242,0.97),rgba(242,242,242,0)); pointer-events:none; z-index:2; }
-    .drum-line-top { position:absolute; left:24px; right:24px; top:88px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
-    .drum-line-bot { position:absolute; left:24px; right:24px; top:132px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
+    .drum-fade-top { position:absolute; top:0; left:0; right:0; height:44px; background:linear-gradient(to bottom,rgba(242,242,242,0.97),rgba(242,242,242,0)); pointer-events:none; z-index:2; }
+    .drum-fade-bot { position:absolute; bottom:0; left:0; right:0; height:44px; background:linear-gradient(to top,rgba(242,242,242,0.97),rgba(242,242,242,0)); pointer-events:none; z-index:2; }
+    .drum-line-top { position:absolute; left:24px; right:24px; top:44px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
+    .drum-line-bot { position:absolute; left:24px; right:24px; top:88px; height:2px; background:var(--primary); pointer-events:none; z-index:3; opacity:0.7; }
     .drum-speed-label { text-align:center; font-size:14px; font-weight:700; color:var(--text-muted); margin-top:6px; }
     .ex-edit-btn { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:17px; cursor:pointer; flex-shrink:0; transition:all 0.15s; }
     .ex-edit-btn:active { background:#FFF5F0; border-color:var(--primary); color:var(--primary); }
@@ -339,7 +339,9 @@
       <span class="count" id="history-total-count">-</span>
     </div>
     <div id="weight-chart-wrap" style="display:none;margin-top:16px">
-      <div style="font-size:14px;font-weight:800;color:#2563EB;margin-bottom:6px">⚖️ 体重の推移</div>
+      <div style="font-size:13px;font-weight:800;margin-bottom:6px">
+        <span style="color:#2563EB">⚖️ 体重（左軸）</span> ／ <span style="color:#FF6B35">🍽️ Bカウント（右軸）</span> の推移
+      </div>
       <div id="weight-chart"></div>
     </div>
     <div id="history-list" style="margin-top:16px"></div>
@@ -368,7 +370,7 @@
       <button class="chip" onclick="selectExType('散歩')">🚶 散歩</button>
       <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
       <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
-      <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジムオンラインレッスン</button>
+      <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジム<br>オンラインレッスン</button>
       <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
     </div>
   </div>
@@ -1536,7 +1538,7 @@ function _initDurationDrum(targetMin) {
 }
 
 // ── 速度ドラム ──
-const DRUM_H = 44, DRUM_PAD = 2;
+const DRUM_H = 44, DRUM_PAD = 1;
 let _speedMode = 'kmh', _runSpeedKmh = 8.5, _drumInited = false;
 
 const KMH_LIST = (() => {
@@ -1861,7 +1863,7 @@ async function loadHistory() {
 
     // 平均（上部）
     if (data.days_count > 0) {
-      totalCountEl.textContent = `${fmtCount(data.total / data.days_count)} カウント / 日`;
+      totalCountEl.textContent = `${(data.total / data.days_count).toFixed(1)} カウント / 日`;
       totalEl.style.display = 'flex';
     }
 
@@ -1906,38 +1908,59 @@ async function loadHistory() {
 }
 
 // 体重の折れ線グラフ（SVG・外部ライブラリ不使用）
+// 体重（左軸・青）とBカウント（右軸・橙）の二軸折れ線グラフ
 function renderWeightChart(daily) {
   const wrap = document.getElementById('weight-chart-wrap');
   const host = document.getElementById('weight-chart');
   if (!wrap || !host) return;
-  const pts = (daily||[]).filter(d => d.weight != null).slice().sort((a,b) => a.date.localeCompare(b.date));
+  const pts = (daily||[]).filter(d => d.weight != null || d.b_count != null).slice().sort((a,b) => a.date.localeCompare(b.date));
   if (pts.length < 2) {
     if (pts.length === 1) {
       wrap.style.display = '';
-      host.innerHTML = `<div style="font-size:13px;color:var(--text-muted);padding:6px 0">体重を2日以上記録すると推移グラフが表示されます（現在 ${pts[0].weight} kg）</div>`;
+      host.innerHTML = `<div style="font-size:13px;color:var(--text-muted);padding:6px 0">2日以上記録すると推移グラフが表示されます。</div>`;
     } else {
       wrap.style.display = 'none';
     }
     return;
   }
   wrap.style.display = '';
-  const W = 320, H = 150, padL = 32, padR = 12, padT = 12, padB = 24;
-  const ws = pts.map(p => p.weight);
-  let min = Math.min(...ws), max = Math.max(...ws);
-  if (min === max) { min -= 1; max += 1; }
-  const range = max - min;
+  const W = 340, H = 170, padL = 30, padR = 30, padT = 14, padB = 26;
   const X = i => padL + (W - padL - padR) * (i / (pts.length - 1));
-  const Y = w => padT + (H - padT - padB) * (1 - (w - min) / range);
-  const line = pts.map((p,i) => `${X(i).toFixed(1)},${Y(p.weight).toFixed(1)}`).join(' ');
-  const dots = pts.map((p,i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.weight).toFixed(1)}" r="3" fill="#2563EB"/>`).join('');
+
+  // 左軸：体重
+  const ws = pts.filter(p => p.weight != null).map(p => p.weight);
+  const hasW = ws.length > 0;
+  let wmin = 0, wmax = 1;
+  if (hasW) { wmin = Math.min(...ws); wmax = Math.max(...ws); if (wmin === wmax) { wmin -= 1; wmax += 1; } }
+  const YW = w => padT + (H - padT - padB) * (1 - (w - wmin) / (wmax - wmin));
+
+  // 右軸：Bカウント（0〜最大）
+  const bs = pts.filter(p => p.b_count != null).map(p => p.b_count);
+  let bmax = bs.length ? Math.max(...bs) : 0;
+  if (bmax <= 0) bmax = 1;
+  const YB = b => padT + (H - padT - padB) * (1 - b / bmax);
+
   const fmtD = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
-  const yLab = `<text x="2" y="${(Y(max)+4).toFixed(1)}" font-size="10" fill="#9CA3AF">${max}</text>`
-             + `<text x="2" y="${(Y(min)+4).toFixed(1)}" font-size="10" fill="#9CA3AF">${min}</text>`;
-  const xLab = `<text x="${X(0).toFixed(1)}" y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="start">${fmtD(pts[0].date)}</text>`
-             + `<text x="${X(pts.length-1).toFixed(1)}" y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="end">${fmtD(pts[pts.length-1].date)}</text>`;
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`
-    + `<polyline points="${line}" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
-    + `${dots}${yLab}${xLab}</svg>`;
+
+  const wPts = pts.map((p,i) => ({ i, v: p.weight })).filter(o => o.v != null);
+  const bPts = pts.map((p,i) => ({ i, v: p.b_count })).filter(o => o.v != null);
+
+  const wLine = wPts.length >= 2
+    ? `<polyline points="${wPts.map(o => `${X(o.i).toFixed(1)},${YW(o.v).toFixed(1)}`).join(' ')}" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
+  const bLine = bPts.length >= 2
+    ? `<polyline points="${bPts.map(o => `${X(o.i).toFixed(1)},${YB(o.v).toFixed(1)}`).join(' ')}" fill="none" stroke="#FF6B35" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
+  const wDots = wPts.map(o => `<circle cx="${X(o.i).toFixed(1)}" cy="${YW(o.v).toFixed(1)}" r="2.6" fill="#2563EB"/>`).join('');
+  const bDots = bPts.map(o => `<circle cx="${X(o.i).toFixed(1)}" cy="${YB(o.v).toFixed(1)}" r="2.6" fill="#FF6B35"/>`).join('');
+
+  const leftLab = hasW
+    ? `<text x="2" y="${(YW(wmax)+4).toFixed(1)}" font-size="9" fill="#2563EB">${wmax}</text>`
+    + `<text x="2" y="${(YW(wmin)+4).toFixed(1)}" font-size="9" fill="#2563EB">${wmin}</text>` : '';
+  const rightLab = `<text x="${W-2}" y="${(YB(bmax)+4).toFixed(1)}" font-size="9" fill="#FF6B35" text-anchor="end">${bmax}</text>`
+    + `<text x="${W-2}" y="${(YB(0)).toFixed(1)}" font-size="9" fill="#FF6B35" text-anchor="end">0</text>`;
+  const xLab = `<text x="${X(0).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="start">${fmtD(pts[0].date)}</text>`
+    + `<text x="${X(pts.length-1).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="end">${fmtD(pts[pts.length-1].date)}</text>`;
+
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${wLine}${bLine}${wDots}${bDots}${leftLab}${rightLab}${xLab}</svg>`;
 }
 
 // ── 履歴の編集（過去の日のBカウント・体重を修正）──
