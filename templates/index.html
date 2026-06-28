@@ -267,15 +267,14 @@
 <body>
 
 <header>
-  <div class="header-title" id="header-users">Bカウンター</div>
+  <div class="header-title" id="header-users">今日の利用者 -名</div>
   <div class="daily-total-bar">
     <div class="daily-total-left">
       <span class="daily-total-icon">🍽️</span>
-      <span class="daily-total-label" id="daily-total-label">今日のBカウント合計</span>
+      <span class="daily-total-label" id="daily-total-label">今日のB合計</span>
     </div>
     <div class="daily-total-right">
       <span class="daily-total-num" id="daily-total-count">0</span>
-      <span class="daily-total-unit">カウント</span>
     </div>
   </div>
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.92)">
@@ -583,7 +582,7 @@ async function loadStats() {
 }
 function applyStats(d) {
   const el = document.getElementById('header-users');
-  if (el) el.textContent = `Bカウンター（今日の利用者${d.today_users}名）`;
+  if (el) el.textContent = `今日の利用者 ${d.today_users}名`;
 }
 
 // ═══════════════════════════════════════════
@@ -2037,10 +2036,10 @@ function updatePastEditBanner() {
     const dt = new Date(_editingDate+'T00:00:00');
     document.getElementById('past-edit-date').textContent = `${dt.getMonth()+1}/${dt.getDate()}`;
     banner.style.display = 'flex';
-    if (label) label.textContent = `${dt.getMonth()+1}/${dt.getDate()} のBカウント合計`;
+    if (label) label.textContent = `${dt.getMonth()+1}/${dt.getDate()} のB合計`;
   } else {
     banner.style.display = 'none';
-    if (label) label.textContent = '今日のBカウント合計';
+    if (label) label.textContent = '今日のB合計';
   }
 }
 
