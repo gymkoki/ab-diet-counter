@@ -737,7 +737,7 @@ function buildPanel(m) {
         <h3>写真を追加</h3>
         <p>タップして写真を選ぶ</p>
       </div>
-      <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 撮影し忘れたので文章で入力</button>
+      <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 文章で入力</button>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
