@@ -582,7 +582,10 @@ async function loadStats() {
 }
 function applyStats(d) {
   const el = document.getElementById('header-users');
-  if (el) el.textContent = `今日の利用者 ${d.today_users}名`;
+  if (el) {
+    const remain = Math.max(0, 100 - (d.today_users || 0));
+    el.textContent = `今日の利用者 ${d.today_users}名（目標まであと${remain}名）`;
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -731,7 +734,7 @@ function buildPanel(m) {
       <div id="strip-${m.id}" class="meal-strip"></div>
       <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
         <div class="meal-add-icon">${m.emoji}</div>
-        <h3>${m.label}の写真を追加</h3>
+        <h3>写真を追加</h3>
         <p>タップして写真を選ぶ</p>
       </div>
       <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 撮影し忘れたので文章で入力</button>
