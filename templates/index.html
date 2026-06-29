@@ -582,10 +582,7 @@ async function loadStats() {
 }
 function applyStats(d) {
   const el = document.getElementById('header-users');
-  if (el) {
-    const remain = Math.max(0, 100 - (d.today_users || 0));
-    el.textContent = `今日の利用者 ${d.today_users}名（目標まであと${remain}名）`;
-  }
+  if (el) el.textContent = `今日の利用者 ${d.today_users}名`;
 }
 
 // ═══════════════════════════════════════════
