@@ -4,6 +4,9 @@ import base64
 import json
 import datetime
 import threading
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response
 import anthropic
@@ -879,8 +882,247 @@ def status():
 
 @app.route("/ping")
 def ping():
-    """Render無料プランのスリープ防止用エンドポイント（外部監視サービスからpingされる）"""
+    """Render無料プランのスリープ防止用エンドポイント。毎朝8時にレポートメールも送信する。"""
+    now = datetime.datetime.now(JST)
+    if now.hour == 8 and _last_report_sent.get("date") != now.date():
+        _last_report_sent["date"] = now.date()
+        threading.Thread(target=_send_daily_report, daemon=True).start()
     return "ok", 200
+
+
+# ── デイリーレポートメール ──────────────────────────────────────
+_last_report_sent: dict = {}
+
+
+def _bar_html(val: int, total: int, color: str) -> str:
+    pct = round(val / total * 100) if total else 0
+    return (
+        f'<div style="width:{pct}%;height:10px;background:{color};'
+        f'border-radius:4px;min-width:2px"></div>'
+    )
+
+
+def _build_report_html(target_date: str) -> str:
+    now = datetime.datetime.now(JST)
+    ts_start = f"{target_date}T00:00:00"
+    ts_end   = f"{target_date}T23:59:59"
+    start_7d = (now - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+    start_30d = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+
+        cur.execute(
+            f"SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at>={PH} AND created_at<={PH}",
+            (ts_start, ts_end),
+        )
+        daily_users = cur.fetchone()[0] or 0
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM usage_log WHERE created_at>={PH} AND created_at<={PH}",
+            (ts_start, ts_end),
+        )
+        daily_analyses = cur.fetchone()[0] or 0
+        est_cost = round(daily_analyses * COST_PER_ANALYSIS_JPY)
+
+        # 時間帯別
+        cur.execute(
+            f"SELECT SUBSTR(created_at,12,2) AS hr, COUNT(*) FROM usage_log "
+            f"WHERE created_at>={PH} AND created_at<={PH} GROUP BY hr ORDER BY hr",
+            (ts_start, ts_end),
+        )
+        hourly = {row[0]: row[1] for row in cur.fetchall()}
+        peak_h = max(hourly, key=hourly.get, default="-")
+        peak_v = max(hourly.values(), default=0)
+
+        # 食事スロット
+        cur.execute(f"SELECT payload FROM daily_meals WHERE date={PH}", (target_date,))
+        slot_counts = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
+        for (payload_str,) in cur.fetchall():
+            try:
+                pl = json.loads(payload_str)
+                for slot in slot_counts:
+                    slot_counts[slot] += sum(
+                        1 for i in pl.get(slot, {}).get("items", []) if i.get("result")
+                    )
+            except Exception:
+                pass
+        total_slot = sum(slot_counts.values())
+
+        # 直近7日 Bカウント・体重
+        cur.execute(
+            f"SELECT date, AVG(b_count) FROM daily_b_count WHERE date>={PH} GROUP BY date ORDER BY date",
+            (start_7d,),
+        )
+        b_trend = [(r[0][5:], round(float(r[1]), 1)) for r in cur.fetchall()]
+
+        cur.execute(
+            f"SELECT date, AVG(weight) FROM daily_weight WHERE date>={PH} GROUP BY date ORDER BY date",
+            (start_7d,),
+        )
+        w_trend = [(r[0][5:], round(float(r[1]), 1)) for r in cur.fetchall()]
+
+        # 直近30日 個人数
+        cur.execute("SELECT COUNT(DISTINCT user_id) FROM daily_b_count WHERE date>={0}".format(PH), (start_30d,))
+        active_b_users = cur.fetchone()[0] or 0
+        cur.execute("SELECT COUNT(DISTINCT user_id) FROM daily_weight WHERE date>={0}".format(PH), (start_30d,))
+        active_w_users = cur.fetchone()[0] or 0
+
+    finally:
+        conn.close()
+
+    # ── HTML 組み立て ──────────────────────────
+    def slot_row(emoji, label, slot_id, color):
+        cnt = slot_counts[slot_id]
+        bg = f'<div style="background:#E5E7EB;border-radius:4px;overflow:hidden;height:10px">{_bar_html(cnt, max(total_slot, 1), color)}</div>'
+        return (
+            f'<tr><td style="padding:6px 10px;font-size:14px">{emoji} {label}</td>'
+            f'<td style="padding:6px 10px;font-size:16px;font-weight:900;color:{color};text-align:right">{cnt}</td>'
+            f'<td style="padding:6px 10px;width:180px">{bg}</td></tr>'
+        )
+
+    def trend_rows(rows, unit):
+        if not rows:
+            return '<tr><td colspan="3" style="color:#9CA3AF;padding:8px">データなし</td></tr>'
+        max_v = max(v for _, v in rows)
+        return "".join(
+            f'<tr><td style="padding:4px 8px;font-size:13px;color:#6B7280">{d}</td>'
+            f'<td style="padding:4px 8px;font-size:14px;font-weight:800;color:#374151;text-align:right">{v} {unit}</td>'
+            f'<td style="padding:4px 8px;width:150px"><div style="background:#E5E7EB;border-radius:4px;overflow:hidden;height:8px">'
+            f'{_bar_html(int(v * 10), int(max_v * 10), "#FF6B35" if unit == "B" else "#10B981")}'
+            f'</div></td></tr>'
+            for d, v in rows
+        )
+
+    def hour_rows():
+        if not hourly:
+            return '<tr><td colspan="3" style="color:#9CA3AF;padding:8px">データなし</td></tr>'
+        max_v = max(hourly.values())
+        rows = ""
+        for h in range(24):
+            v = hourly.get(f"{h:02d}", 0)
+            if v == 0:
+                continue
+            rows += (
+                f'<tr><td style="padding:3px 8px;font-size:13px;color:#6B7280">{h}:00〜</td>'
+                f'<td style="padding:3px 8px;font-size:13px;font-weight:800;text-align:right">{v}回</td>'
+                f'<td style="padding:3px 8px;width:150px"><div style="background:#E5E7EB;border-radius:4px;overflow:hidden;height:8px">'
+                f'{_bar_html(v, max_v, "#6366F1")}'
+                f'</div></td></tr>'
+            )
+        return rows
+
+    sent_at = now.strftime("%Y-%m-%d %H:%M JST")
+    return f"""<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif">
+<div style="max-width:620px;margin:0 auto;padding:20px">
+  <div style="background:linear-gradient(135deg,#FF6B35,#e55a25);color:#fff;border-radius:14px 14px 0 0;padding:22px 24px">
+    <div style="font-size:20px;font-weight:900">🏋️ AB Diet Bカウンター デイリーレポート</div>
+    <div style="font-size:13px;margin-top:6px;opacity:.88">対象日: {target_date}</div>
+  </div>
+  <div style="background:#fff;padding:24px;border-radius:0 0 14px 14px">
+
+    <!-- 1. 利用統計 -->
+    <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
+      📊 利用統計（{target_date}）
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+      <div style="flex:1;min-width:130px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;font-weight:700">デイリー利用者</div>
+        <div style="font-size:30px;font-weight:900;color:#FF6B35">{daily_users}</div>
+        <div style="font-size:11px;color:#9CA3AF">ユーザー</div>
+      </div>
+      <div style="flex:1;min-width:130px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;font-weight:700">食事分析回数</div>
+        <div style="font-size:30px;font-weight:900;color:#FF6B35">{daily_analyses}</div>
+        <div style="font-size:11px;color:#9CA3AF">回</div>
+      </div>
+      <div style="flex:1;min-width:130px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;font-weight:700">推定API費用</div>
+        <div style="font-size:30px;font-weight:900;color:#FF6B35">¥{est_cost}</div>
+        <div style="font-size:11px;color:#9CA3AF">¥{COST_PER_ANALYSIS_JPY}/回</div>
+      </div>
+    </div>
+
+    <!-- 食事スロット -->
+    <div style="font-size:13px;font-weight:700;color:#6B7280;margin-bottom:8px">食事スロット別記録回数</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      {slot_row("🌅","朝食","breakfast","#FF6B35")}
+      {slot_row("☀️","昼食","lunch","#F59E0B")}
+      {slot_row("🌙","夕食","dinner","#6366F1")}
+      {slot_row("🍪","間食","snack","#10B981")}
+      <tr style="border-top:2px solid #E5E7EB">
+        <td style="padding:8px 10px;font-size:14px;font-weight:800">合計</td>
+        <td style="padding:8px 10px;font-size:16px;font-weight:900;text-align:right">{total_slot}</td>
+        <td></td>
+      </tr>
+    </table>
+
+    <!-- 2. Bカウント推移 -->
+    <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
+      🍽️ Bカウント推移（直近7日・集団平均）
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      {trend_rows(b_trend, "B")}
+    </table>
+
+    <!-- 3. 体重推移 -->
+    <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
+      ⚖️ 体重推移（直近7日・集団平均）
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      {trend_rows(w_trend, "kg")}
+    </table>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:24px">
+      記録ユーザー数（直近30日）— Bカウント: {active_b_users}名 / 体重: {active_w_users}名
+    </div>
+
+    <!-- 4. システム状況 -->
+    <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
+      ⚙️ システム・解析状況（{target_date}）
+    </div>
+    <div style="font-size:13px;color:#374151;margin-bottom:8px">
+      📌 解析ピーク時間帯: <strong style="color:#FF6B35">{peak_h}:00〜</strong>（{peak_v}回）
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+      {hour_rows()}
+    </table>
+    <div style="background:#F9FAFB;border-radius:10px;padding:12px;font-size:12px;color:#6B7280">
+      APIクレジット残高は
+      <a href="https://console.anthropic.com/settings/billing" style="color:#FF6B35">Anthropic Console</a>
+      でご確認ください。
+    </div>
+
+  </div>
+  <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:16px">
+    ABダイエット Bカウンター 自動レポート | 毎朝8:00 JST 配信<br>Generated: {sent_at}
+  </div>
+</div>
+</body></html>"""
+
+
+def _send_daily_report():
+    gmail_user = os.environ.get("GMAIL_USER", "").strip()
+    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
+    report_to  = os.environ.get("REPORT_TO", gmail_user).strip()
+    if not gmail_user or not gmail_pass or not report_to:
+        return
+
+    target_date = (datetime.datetime.now(JST) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        html_body = _build_report_html(target_date)
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[ABダイエット] デイリーレポート {target_date}"
+        msg["From"]    = gmail_user
+        msg["To"]      = report_to
+        msg.attach(MIMEText("ABダイエット Bカウンター デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+            smtp.login(gmail_user, gmail_pass)
+            smtp.send_message(msg)
+    except Exception:
+        pass
 
 
 @app.route("/api/setup", methods=["POST"])
