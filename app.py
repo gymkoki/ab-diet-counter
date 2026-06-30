@@ -636,6 +636,153 @@ def admin_daily_trend():
     })
 
 
+@app.route("/api/admin/report-data")
+@_admin_required
+def admin_report_data():
+    """毎日8時メールレポート用の集計データを返す。"""
+    now = datetime.datetime.now(JST)
+    # 8時実行時は前日が対象日
+    target_date = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    target_start = f"{target_date}T00:00:00"
+    target_end   = f"{target_date}T23:59:59"
+    start_30d    = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    start_30d_ts = f"{start_30d}T00:00:00"
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+
+        # ── デイリー利用統計 ──────────────────────────────────
+        cur.execute(
+            f"SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at>={PH} AND created_at<={PH}",
+            (target_start, target_end),
+        )
+        daily_users = cur.fetchone()[0] or 0
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM usage_log WHERE created_at>={PH} AND created_at<={PH}",
+            (target_start, target_end),
+        )
+        daily_analyses = cur.fetchone()[0] or 0
+
+        # ── 時間帯別分布（UTC+9 の時刻で記録されているため文字列の12-13文字目が時） ──
+        cur.execute(
+            f"""SELECT SUBSTR(created_at,12,2) AS hr, COUNT(*) AS cnt
+               FROM usage_log WHERE created_at>={PH} AND created_at<={PH}
+               GROUP BY hr ORDER BY hr""",
+            (target_start, target_end),
+        )
+        hourly_raw = {row[0]: row[1] for row in cur.fetchall()}
+        hourly = [hourly_raw.get(f"{h:02d}", 0) for h in range(24)]
+
+        # ── 食事スロット別集計（daily_meals payloadをパース） ──
+        cur.execute(
+            f"SELECT user_id, payload FROM daily_meals WHERE date={PH}",
+            (target_date,),
+        )
+        meal_rows = cur.fetchall()
+        slot_counts = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
+        slot_photo  = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
+        slot_text   = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
+        for _uid, payload_str in meal_rows:
+            try:
+                payload = json.loads(payload_str)
+                for slot in slot_counts:
+                    items = payload.get(slot, {}).get("items", [])
+                    for item in items:
+                        if not item.get("result"):
+                            continue
+                        slot_counts[slot] += 1
+                        if item.get("isText"):
+                            slot_text[slot] += 1
+                        else:
+                            slot_photo[slot] += 1
+            except Exception:
+                pass
+
+        # ── 30日トレンド（集団平均） ──────────────────────────
+        cur.execute(
+            f"""SELECT date, AVG(b_count) FROM daily_b_count
+               WHERE date>={PH} GROUP BY date ORDER BY date""",
+            (start_30d,),
+        )
+        b_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
+
+        cur.execute(
+            f"""SELECT date, AVG(weight) FROM daily_weight
+               WHERE date>={PH} GROUP BY date ORDER BY date""",
+            (start_30d,),
+        )
+        w_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
+
+        # ── 個人別トレンド（スパゲッティプロット用） ──────────
+        cur.execute(
+            f"SELECT user_id, date, b_count FROM daily_b_count WHERE date>={PH} ORDER BY user_id, date",
+            (start_30d,),
+        )
+        b_by_user: dict = {}
+        for uid, dt, b in cur.fetchall():
+            b_by_user.setdefault(uid, {})[dt] = b
+
+        cur.execute(
+            f"SELECT user_id, date, weight FROM daily_weight WHERE date>={PH} ORDER BY user_id, date",
+            (start_30d,),
+        )
+        w_by_user: dict = {}
+        for uid, dt, w in cur.fetchall():
+            w_by_user.setdefault(uid, {})[dt] = w
+
+        # ── 日別利用推移 ──────────────────────────────────────
+        cur.execute(
+            f"""SELECT SUBSTR(created_at,1,10) AS dt,
+                       COUNT(DISTINCT user_id), COUNT(*)
+               FROM usage_log WHERE created_at>={PH}
+               GROUP BY dt ORDER BY dt""",
+            (start_30d_ts,),
+        )
+        usage_by_day: dict = {}
+        for dt, users, analyses in cur.fetchall():
+            usage_by_day[dt] = {"users": users, "analyses": analyses}
+
+    finally:
+        conn.close()
+
+    # 30日間の全日付リスト
+    all_dates = []
+    d = (now - datetime.timedelta(days=30)).date()
+    while d <= now.date():
+        all_dates.append(d.strftime("%Y-%m-%d"))
+        d += datetime.timedelta(days=1)
+
+    individual_b = [
+        {"uid": uid[:5] + "…", "values": [dates_dict.get(d) for d in all_dates]}
+        for uid, dates_dict in b_by_user.items()
+    ]
+    individual_w = [
+        {"uid": uid[:5] + "…", "values": [dates_dict.get(d) for d in all_dates]}
+        for uid, dates_dict in w_by_user.items()
+    ]
+
+    return jsonify({
+        "report_date":          target_date,
+        "daily_users":          daily_users,
+        "daily_analyses":       daily_analyses,
+        "est_cost_jpy":         round(daily_analyses * COST_PER_ANALYSIS_JPY),
+        "cost_per_analysis":    COST_PER_ANALYSIS_JPY,
+        "slot_counts":          slot_counts,
+        "slot_photo":           slot_photo,
+        "slot_text":            slot_text,
+        "hourly":               hourly,
+        "dates":                all_dates,
+        "b_avg_trend":          [b_avg_by_day.get(d) for d in all_dates],
+        "w_avg_trend":          [w_avg_by_day.get(d) for d in all_dates],
+        "daily_users_trend":    [usage_by_day.get(d, {}).get("users", 0) for d in all_dates],
+        "daily_analyses_trend": [usage_by_day.get(d, {}).get("analyses", 0) for d in all_dates],
+        "individual_b":         individual_b,
+        "individual_w":         individual_w,
+    })
+
+
 @app.route("/api/admin/users")
 @_admin_required
 def admin_users():

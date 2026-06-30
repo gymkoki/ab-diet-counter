@@ -1,0 +1,45 @@
+name: Daily Dashboard Report
+# 毎朝 8:00 JST にダッシュボードレポートをメールで送信する。
+#
+# 【GitHub Secrets の設定方法】
+# Repository > Settings > Secrets and variables > Actions > New repository secret
+#   APP_URL            : https://ab-diet-counter.onrender.com
+#   ADMIN_PASSWORD     : 管理者パスワード（デフォルト: abDiet2024admin）
+#   GMAIL_USER         : 送信元 Gmail アドレス（例: yourname@gmail.com）
+#   GMAIL_APP_PASSWORD : Gmail アプリパスワード（Google アカウント > セキュリティ > アプリ パスワード）
+#   REPORT_TO          : 送信先メールアドレス（例: rits.1159@gmail.com）
+#
+# 【Gmail アプリパスワード取得手順】
+# 1. Google アカウント > セキュリティ で「2段階認証」を有効化
+# 2. セキュリティ > アプリパスワード > アプリを選択「その他」→ 名前「AB Diet Report」
+# 3. 生成された 16桁パスワードを GMAIL_APP_PASSWORD に設定
+
+on:
+  schedule:
+    - cron: '0 23 * * *'   # 23:00 UTC = 翌 08:00 JST
+  workflow_dispatch:         # 手動テスト用
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r report/requirements.txt
+
+      - name: Send daily report
+        env:
+          APP_URL:            ${{ secrets.APP_URL }}
+          ADMIN_PASSWORD:     ${{ secrets.ADMIN_PASSWORD }}
+          GMAIL_USER:         ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_TO:          ${{ secrets.REPORT_TO }}
+        run: python report/send_report.py
