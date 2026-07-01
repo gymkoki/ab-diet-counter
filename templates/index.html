@@ -1973,10 +1973,10 @@ function renderWeightChart(daily) {
   // 各日の運動Bカウント（ローカルの運動ログから）
   const exArr = pts.map(p => getExBCountForDate(p.date));
 
-  // 左軸：Bカウント（食事の値と運動の値の最大まで）
+  // 左軸：Bカウント（整数単位で切り上げ）
   const bVals = pts.map(p => p.b_count != null ? p.b_count : 0).concat(exArr);
-  let bmax = Math.max(...bVals, 0);
-  if (bmax <= 0) bmax = 1;
+  let bmax = Math.ceil(Math.max(...bVals, 0));
+  if (bmax < 1) bmax = 1;
   const YB = b => padT + innerH * (1 - b / bmax);
 
   // 右軸：体重
@@ -2008,17 +2008,17 @@ function renderWeightChart(daily) {
   const wDots = wPts.map(o => `<circle cx="${X(o.i).toFixed(1)}" cy="${YW(o.v).toFixed(1)}" r="2.6" fill="#2563EB"/>`).join('');
 
   // 目盛（最大・中間・最小/0）＋中央の補助線
-  const midY = padT + innerH / 2;
-  const bmid = round1(bmax / 2);
+  const bmid = Math.floor(bmax / 2);
+  const bmidY = YB(bmid);
   const wmid = round1((wmin + wmax) / 2);
-  const midLine = `<line x1="${padL}" y1="${midY.toFixed(1)}" x2="${W-padR}" y2="${midY.toFixed(1)}" stroke="#E5E7EB" stroke-width="1" stroke-dasharray="3 3"/>`;
+  const midLine = `<line x1="${padL}" y1="${bmidY.toFixed(1)}" x2="${W-padR}" y2="${bmidY.toFixed(1)}" stroke="#E5E7EB" stroke-width="1" stroke-dasharray="3 3"/>`;
   const leftLab =
-      `<text x="2" y="${(padT+4)}" font-size="9" fill="#FF6B35">${round1(bmax)}</text>`
-    + `<text x="2" y="${(midY+3).toFixed(1)}" font-size="9" fill="#FF6B35">${bmid}</text>`
+      `<text x="2" y="${(padT+4)}" font-size="9" fill="#FF6B35">${bmax}</text>`
+    + (bmid > 0 ? `<text x="2" y="${(bmidY+3).toFixed(1)}" font-size="9" fill="#FF6B35">${bmid}</text>` : '')
     + `<text x="2" y="${(H-padB)}" font-size="9" fill="#FF6B35">0</text>`;
   const rightLab = hasW
     ? `<text x="${W-2}" y="${(padT+4)}" font-size="9" fill="#2563EB" text-anchor="end">${round1(wmax)}</text>`
-    + `<text x="${W-2}" y="${(midY+3).toFixed(1)}" font-size="9" fill="#2563EB" text-anchor="end">${wmid}</text>`
+    + `<text x="${W-2}" y="${(bmidY+3).toFixed(1)}" font-size="9" fill="#2563EB" text-anchor="end">${wmid}</text>`
     + `<text x="${W-2}" y="${(H-padB)}" font-size="9" fill="#2563EB" text-anchor="end">${round1(wmin)}</text>` : '';
   const xLab = `<text x="${X(0).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="start">${fmtD(pts[0].date)}</text>`
     + `<text x="${X(n-1).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="end">${fmtD(pts[n-1].date)}</text>`;
