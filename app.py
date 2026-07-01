@@ -196,6 +196,13 @@ def init_db():
                     UNIQUE(user_id, date)
                 )
             """)
+        # メール設定を保存するテーブル
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -1102,10 +1109,108 @@ def _build_report_html(target_date: str) -> str:
 </body></html>"""
 
 
+def _get_setting(key: str, default: str = "") -> str:
+    """DB の settings テーブルから値を取得する。環境変数が優先。"""
+    env_val = os.environ.get(key, "").strip()
+    if env_val:
+        return env_val
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT value FROM settings WHERE key={PH}", (key,))
+        row = cur.fetchone()
+        return row[0] if row else default
+    finally:
+        conn.close()
+
+
+def _set_setting(key: str, value: str):
+    """DB の settings テーブルに値を保存する。"""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        if USE_PG:
+            cur.execute(
+                "INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=%s",
+                (key, value, value),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.route("/setup-email", methods=["GET"])
+def setup_email_page():
+    gmail_user = _get_setting("GMAIL_USER")
+    report_to  = _get_setting("REPORT_TO")
+    saved = request.args.get("saved", "")
+    return f"""<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>メール設定 — ABダイエット</title>
+<style>
+  body{{margin:0;padding:20px;background:#F3F4F6;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif}}
+  .card{{max-width:480px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}}
+  h1{{font-size:18px;font-weight:900;color:#374151;margin:0 0 6px}}
+  p{{font-size:13px;color:#6B7280;margin:0 0 20px}}
+  label{{display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:4px}}
+  input{{width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:14px;box-sizing:border-box;margin-bottom:14px}}
+  input:focus{{outline:none;border-color:#FF6B35}}
+  .btn{{width:100%;padding:13px;background:linear-gradient(135deg,#FF6B35,#e55a25);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}}
+  .ok{{background:#D1FAE5;color:#065F46;border-radius:10px;padding:12px;font-size:14px;font-weight:700;margin-bottom:16px}}
+  .tip{{background:#FFF5F0;border-radius:10px;padding:14px;font-size:12px;color:#6B7280;margin-top:16px}}
+  .tip strong{{color:#FF6B35}}
+  a{{color:#FF6B35}}
+</style></head>
+<body>
+<div class="card">
+  <h1>📧 メールレポート設定</h1>
+  <p>毎朝8時に送るレポートのGmail設定をここで行えます</p>
+  {'<div class="ok">✓ 保存しました！翌朝8時からメールが届きます。</div>' if saved else ''}
+  <form method="POST" action="/api/setup-email">
+    <label>送信元 Gmail アドレス</label>
+    <input type="email" name="gmail_user" value="{gmail_user}" placeholder="yourname@gmail.com" required>
+    <label>Gmail アプリパスワード（16桁）</label>
+    <input type="password" name="gmail_app_password" placeholder="xxxx xxxx xxxx xxxx" required>
+    <label>送信先メールアドレス</label>
+    <input type="email" name="report_to" value="{report_to or 'rits.1159@gmail.com'}" required>
+    <button class="btn" type="submit">保存する</button>
+  </form>
+  <div class="tip">
+    <strong>アプリパスワードの取得方法：</strong><br>
+    1. <a href="https://myaccount.google.com/apppasswords" target="_blank">このリンク</a> を開く<br>
+    2. アプリ名に「AB Diet」と入力 → 「作成」<br>
+    3. 表示された16桁をコピーして上の欄に貼り付ける<br><br>
+    ※ リンクが開かない場合は先に
+    <a href="https://myaccount.google.com/signinoptions/two-step-verification" target="_blank">2段階認証</a>
+    を有効にしてください
+  </div>
+</div>
+</body></html>"""
+
+
+@app.route("/api/setup-email", methods=["POST"])
+def api_setup_email():
+    gmail_user = (request.form.get("gmail_user") or "").strip()
+    gmail_pass = (request.form.get("gmail_app_password") or "").strip()
+    report_to  = (request.form.get("report_to") or "").strip()
+    if not gmail_user or not gmail_pass or not report_to:
+        return "入力が不足しています", 400
+    _set_setting("GMAIL_USER", gmail_user)
+    _set_setting("GMAIL_APP_PASSWORD", gmail_pass)
+    _set_setting("REPORT_TO", report_to)
+    from flask import redirect
+    return redirect("/setup-email?saved=1")
+
+
 def _send_daily_report():
-    gmail_user = os.environ.get("GMAIL_USER", "").strip()
-    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    report_to  = os.environ.get("REPORT_TO", gmail_user).strip()
+    gmail_user = _get_setting("GMAIL_USER")
+    gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
+    report_to  = _get_setting("REPORT_TO", gmail_user)
     if not gmail_user or not gmail_pass or not report_to:
         return
 
