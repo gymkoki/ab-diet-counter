@@ -7,6 +7,7 @@ import threading
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.header import Header
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response
 import anthropic
@@ -1249,14 +1250,14 @@ def _send_daily_report():
     target_date = (datetime.datetime.now(JST) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     html_body = _build_report_html(target_date)
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[ABダイエット] デイリーレポート {target_date}"
+    msg["Subject"] = Header(f"[ABダイエット] デイリーレポート {target_date}", "utf-8")
     msg["From"]    = gmail_user
     msg["To"]      = report_to
     msg.attach(MIMEText("ABダイエット Bカウンター デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
         smtp.login(gmail_user, gmail_pass)
-        smtp.send_message(msg)
+        smtp.sendmail(gmail_user, [report_to], msg.as_bytes())
 
 
 @app.route("/api/setup", methods=["POST"])
