@@ -1150,12 +1150,14 @@ def setup_email_page():
     report_to  = _get_setting("REPORT_TO") or "rits.1159@gmail.com"
     saved = request.args.get("saved", "")
 
+    err_msg = request.args.get("msg", "")
     if saved == "1":
         banner = '<div class="ok">✓ 保存しました！翌朝8時からメールが届きます。</div>'
     elif saved == "sent":
         banner = '<div class="ok">✅ テストメールを送信しました！受信ボックスをご確認ください。</div>'
     elif saved == "err":
-        banner = '<div class="ng">❌ 送信に失敗しました。Gmailアドレスとアプリパスワードを確認してください。</div>'
+        detail = f"<br><small style='font-weight:400'>{err_msg}</small>" if err_msg else ""
+        banner = f'<div class="ng">❌ 送信に失敗しました{detail}</div>'
     else:
         banner = ""
 
@@ -1229,11 +1231,12 @@ def api_setup_email():
 @app.route("/api/send-test-report", methods=["POST"])
 def api_send_test_report():
     from flask import redirect
+    from urllib.parse import quote
     try:
         _send_daily_report()
         return redirect("/setup-email?saved=sent")
-    except Exception:
-        return redirect("/setup-email?saved=err")
+    except Exception as e:
+        return redirect(f"/setup-email?saved=err&msg={quote(str(e))}")
 
 
 def _send_daily_report():
@@ -1241,22 +1244,19 @@ def _send_daily_report():
     gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
     report_to  = _get_setting("REPORT_TO", gmail_user)
     if not gmail_user or not gmail_pass or not report_to:
-        return
+        raise ValueError("メール設定が未登録です。/setup-email で設定してください。")
 
     target_date = (datetime.datetime.now(JST) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    try:
-        html_body = _build_report_html(target_date)
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"[ABダイエット] デイリーレポート {target_date}"
-        msg["From"]    = gmail_user
-        msg["To"]      = report_to
-        msg.attach(MIMEText("ABダイエット Bカウンター デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
-            smtp.login(gmail_user, gmail_pass)
-            smtp.send_message(msg)
-    except Exception:
-        pass
+    html_body = _build_report_html(target_date)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"[ABダイエット] デイリーレポート {target_date}"
+    msg["From"]    = gmail_user
+    msg["To"]      = report_to
+    msg.attach(MIMEText("ABダイエット Bカウンター デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+        smtp.login(gmail_user, gmail_pass)
+        smtp.send_message(msg)
 
 
 @app.route("/api/setup", methods=["POST"])
