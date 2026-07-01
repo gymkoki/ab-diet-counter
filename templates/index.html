@@ -332,8 +332,8 @@
       <span class="count" id="history-total-count">-</span>
     </div>
     <div id="weight-chart-wrap" style="display:none;margin-top:16px">
-      <div style="font-size:13px;font-weight:800;margin-bottom:6px">
-        <span style="color:#2563EB">⚖️ 体重（左軸）</span> ／ <span style="color:#FF6B35">🍽️ Bカウント（右軸）</span> の推移
+      <div style="font-size:12px;font-weight:800;margin-bottom:6px;line-height:1.6">
+        <span style="color:#FF6B35">🍽️ Bカウント（左）</span> ／ <span style="color:#10B981">🏃 運動（棒）</span> ／ <span style="color:#2563EB">⚖️ 体重（右）</span>
       </div>
       <div id="weight-chart"></div>
     </div>
@@ -1911,7 +1911,7 @@ async function loadHistory() {
 }
 
 // 体重の折れ線グラフ（SVG・外部ライブラリ不使用）
-// 体重（左軸・青）とBカウント（右軸・橙）の二軸折れ線グラフ
+// 左軸=Bカウント（食事の折れ線＋運動の棒）／右軸=体重（折れ線）の二軸グラフ
 function renderWeightChart(daily) {
   const wrap = document.getElementById('weight-chart-wrap');
   const host = document.getElementById('weight-chart');
@@ -1927,46 +1927,69 @@ function renderWeightChart(daily) {
     return;
   }
   wrap.style.display = '';
-  const W = 340, H = 170, padL = 30, padR = 30, padT = 14, padB = 26;
-  const X = i => padL + (W - padL - padR) * (i / (pts.length - 1));
+  const W = 340, H = 180, padL = 26, padR = 30, padT = 16, padB = 26;
+  const innerH = H - padT - padB;
+  const n = pts.length;
+  const X = i => padL + (W - padL - padR) * (n === 1 ? 0.5 : i / (n - 1));
+  const round1 = v => Math.round(v * 10) / 10;
 
-  // 左軸：体重
+  // 各日の運動Bカウント（ローカルの運動ログから）
+  const exArr = pts.map(p => getExBCountForDate(p.date));
+
+  // 左軸：Bカウント（食事の値と運動の値の最大まで）
+  const bVals = pts.map(p => p.b_count != null ? p.b_count : 0).concat(exArr);
+  let bmax = Math.max(...bVals, 0);
+  if (bmax <= 0) bmax = 1;
+  const YB = b => padT + innerH * (1 - b / bmax);
+
+  // 右軸：体重
   const ws = pts.filter(p => p.weight != null).map(p => p.weight);
   const hasW = ws.length > 0;
   let wmin = 0, wmax = 1;
   if (hasW) { wmin = Math.min(...ws); wmax = Math.max(...ws); if (wmin === wmax) { wmin -= 1; wmax += 1; } }
-  const YW = w => padT + (H - padT - padB) * (1 - (w - wmin) / (wmax - wmin));
-
-  // 右軸：Bカウント（0〜最大）
-  const bs = pts.filter(p => p.b_count != null).map(p => p.b_count);
-  let bmax = bs.length ? Math.max(...bs) : 0;
-  if (bmax <= 0) bmax = 1;
-  const YB = b => padT + (H - padT - padB) * (1 - b / bmax);
+  const YW = w => padT + innerH * (1 - (w - wmin) / (wmax - wmin));
 
   const fmtD = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
 
-  const wPts = pts.map((p,i) => ({ i, v: p.weight })).filter(o => o.v != null);
-  const bPts = pts.map((p,i) => ({ i, v: p.b_count })).filter(o => o.v != null);
+  // 運動の棒グラフ（左軸スケール・消費したBカウント分）
+  const barW = Math.max(2, Math.min(12, (W - padL - padR) / n * 0.5));
+  const bars = exArr.map((ex, i) => {
+    if (!ex || ex <= 0) return '';
+    const x = X(i) - barW / 2;
+    const yTop = YB(ex);
+    return `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${(H - padB - yTop).toFixed(1)}" fill="#10B981" opacity="0.55" rx="1.5"/>`;
+  }).join('');
 
-  const wLine = wPts.length >= 2
-    ? `<polyline points="${wPts.map(o => `${X(o.i).toFixed(1)},${YW(o.v).toFixed(1)}`).join(' ')}" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
+  // 折れ線（食事B＝橙、体重＝青）
+  const bPts = pts.map((p,i) => ({ i, v: p.b_count })).filter(o => o.v != null);
+  const wPts = pts.map((p,i) => ({ i, v: p.weight })).filter(o => o.v != null);
   const bLine = bPts.length >= 2
     ? `<polyline points="${bPts.map(o => `${X(o.i).toFixed(1)},${YB(o.v).toFixed(1)}`).join(' ')}" fill="none" stroke="#FF6B35" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
-  const wDots = wPts.map(o => `<circle cx="${X(o.i).toFixed(1)}" cy="${YW(o.v).toFixed(1)}" r="2.6" fill="#2563EB"/>`).join('');
+  const wLine = wPts.length >= 2
+    ? `<polyline points="${wPts.map(o => `${X(o.i).toFixed(1)},${YW(o.v).toFixed(1)}`).join(' ')}" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : '';
   const bDots = bPts.map(o => `<circle cx="${X(o.i).toFixed(1)}" cy="${YB(o.v).toFixed(1)}" r="2.6" fill="#FF6B35"/>`).join('');
+  const wDots = wPts.map(o => `<circle cx="${X(o.i).toFixed(1)}" cy="${YW(o.v).toFixed(1)}" r="2.6" fill="#2563EB"/>`).join('');
 
-  const leftLab = hasW
-    ? `<text x="2" y="${(YW(wmax)+4).toFixed(1)}" font-size="9" fill="#2563EB">${wmax}</text>`
-    + `<text x="2" y="${(YW(wmin)+4).toFixed(1)}" font-size="9" fill="#2563EB">${wmin}</text>` : '';
-  const rightLab = `<text x="${W-2}" y="${(YB(bmax)+4).toFixed(1)}" font-size="9" fill="#FF6B35" text-anchor="end">${bmax}</text>`
-    + `<text x="${W-2}" y="${(YB(0)).toFixed(1)}" font-size="9" fill="#FF6B35" text-anchor="end">0</text>`;
+  // 目盛（最大・中間・最小/0）＋中央の補助線
+  const midY = padT + innerH / 2;
+  const bmid = round1(bmax / 2);
+  const wmid = round1((wmin + wmax) / 2);
+  const midLine = `<line x1="${padL}" y1="${midY.toFixed(1)}" x2="${W-padR}" y2="${midY.toFixed(1)}" stroke="#E5E7EB" stroke-width="1" stroke-dasharray="3 3"/>`;
+  const leftLab =
+      `<text x="2" y="${(padT+4)}" font-size="9" fill="#FF6B35">${round1(bmax)}</text>`
+    + `<text x="2" y="${(midY+3).toFixed(1)}" font-size="9" fill="#FF6B35">${bmid}</text>`
+    + `<text x="2" y="${(H-padB)}" font-size="9" fill="#FF6B35">0</text>`;
+  const rightLab = hasW
+    ? `<text x="${W-2}" y="${(padT+4)}" font-size="9" fill="#2563EB" text-anchor="end">${round1(wmax)}</text>`
+    + `<text x="${W-2}" y="${(midY+3).toFixed(1)}" font-size="9" fill="#2563EB" text-anchor="end">${wmid}</text>`
+    + `<text x="${W-2}" y="${(H-padB)}" font-size="9" fill="#2563EB" text-anchor="end">${round1(wmin)}</text>` : '';
   const xLab = `<text x="${X(0).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="start">${fmtD(pts[0].date)}</text>`
-    + `<text x="${X(pts.length-1).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="end">${fmtD(pts[pts.length-1].date)}</text>`;
+    + `<text x="${X(n-1).toFixed(1)}" y="${H-6}" font-size="9" fill="#9CA3AF" text-anchor="end">${fmtD(pts[n-1].date)}</text>`;
 
   const axisL = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
   const axisR = `<line x1="${W-padR}" y1="${padT}" x2="${W-padR}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
   const axisX = `<line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${axisL}${axisR}${axisX}${wLine}${bLine}${wDots}${bDots}${leftLab}${rightLab}${xLab}</svg>`;
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${midLine}${axisL}${axisR}${axisX}${bars}${bLine}${wLine}${bDots}${wDots}${leftLab}${rightLab}${xLab}</svg>`;
 }
 
 // ── 履歴の編集（過去の日のBカウント・体重を修正）──
