@@ -174,6 +174,13 @@
     #weight-overlay.show, #hist-edit-overlay.show { display:flex; }
     .hist-edit-btn { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:16px; cursor:pointer; flex-shrink:0; margin-left:10px; }
     .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:#FFF5F0; }
+    .record-subnav { display:flex; gap:8px; padding:10px 16px 4px; }
+    .rsub-btn { flex:1; padding:10px 6px; border:1.5px solid var(--border); border-radius:12px; background:var(--surface); font-size:15px; font-weight:800; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px; transition:all 0.15s; }
+    .rsub-btn.active { border-color:var(--primary); background:#FFF5F0; color:var(--primary); }
+    .rsub-emoji { font-size:17px; }
+    .weight-inline-row { display:flex; align-items:center; gap:10px; margin-top:12px; }
+    .weight-inline-row .weight-input { width:120px; text-align:center; }
+    .weight-inline-save { padding:12px 22px; border:none; border-radius:10px; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:15px; font-weight:800; cursor:pointer; white-space:nowrap; }
     #past-edit-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#FEF3C7; border:1.5px solid #FCD34D; color:#92400E; border-radius:12px; margin:12px 16px 0; padding:10px 14px; font-size:14px; font-weight:800; }
     #past-edit-banner button { background:#92400E; color:white; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
     .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:12px; border:none; background:linear-gradient(135deg,#10B981,#059669); color:white; font-size:15px; font-weight:800; cursor:pointer; }
@@ -285,48 +292,35 @@
   </div>
 </header>
 
-<!-- タブバー -->
-<div class="tab-bar" id="tab-bar">
-  <button class="tab-btn active" id="tab-breakfast" onclick="switchMeal('breakfast')">
-    <span class="tab-emoji">🌅</span>
-    <span class="tab-label">朝食</span>
-    <span class="tab-dot" id="dot-breakfast"></span>
-  </button>
-  <button class="tab-btn" id="tab-lunch" onclick="switchMeal('lunch')">
-    <span class="tab-emoji">☀️</span>
-    <span class="tab-label">昼食</span>
-    <span class="tab-dot" id="dot-lunch"></span>
-  </button>
-  <button class="tab-btn" id="tab-dinner" onclick="switchMeal('dinner')">
-    <span class="tab-emoji">🌙</span>
-    <span class="tab-label">夕食</span>
-    <span class="tab-dot" id="dot-dinner"></span>
-  </button>
-  <button class="tab-btn" id="tab-snack" onclick="switchMeal('snack')">
-    <span class="tab-emoji">🍪</span>
-    <span class="tab-label">間食</span>
-    <span class="tab-dot" id="dot-snack"></span>
-  </button>
-  <button class="tab-btn tab-btn-reset" onclick="openWeightModal()">
-    <span class="tab-emoji">⚖️</span>
-    <span class="tab-label">体重</span>
-  </button>
-</div>
-
 <div id="warmup-banner">
   <div class="ws"></div>
   <span>サーバー起動中… 初回のみ30秒ほどかかります ☕</span>
 </div>
 
 <div id="view-main">
+  <div class="record-subnav" id="record-subnav">
+    <button class="rsub-btn active" id="rsub-food" onclick="switchRecordSub('food')"><span class="rsub-emoji">🍽️</span>食事</button>
+    <button class="rsub-btn" id="rsub-exercise" onclick="switchRecordSub('exercise')"><span class="rsub-emoji">🏃</span>運動</button>
+    <button class="rsub-btn" id="rsub-weight" onclick="switchRecordSub('weight')"><span class="rsub-emoji">⚖️</span>体重</button>
+  </div>
   <div id="past-edit-banner" style="display:none">
-    <span>📝 <span id="past-edit-date"></span> の食事を編集中</span>
+    <span>📝 <span id="past-edit-date"></span> の記録を編集中</span>
     <button onclick="exitPastEdit()">編集を終える</button>
   </div>
-  <div id="panel-breakfast" class="meal-panel active"></div>
-  <div id="panel-lunch"     class="meal-panel"></div>
-  <div id="panel-dinner"    class="meal-panel"></div>
-  <div id="panel-snack"     class="meal-panel"></div>
+  <div id="sub-food">
+    <div id="panel-food" class="meal-panel active"></div>
+  </div>
+  <div id="sub-weight" style="display:none">
+    <div class="ex-card" style="margin-top:10px">
+      <h3 id="weight-sub-title">⚖️ 今日の体重を記録</h3>
+      <div class="weight-inline-row">
+        <input type="number" step="any" min="20" max="200" id="weight-input-today" class="weight-input" placeholder="例：60" inputmode="decimal">
+        <span class="weight-unit">kg</span>
+        <button class="weight-inline-save" onclick="saveTodayWeight()">保存</button>
+      </div>
+      <div id="weight-current-note" style="margin-top:10px"></div>
+    </div>
+  </div>
 </div>
 
 <div id="view-history" style="display:none">
@@ -356,7 +350,7 @@
     <label class="setting-label" style="text-align:left;margin-top:12px">体重 (kg)</label>
     <input type="number" step="any" min="20" max="200" id="hist-edit-weight" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal" placeholder="未記録">
     <button class="weight-save-btn" onclick="saveHistEdit()">数値を保存する</button>
-    <button class="btn-hist-meal-edit" id="hist-meal-edit-btn" style="display:none" onclick="enterPastEdit(_histEditDate)">🍽️ この日の食事を編集（写真・明細）</button>
+    <button class="btn-hist-meal-edit" id="hist-meal-edit-btn" style="display:none" onclick="enterPastEdit(_histEditDate)">✏️ この日の記録を編集（食事・運動・体重）</button>
     <button class="weight-cancel" onclick="closeHistEdit()">閉じる</button>
   </div>
 </div>
@@ -419,7 +413,7 @@
   </div>
   <div id="ex-saved-msg" style="display:none;text-align:center;padding:14px;background:#e8f5e9;border-radius:12px;margin:10px 16px 0;color:#388e3c;font-weight:800;font-size:15px">✅ 保存しました！</div>
   <div id="ex-log-card" class="ex-card" style="display:none;margin-top:10px;margin-bottom:12px">
-    <h3>📋 今日の運動記録</h3>
+    <h3 id="ex-log-title">📋 今日の運動記録</h3>
     <div id="ex-log-list"></div>
   </div>
 </div>
@@ -457,13 +451,10 @@
   </div>
 </div>
 
-<!-- ボトムナビ（4タブ） -->
+<!-- ボトムナビ（3タブ） -->
 <div class="bnav">
   <button class="bnav-btn active" id="nav-main" onclick="switchView('main')">
-    <span class="bnav-icon">📷</span>記録
-  </button>
-  <button class="bnav-btn" id="nav-exercise" onclick="switchView('exercise')">
-    <span class="bnav-icon">🏃</span>運動
+    <span class="bnav-icon">📝</span>記録
   </button>
   <button class="bnav-btn" id="nav-history" onclick="switchView('history')">
     <span class="bnav-icon">📊</span>履歴
@@ -480,19 +471,6 @@
   <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
 </div>
 
-<!-- 体重入力モーダル -->
-<div id="weight-overlay" onclick="closeWeightModal()">
-  <div class="weight-dialog" onclick="event.stopPropagation()">
-    <h3>⚖️ 今日の体重</h3>
-    <div class="weight-dialog-row">
-      <input type="number" step="any" min="20" max="200" id="weight-input-today" class="weight-input" placeholder="例：60" inputmode="decimal">
-      <span class="weight-unit">kg</span>
-    </div>
-    <div id="weight-current-note"></div>
-    <button class="weight-save-btn" onclick="saveTodayWeight()">保存する</button>
-    <button class="weight-cancel" onclick="closeWeightModal()">閉じる</button>
-  </div>
-</div>
 
 <!-- ホーム画面追加バナー（各端末2回まで） -->
 <div id="home-banner">
@@ -588,17 +566,16 @@ function applyStats(d) {
 // ═══════════════════════════════════════════
 //  定数・State
 // ═══════════════════════════════════════════
+// 食事は1つに統合。旧「朝食/昼食/夕食/間食」に保存済みのデータは読み込み時に food へ統合する。
 const MEALS = [
-  { id:'breakfast', label:'朝食', emoji:'🌅' },
-  { id:'lunch',     label:'昼食', emoji:'☀️' },
-  { id:'dinner',    label:'夕食', emoji:'🌙' },
-  { id:'snack',     label:'間食', emoji:'🍪' },
+  { id:'food', label:'食事', emoji:'🍽️' },
 ];
+const ALL_MEAL_KEYS = ['food', 'breakfast', 'lunch', 'dinner', 'snack'];  // 旧データ互換用
 const state = {};
 MEALS.forEach(m => { state[m.id] = { items:[] }; });
 let itemIdSeq = 0;
 const STORAGE_KEY = 'ab-diet-state-v3';
-let activeMeal = 'breakfast';
+let activeMeal = 'food';
 const _progressTimers = {};
 
 // ═══════════════════════════════════════════
@@ -653,15 +630,16 @@ function saveState() {
   scheduleMealSync(getTodayJST(), payload);
 }
 
-// ペイロード（サーバー or localStorage）から state を復元
+// ペイロード（サーバー or localStorage）から state を復元。
+// 旧「朝食/昼食/夕食/間食」のデータも読み取り、すべて food に統合する（データを失わない）。
 function loadStateFromPayload(data) {
-  MEALS.forEach(m => { state[m.id].items = []; });
-  MEALS.forEach(m => {
-    if (data && data[m.id] && data[m.id].items && data[m.id].items.length) {
-      state[m.id].items = data[m.id].items.map(i => ({ ...i, file:null, loading:false, error:null }));
+  state.food.items = [];
+  ALL_MEAL_KEYS.forEach(k => {
+    if (data && data[k] && Array.isArray(data[k].items) && data[k].items.length) {
+      data[k].items.forEach(i => state.food.items.push({ ...i, file:null, loading:false, error:null }));
     }
   });
-  const allIds = MEALS.flatMap(m => state[m.id].items.map(i => i.id));
+  const allIds = state.food.items.map(i => i.id);
   if (allIds.length) itemIdSeq = Math.max(itemIdSeq, ...allIds);
 }
 
@@ -689,11 +667,11 @@ function flushPreviousDayIfNeeded() {
   }
   if (!savedDate || savedDate === getTodayJST()) return;  // 今日のデータなら何もしない
 
-  // 前日の食事Bカウント合計を集計
+  // 前日の食事Bカウント合計を集計（旧4分類キーも合算）
   let foodTotal = 0;
-  MEALS.forEach(m => {
-    if (data[m.id] && data[m.id].items) {
-      foodTotal += data[m.id].items
+  ALL_MEAL_KEYS.forEach(k => {
+    if (data[k] && data[k].items) {
+      foodTotal += data[k].items
         .filter(i => i.result)
         .reduce((s, i) => s + (i.result.total_b_count || 0), 0);
     }
@@ -713,13 +691,8 @@ function flushPreviousDayIfNeeded() {
 // ═══════════════════════════════════════════
 //  タブ切り替え
 // ═══════════════════════════════════════════
-function switchMeal(mealId) {
-  activeMeal = mealId;
-  MEALS.forEach(m => {
-    document.getElementById(`tab-${m.id}`).classList.toggle('active', m.id === mealId);
-    document.getElementById(`panel-${m.id}`).classList.toggle('active', m.id === mealId);
-  });
-}
+// 食事は1パネルに統合したため、切り替えは不要（互換のため残す）
+function switchMeal(mealId) { activeMeal = 'food'; }
 
 // ═══════════════════════════════════════════
 //  Build panels
@@ -1295,40 +1268,42 @@ function getWeightLog() {
   try { return JSON.parse(localStorage.getItem(WEIGHT_LOG_KEY)) || {}; } catch { return {}; }
 }
 
-function openWeightModal() {
-  const ov  = document.getElementById('weight-overlay');
+// 体重サブパネルの表示を更新（編集中の日付の体重を反映）
+function renderWeightInline() {
   const inp = document.getElementById('weight-input-today');
   const note = document.getElementById('weight-current-note');
-  if (!ov || !inp) return;
-  const today = getWeightLog()[getTodayJST()];
+  const title = document.getElementById('weight-sub-title');
+  if (!inp) return;
+  const date = currentDate();
+  const rec = getWeightLog()[date];
   const p = getProfile();
-  inp.value = (today != null) ? today : ((p && p.weight) ? p.weight : '');
-  if (note) note.textContent = (today != null) ? `今日は ${today} kg で記録済み（上書きできます）` : '';
-  ov.classList.add('show');
-  // ボタンのタップ操作と同じ呼び出し内で即フォーカス（スマホで数字キーボードがすぐ開く）
-  inp.focus();
-  inp.select();
+  inp.value = (rec != null) ? rec : ((p && p.weight) ? p.weight : '');
+  if (title) title.textContent = _editingDate ? `⚖️ ${_fmtMD(date)} の体重を記録` : '⚖️ 今日の体重を記録';
+  if (note) note.textContent = (rec != null) ? `${_editingDate ? _fmtMD(date) : '今日'}は ${rec} kg で記録済み（上書きできます）` : '';
 }
 
-function closeWeightModal() {
-  const ov = document.getElementById('weight-overlay');
-  if (ov) ov.classList.remove('show');
+function _fmtMD(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getMonth()+1}/${d.getDate()}`;
 }
 
 function saveTodayWeight() {
   const inp = document.getElementById('weight-input-today');
   const w = parseFloat(inp.value);
   if (!w || w < 20 || w > 300) { alert('体重を正しく入力してください'); return; }
-  const date = getTodayJST();
+  const date = currentDate();   // 過去日編集中はその日付に保存
   const log = getWeightLog();
   log[date] = w;
   localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(log));
-  // プロフィールの体重も最新に更新（運動の消費カロリー計算用）
-  const p = getProfile() || {};
-  p.weight = w;
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+  // 今日の場合はプロフィールの体重も最新化（運動の消費カロリー計算用）
+  if (!_editingDate) {
+    const p = getProfile() || {};
+    p.weight = w;
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+  }
   submitDailyWeight(w, date);
-  closeWeightModal();
+  const note = document.getElementById('weight-current-note');
+  if (note) note.textContent = `✅ ${_editingDate ? _fmtMD(date) : '今日'}の体重を ${w} kg で保存しました`;
 }
 
 async function submitDailyWeight(weight, date) {
@@ -1344,17 +1319,44 @@ async function submitDailyWeight(weight, date) {
 // ═══════════════════════════════════════════
 //  画面切り替え（記録 / 今週の履歴）
 // ═══════════════════════════════════════════
+let _recordSub = 'food';   // 記録タブ内のサブ（food / exercise / weight）
+
 function switchView(view) {
-  ['main','history','exercise','settings'].forEach(v => {
+  ['main','history','settings'].forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.style.display = (v === view) ? '' : 'none';
     const btn = document.getElementById('nav-' + v);
     if (btn) btn.classList.toggle('active', v === view);
   });
-  document.getElementById('tab-bar').style.display = (view === 'main') ? '' : 'none';
+  if (view === 'main') {
+    showRecordSub(_recordSub);
+  } else {
+    // 記録以外を開くときは、運動サブパネルも隠す
+    const ex = document.getElementById('view-exercise');
+    if (ex) ex.style.display = 'none';
+  }
   if (view === 'history') loadHistory();
-  if (view === 'exercise') { renderExLog(); if (!_drumDurationInited) _initDurationDrum(); }
   if (view === 'settings') loadProfileInputs();
+}
+
+// 記録タブ内のサブ切り替え（食事 / 運動 / 体重）
+function switchRecordSub(sub) {
+  _recordSub = sub;
+  showRecordSub(sub);
+}
+function showRecordSub(sub) {
+  const food = document.getElementById('sub-food');
+  const ex   = document.getElementById('view-exercise');
+  const wt   = document.getElementById('sub-weight');
+  if (food) food.style.display = (sub === 'food') ? '' : 'none';
+  if (ex)   ex.style.display   = (sub === 'exercise') ? '' : 'none';
+  if (wt)   wt.style.display   = (sub === 'weight') ? '' : 'none';
+  ['food','exercise','weight'].forEach(s => {
+    const b = document.getElementById('rsub-' + s);
+    if (b) b.classList.toggle('active', s === sub);
+  });
+  if (sub === 'exercise') { renderExLog(); if (!_drumDurationInited) _initDurationDrum(); }
+  if (sub === 'weight') renderWeightInline();
 }
 
 // ═══════════════════════════════════════════
@@ -1750,7 +1752,7 @@ function recordExercise() {
   const met    = isStair ? null : ((_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4));
   const kcal   = calcExKcal(_exType, _exDuration);
   const bc     = kcalToExBCount(kcal);
-  const today  = getTodayJST();
+  const today  = currentDate();   // 過去日編集中はその日付に記録
   const speedLabel = (_exType === 'ランニング')
     ? (_speedMode === 'kmh'
         ? `${_runSpeedKmh.toFixed(1)}km/h`
@@ -1805,12 +1807,14 @@ function deleteExercise(ts) {
 }
 
 function renderExLog() {
-  const today = getTodayJST();
+  const date = currentDate();   // 過去日編集中はその日の運動を表示
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  const todayLogs = logs.filter(l => l.date === today);
+  const todayLogs = logs.filter(l => l.date === date);
   const card = document.getElementById('ex-log-card');
   const list = document.getElementById('ex-log-list');
+  const titleEl = document.getElementById('ex-log-title');
+  if (titleEl) titleEl.textContent = _editingDate ? `📋 ${_fmtMD(date)} の運動記録` : '📋 今日の運動記録';
   if (todayLogs.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
   list.innerHTML = todayLogs.map(l => {
@@ -2001,14 +2005,15 @@ async function enterPastEdit(date) {
     const d = await r.json();
     payload = d.payload;
   } catch(e) {}
-  if (!payload) { alert('この日の食事データが見つかりませんでした（保存される前の記録は編集できません）。'); return; }
+  if (!payload) { alert('この日の食事データが見つかりませんでした（この機能の導入前に記録された日は、数値のみ編集できます）。'); return; }
   _editingDate = date;
   loadStateFromPayload(payload);
-  MEALS.forEach(m => { renderStrip(m.id); renderResults(m.id); });
+  renderStrip('food'); renderResults('food');
   updatePastEditBanner();
   updateDailyTotal();
+  _recordSub = 'food';
   switchView('main');
-  switchMeal('breakfast');
+  showRecordSub('food');
   window.scrollTo(0, 0);
 }
 
@@ -2017,15 +2022,16 @@ function exitPastEdit() {
   clearTimeout(_mealSyncTimer);   // 保留中の同期を止め、最新を即送信
   if (date) {
     submitDailyMeals(date, buildMealsPayload());
-    const foodTotal = MEALS.reduce((s,m) => s + state[m.id].items.filter(i=>i.result).reduce((a,i)=>a+(i.result.total_b_count||0),0), 0);
+    const foodTotal = state.food.items.filter(i=>i.result).reduce((a,i)=>a+(i.result.total_b_count||0),0);
     submitDailyB(Math.max(0, foodTotal - getExBCountForDate(date)), date);
   }
   _editingDate = null;
-  MEALS.forEach(m => { state[m.id].items = []; });
+  state.food.items = [];
   loadSavedState();
-  MEALS.forEach(m => { renderStrip(m.id); renderResults(m.id); });
+  renderStrip('food'); renderResults('food');
   updatePastEditBanner();
   updateDailyTotal();
+  _recordSub = 'food';
   switchView('history');
 }
 
@@ -2134,6 +2140,7 @@ function closeUpdateNotice() {
 flushPreviousDayIfNeeded();
 loadSavedState();
 MEALS.forEach(m => buildPanel(m));
+showRecordSub('food');
 updateDailyTotal();
 loadStats();
 if (!localStorage.getItem(NOTICE_KEY)) {
