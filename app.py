@@ -1147,8 +1147,23 @@ def _set_setting(key: str, value: str):
 @app.route("/setup-email", methods=["GET"])
 def setup_email_page():
     gmail_user = _get_setting("GMAIL_USER")
-    report_to  = _get_setting("REPORT_TO")
+    report_to  = _get_setting("REPORT_TO") or "rits.1159@gmail.com"
     saved = request.args.get("saved", "")
+
+    if saved == "1":
+        banner = '<div class="ok">✓ 保存しました！翌朝8時からメールが届きます。</div>'
+    elif saved == "sent":
+        banner = '<div class="ok">✅ テストメールを送信しました！受信ボックスをご確認ください。</div>'
+    elif saved == "err":
+        banner = '<div class="ng">❌ 送信に失敗しました。Gmailアドレスとアプリパスワードを確認してください。</div>'
+    else:
+        banner = ""
+
+    if gmail_user:
+        test_btn = '<form method="POST" action="/api/send-test-report" style="margin-top:12px"><button class="btn test-btn" type="submit">📧 テストメールを今すぐ送信</button></form>'
+    else:
+        test_btn = '<p class="hint">※ 先に上のフォームを保存するとテスト送信ボタンが表示されます</p>'
+
     return f"""<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>メール設定 — ABダイエット</title>
@@ -1161,25 +1176,29 @@ def setup_email_page():
   input{{width:100%;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:14px;box-sizing:border-box;margin-bottom:14px}}
   input:focus{{outline:none;border-color:#FF6B35}}
   .btn{{width:100%;padding:13px;background:linear-gradient(135deg,#FF6B35,#e55a25);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}}
+  .test-btn{{background:linear-gradient(135deg,#6366F1,#4F46E5)}}
   .ok{{background:#D1FAE5;color:#065F46;border-radius:10px;padding:12px;font-size:14px;font-weight:700;margin-bottom:16px}}
+  .ng{{background:#FEE2E2;color:#991B1B;border-radius:10px;padding:12px;font-size:14px;font-weight:700;margin-bottom:16px}}
   .tip{{background:#FFF5F0;border-radius:10px;padding:14px;font-size:12px;color:#6B7280;margin-top:16px}}
   .tip strong{{color:#FF6B35}}
+  .hint{{color:#9CA3AF;font-size:13px;margin-top:12px}}
   a{{color:#FF6B35}}
 </style></head>
 <body>
 <div class="card">
   <h1>📧 メールレポート設定</h1>
   <p>毎朝8時に送るレポートのGmail設定をここで行えます</p>
-  {'<div class="ok">✓ 保存しました！翌朝8時からメールが届きます。</div>' if saved else ''}
+  {banner}
   <form method="POST" action="/api/setup-email">
     <label>送信元 Gmail アドレス</label>
     <input type="email" name="gmail_user" value="{gmail_user}" placeholder="yourname@gmail.com" required>
     <label>Gmail アプリパスワード（16桁）</label>
     <input type="password" name="gmail_app_password" placeholder="xxxx xxxx xxxx xxxx" required>
     <label>送信先メールアドレス</label>
-    <input type="email" name="report_to" value="{report_to or 'rits.1159@gmail.com'}" required>
-    <button class="btn" type="submit">保存する</button>
+    <input type="email" name="report_to" value="{report_to}" required>
+    <button class="btn" type="submit">💾 保存する</button>
   </form>
+  {test_btn}
   <div class="tip">
     <strong>アプリパスワードの取得方法：</strong><br>
     1. <a href="https://myaccount.google.com/apppasswords" target="_blank">このリンク</a> を開く<br>
@@ -1205,6 +1224,16 @@ def api_setup_email():
     _set_setting("REPORT_TO", report_to)
     from flask import redirect
     return redirect("/setup-email?saved=1")
+
+
+@app.route("/api/send-test-report", methods=["POST"])
+def api_send_test_report():
+    from flask import redirect
+    try:
+        _send_daily_report()
+        return redirect("/setup-email?saved=sent")
+    except Exception:
+        return redirect("/setup-email?saved=err")
 
 
 def _send_daily_report():
