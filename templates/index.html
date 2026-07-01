@@ -937,7 +937,7 @@ async function submitTextEntry(mealId) {
 function renderStrip(mealId) {
   const strip = document.getElementById(`strip-${mealId}`);
   if (!strip) return;
-  strip.innerHTML = state[mealId].items.map(item => {
+  strip.innerHTML = state[mealId].items.slice().reverse().map(item => {
     const cnt = item.result ? fmtCount(item.result.total_b_count) : null;
     return `
       <div class="meal-thumb">
@@ -960,7 +960,7 @@ function renderStrip(mealId) {
 function renderResults(mealId) {
   const resEl = document.getElementById(`res-${mealId}`);
   if (!resEl) return;
-  const done = state[mealId].items.filter(i => i.result);
+  const done = state[mealId].items.filter(i => i.result).reverse();
   if (!done.length) { resEl.style.display='none'; resEl.innerHTML=''; updateDailyTotal(); return; }
 
   const m = MEALS.find(x => x.id === mealId);
