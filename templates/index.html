@@ -328,7 +328,7 @@
     <h2>📊 Bカウント＆体重の履歴（直近50日）</h2>
     <div class="history-range" id="history-range">読み込み中…</div>
     <div class="history-total" id="history-total" style="display:none">
-      <span class="label">1日平均Bカウント</span>
+      <span class="label">1日平均</span>
       <span class="count" id="history-total-count">-</span>
     </div>
     <div id="weight-chart-wrap" style="display:none;margin-top:16px">
@@ -1903,7 +1903,7 @@ async function loadHistory() {
 
     // 平均（上部）
     if (data.days_count > 0) {
-      totalCountEl.textContent = `${(data.total / data.days_count).toFixed(1)} カウント / 日`;
+      totalCountEl.textContent = `${Math.round(data.total / data.days_count)}回/日`;
       totalEl.style.display = 'flex';
     }
 
