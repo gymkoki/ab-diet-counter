@@ -378,14 +378,17 @@
     </div>
     <div id="drum-duration-label" class="drum-speed-label"></div>
   </div>
-  <!-- 階段選択時のみ表示：階数 -->
+  <!-- 階段選択時のみ表示：階数ドラム -->
   <div id="floor-section" class="ex-card" style="display:none;margin-top:10px">
-    <h3>🪜 何階分のぼった？</h3>
-    <div class="floor-row">
-      <button class="floor-btn" onclick="changeFloors(-1)">−</button>
-      <div class="floor-val"><span id="floor-num">10</span><span class="floor-unit">階</span></div>
-      <button class="floor-btn" onclick="changeFloors(1)">＋</button>
+    <h3>🪜 何階分のぼった？（1〜50階）</h3>
+    <div class="drum-wrap">
+      <div class="drum-fade-top"></div>
+      <div class="drum-line-top"></div>
+      <div class="drum-line-bot"></div>
+      <div class="drum-fade-bot"></div>
+      <div class="drum-roll" id="drum-floor"></div>
     </div>
+    <div id="drum-floor-label" class="drum-speed-label"></div>
   </div>
   <!-- ランニング時のみ表示：速度ドラム -->
   <div id="speed-section" class="ex-card" style="display:none;margin-top:10px">
@@ -1480,17 +1483,10 @@ function getProfile() {
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
 const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'リオールジムオンラインレッスン': 5.0 };
-let _exType = null, _exDuration = 30, _exFloors = 10;
+let _exType = null, _exDuration = 30, _exFloors = 5;
 
 // 階段：1階のぼるのに約15秒、MET8として消費kcalを算出（体重×階数×0.0333）
 const STAIR_KCAL_PER_FLOOR_PER_KG = 8 * (0.25 / 60);  // ≒0.0333 kcal/kg/階
-
-function changeFloors(d) {
-  _exFloors = Math.max(1, Math.min(200, _exFloors + d));
-  const el = document.getElementById('floor-num');
-  if (el) el.textContent = _exFloors;
-  _updateExResult();
-}
 
 // ── 時間ドラム ──
 const DURATION_LIST = (() => { const r=[]; for(let d=5;d<=120;d+=5) r.push(d); return r; })();
@@ -1534,6 +1530,48 @@ function _initDurationDrum(targetMin) {
     _exDuration = DURATION_LIST[defIdx];
     _highlightDurationDrum(defIdx);
     document.getElementById('drum-duration-label').textContent = `選択中: ${_exDuration}分`;
+    _updateExResult();
+  });
+}
+
+// ── 階数ドラム ──
+const FLOOR_LIST = (() => { const r=[]; for(let f=1;f<=50;f++) r.push(f); return r; })();
+let _drumFloorInited = false;
+
+function _buildFloorDrum() {
+  const el = document.getElementById('drum-floor');
+  const pad = '<div class="drum-item drum-pad"></div>';
+  el.innerHTML = pad.repeat(DRUM_PAD) + FLOOR_LIST.map(f=>`<div class="drum-item">${f}階</div>`).join('') + pad.repeat(DRUM_PAD);
+}
+function _getFloorDrumIdx() {
+  return Math.round(document.getElementById('drum-floor').scrollTop / DRUM_H);
+}
+function _highlightFloorDrum(dataIdx) {
+  document.querySelectorAll('#drum-floor .drum-item').forEach((el,i) => {
+    el.classList.toggle('drum-sel', i === dataIdx + DRUM_PAD);
+  });
+}
+function _onFloorScroll() {
+  const idx = _getFloorDrumIdx();
+  _exFloors = FLOOR_LIST[idx] ?? 5;
+  _highlightFloorDrum(idx);
+  document.getElementById('drum-floor-label').textContent = `選択中: ${_exFloors}階`;
+  _updateExResult();
+}
+function _initFloorDrum(targetFloor) {
+  _buildFloorDrum();
+  if (!_drumFloorInited) {
+    document.getElementById('drum-floor').addEventListener('scroll', _onFloorScroll, { passive: true });
+    _drumFloorInited = true;
+  }
+  const defFloor = targetFloor ?? 5;
+  let defIdx = FLOOR_LIST.indexOf(defFloor);
+  if (defIdx < 0) defIdx = 4; // fallback: 5階
+  requestAnimationFrame(() => {
+    document.getElementById('drum-floor').scrollTop = defIdx * DRUM_H;
+    _exFloors = FLOOR_LIST[defIdx];
+    _highlightFloorDrum(defIdx);
+    document.getElementById('drum-floor-label').textContent = `選択中: ${_exFloors}階`;
     _updateExResult();
   });
 }
@@ -1647,12 +1685,14 @@ function selectExType(type) {
   // 階段は「時間」ではなく「階数」で入力
   document.getElementById('duration-section').style.display = isStair ? 'none' : '';
   document.getElementById('floor-section').style.display = isStair ? '' : 'none';
-  if (type === 'ランニング') {
+  if (isStair) {
+    _initFloorDrum();
+  } else if (type === 'ランニング') {
     _initSpeedSection();
   } else {
     document.getElementById('speed-section').style.display = 'none';
   }
-  _updateExResult();
+  if (!isStair) _updateExResult();
 }
 
 function runningMET(speedKmh) {
@@ -1720,9 +1760,7 @@ function editExercise(ts) {
   }
 
   if (isStair) {
-    _exFloors = log.floors || 10;
-    document.getElementById('floor-num').textContent = _exFloors;
-    _updateExResult();
+    _initFloorDrum(log.floors || 5);
   } else {
     const dIdx = DURATION_LIST.indexOf(log.min);
     if (dIdx >= 0) {
@@ -1772,12 +1810,11 @@ function recordExercise() {
   }
 
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
-  _exType = null; _exDuration = 30; _exFloors = 10;
+  _exType = null; _exDuration = 30; _exFloors = 5;
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
   document.getElementById('speed-section').style.display = 'none';
   document.getElementById('floor-section').style.display = 'none';
   document.getElementById('duration-section').style.display = 'none';
-  document.getElementById('floor-num').textContent = _exFloors;
   document.getElementById('ex-result-card').style.display = 'none';
   document.getElementById('ex-profile-notice').style.display = 'none';
   _initDurationDrum(30);
