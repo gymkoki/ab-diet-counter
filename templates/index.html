@@ -367,7 +367,7 @@
       <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
     </div>
   </div>
-  <div class="ex-card" id="duration-section" style="margin-top:10px">
+  <div class="ex-card" id="duration-section" style="display:none;margin-top:10px">
     <h3>⏱ 時間を選ぶ（5〜120分）</h3>
     <div class="drum-wrap">
       <div class="drum-fade-top"></div>
@@ -1776,7 +1776,7 @@ function recordExercise() {
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
   document.getElementById('speed-section').style.display = 'none';
   document.getElementById('floor-section').style.display = 'none';
-  document.getElementById('duration-section').style.display = '';
+  document.getElementById('duration-section').style.display = 'none';
   document.getElementById('floor-num').textContent = _exFloors;
   document.getElementById('ex-result-card').style.display = 'none';
   document.getElementById('ex-profile-notice').style.display = 'none';
