@@ -12,6 +12,7 @@ import datetime
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.header import Header
 
 import requests
 import matplotlib
@@ -28,8 +29,15 @@ except ImportError:
 APP_URL        = os.environ.get("APP_URL", "https://ab-diet-counter.onrender.com").rstrip("/")
 ADMIN_USER     = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS     = os.environ.get("ADMIN_PASSWORD", "")
-GMAIL_USER     = os.environ.get("GMAIL_USER", "")
-GMAIL_PASS     = os.environ.get("GMAIL_APP_PASSWORD", "")
+
+def _clean_secret(value: str) -> str:
+    """コピペ時に混入しがちな空白・改行・全角スペース（&nbsp;由来）を除去する。"""
+    for ch in (" ", " ", "\t", "\r", "\n"):
+        value = value.replace(ch, "")
+    return value
+
+GMAIL_USER     = _clean_secret(os.environ.get("GMAIL_USER", ""))
+GMAIL_PASS     = _clean_secret(os.environ.get("GMAIL_APP_PASSWORD", ""))
 REPORT_TO      = os.environ.get("REPORT_TO", "rits.1159@gmail.com")
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
@@ -417,7 +425,7 @@ def build_html(data: dict, charts: dict) -> str:
 # ── メール送信 ──────────────────────────────────────────────────
 def send_email(subject: str, html_body: str):
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
+    msg["Subject"] = Header(subject, "utf-8")
     msg["From"]    = GMAIL_USER
     msg["To"]      = REPORT_TO
 
@@ -427,7 +435,7 @@ def send_email(subject: str, html_body: str):
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
         smtp.login(GMAIL_USER, GMAIL_PASS)
-        smtp.send_message(msg)
+        smtp.sendmail(GMAIL_USER, [REPORT_TO], msg.as_bytes())
 
     print(f"Email sent → {REPORT_TO}")
 
