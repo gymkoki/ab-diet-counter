@@ -146,6 +146,8 @@
     .copy-item img { width:52px; height:52px; border-radius:8px; object-fit:cover; flex-shrink:0; }
     .copy-item .copy-name { flex:1; font-size:15px; font-weight:800; }
     .copy-item .copy-b { font-size:14px; font-weight:800; color:var(--primary); }
+    .copy-b-btn { border:1.5px solid var(--primary); background:#FFF5F0; color:var(--primary); border-radius:8px; padding:6px 8px; font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; flex-shrink:0; }
+    .copy-b-btn:active { background:#FFE8DF; }
     .copy-del { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:15px; cursor:pointer; flex-shrink:0; }
     .copy-empty { text-align:center; color:var(--text-muted); font-size:14px; padding:14px 0; }
     .oil-btn:active { border-color:#D97706; color:#D97706; background:#FFFBEB; }
@@ -970,9 +972,25 @@ function renderCopyMealsList() {
     <div class="copy-item" style="cursor:default">
       ${cm.previewSrc ? `<img src="${cm.previewSrc}" alt="">` : ''}
       <span class="copy-name">${esc(cm.name)}</span>
-      <span class="copy-b">B ${fmtCount((cm.result && cm.result.total_b_count) || 0)}</span>
+      <button class="copy-b-btn" onclick="editCopyMealB('${cm.id}')" title="Bカウントを変更">B ${fmtCount((cm.result && cm.result.total_b_count) || 0)} ✏️</button>
       <button class="copy-del" onclick="deleteCopyMeal('${cm.id}')" title="削除">🗑</button>
     </div>`).join('');
+}
+
+// コピーご飯のBカウントを手動で変更（設定から）
+function editCopyMealB(copyId) {
+  const meals = getCopyMeals();
+  const cm = meals.find(c => c.id === copyId);
+  if (!cm) return;
+  const cur = (cm.result && cm.result.total_b_count != null) ? cm.result.total_b_count : 0;
+  const input = prompt(`「${cm.name}」のBカウントを入力してください（0.5刻み）`, cur);
+  if (input === null) return;
+  const v = parseFloat(input);
+  if (isNaN(v) || v < 0 || v > 30) { alert('0〜30の数値を入力してください'); return; }
+  cm.result = cm.result || { foods: [], advice: '' };
+  cm.result.total_b_count = v;
+  saveCopyMeals(meals);
+  renderCopyMealsList();
 }
 
 function deleteCopyMeal(copyId) {
