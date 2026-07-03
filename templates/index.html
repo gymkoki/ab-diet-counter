@@ -139,6 +139,15 @@
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:#F5F3FF; border-radius:10px; padding:12px 14px; font-size:15px; line-height:1.6; color:#4338CA; margin-bottom:12px; }
     .oil-btn { display:block; margin:8px auto 2px; padding:10px 20px; border:1.5px solid var(--border); border-radius:22px; background:none; font-size:15px; font-weight:800; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+    .food-action-row { display:flex; gap:8px; margin:8px 0 2px; }
+    .food-action-row .oil-btn { flex:1; margin:0; padding:10px 8px; font-size:14px; }
+    .copy-item { display:flex; align-items:center; gap:10px; padding:8px; border:1.5px solid var(--border); border-radius:12px; margin-bottom:8px; cursor:pointer; background:var(--surface); text-align:left; width:100%; }
+    .copy-item:active { border-color:var(--primary); background:#FFF5F0; }
+    .copy-item img { width:52px; height:52px; border-radius:8px; object-fit:cover; flex-shrink:0; }
+    .copy-item .copy-name { flex:1; font-size:15px; font-weight:800; }
+    .copy-item .copy-b { font-size:14px; font-weight:800; color:var(--primary); }
+    .copy-del { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:15px; cursor:pointer; flex-shrink:0; }
+    .copy-empty { text-align:center; color:var(--text-muted); font-size:14px; padding:14px 0; }
     .oil-btn:active { border-color:#D97706; color:#D97706; background:#FFFBEB; }
     .oil-menu { display:flex; gap:8px; margin:6px 0 8px; }
     .oil-opt { flex:1; padding:10px 4px; border:1.5px solid #FCD34D; border-radius:10px; background:#FFFBEB; font-size:14px; font-weight:800; color:#92400E; cursor:pointer; line-height:1.3; }
@@ -170,8 +179,8 @@
     .history-unit { font-size:14px; font-weight:600; color:#6366F1; opacity:0.8; }
     .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:16px; line-height:1.8; }
     .history-weight { font-size:14px; font-weight:800; color:#2563EB; margin-top:3px; }
-    #weight-overlay, #hist-edit-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; padding:24px; }
-    #weight-overlay.show, #hist-edit-overlay.show { display:flex; }
+    #weight-overlay, #hist-edit-overlay, #copy-picker-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; padding:24px; }
+    #weight-overlay.show, #hist-edit-overlay.show, #copy-picker-overlay.show { display:flex; }
     .hist-edit-btn { background:none; border:1.5px solid var(--border); color:var(--text-muted); border-radius:8px; width:34px; height:34px; font-size:16px; cursor:pointer; flex-shrink:0; margin-left:10px; }
     .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:#FFF5F0; }
     .record-subnav { display:flex; gap:8px; padding:10px 16px 4px; }
@@ -355,6 +364,18 @@
   </div>
 </div>
 
+<!-- コピーご飯 選択モーダル -->
+<div id="copy-picker-overlay" onclick="closeCopyPicker()">
+  <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:360px">
+    <h3>🍚 コピーご飯を選ぶ</h3>
+    <div id="copy-picker-list"></div>
+    <button class="weight-cancel" onclick="closeCopyPicker()">閉じる</button>
+  </div>
+</div>
+
+<!-- コピーご飯 追加用の隠しファイル入力 -->
+<input type="file" id="copy-file-input" accept="image/*" style="display:none" onchange="onCopyFileChange(this)">
+
 <!-- 運動ビュー -->
 <div id="view-exercise" style="display:none;padding-bottom:80px">
   <div class="ex-card">
@@ -451,6 +472,13 @@
     <div id="goal-preview" class="goal-preview" style="display:none"></div>
     <button class="btn-save" onclick="saveProfile()">保存する</button>
     <div id="profile-saved-msg" style="display:none;text-align:center;margin-top:10px;color:var(--a-color);font-weight:700;font-size:14px">✅ 保存しました</div>
+  </div>
+  <div class="setting-card">
+    <h2>🍚 コピーご飯（よく食べる食事）</h2>
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">よく食べる食事を登録しておくと、記録画面の「コピーご飯を追加」から写真なしでワンタップ登録できます。</p>
+    <div id="copymeals-list"></div>
+    <div id="copy-add-status" style="display:none;text-align:center;padding:10px;color:var(--text-muted);font-size:14px"></div>
+    <button class="btn-save" onclick="startAddCopyMeal()">➕ コピーご飯を追加</button>
   </div>
 </div>
 
@@ -704,14 +732,16 @@ function buildPanel(m) {
       <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
         <div class="meal-add-icon">${m.emoji}</div>
         <h3>写真を追加</h3>
-        <p>タップして写真を選ぶ</p>
       </div>
       <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 文章で入力</button>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
       </div>
-      <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">${oilIcon(18)} 油を手動追加</button>
+      <div class="food-action-row">
+        <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">${oilIcon(18)} 油を手動追加</button>
+        <button class="oil-btn" onclick="openCopyPicker('${m.id}')">🍚 コピーご飯を追加</button>
+      </div>
       <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
         <button class="oil-opt" onclick="addOil('${m.id}',0)">小さじ2<span>B 0</span></button>
         <button class="oil-opt" onclick="addOil('${m.id}',1)">大さじ1強<span>B 0.5</span></button>
@@ -874,6 +904,116 @@ function addOil(mealId, idx) {
   renderResults(mealId);
   updateDailyTotal();
   saveState();
+}
+
+// ═══════════════════════════════════════════
+//  コピーご飯（よく食べる食事を登録してワンタップ追加）
+// ═══════════════════════════════════════════
+const COPYMEALS_KEY = 'ab-diet-copymeals-v1';
+let _copyPickerMeal = null;
+
+function getCopyMeals() {
+  try { return JSON.parse(localStorage.getItem(COPYMEALS_KEY)) || []; } catch { return []; }
+}
+function saveCopyMeals(arr) {
+  localStorage.setItem(COPYMEALS_KEY, JSON.stringify(arr));
+}
+
+// 記録画面：コピーご飯を選ぶモーダル
+function openCopyPicker(mealId) {
+  _copyPickerMeal = mealId;
+  const list = document.getElementById('copy-picker-list');
+  const meals = getCopyMeals();
+  if (!meals.length) {
+    list.innerHTML = '<div class="copy-empty">まだ登録がありません。<br>右下の「設定」→「コピーご飯を追加」から登録できます。</div>';
+  } else {
+    list.innerHTML = meals.map(cm => `
+      <button class="copy-item" onclick="addCopyMealToRecord('${cm.id}')">
+        ${cm.previewSrc ? `<img src="${cm.previewSrc}" alt="">` : ''}
+        <span class="copy-name">${esc(cm.name)}</span>
+        <span class="copy-b">B ${fmtCount((cm.result && cm.result.total_b_count) || 0)}</span>
+      </button>`).join('');
+  }
+  document.getElementById('copy-picker-overlay').classList.add('show');
+}
+function closeCopyPicker() {
+  document.getElementById('copy-picker-overlay').classList.remove('show');
+}
+
+// コピーご飯を記録に追加（AI解析なし・保存済みの結果を使う）
+function addCopyMealToRecord(copyId) {
+  const cm = getCopyMeals().find(c => c.id === copyId);
+  if (!cm) return;
+  const mealId = _copyPickerMeal || 'food';
+  const id = ++itemIdSeq;
+  state[mealId].items.push({
+    id, file:null, previewSrc: cm.previewSrc || null, loading:false, error:null,
+    result: cm.result
+  });
+  closeCopyPicker();
+  renderStrip(mealId);
+  renderResults(mealId);
+  updateDailyTotal();
+  saveState();
+}
+
+// 設定画面：コピーご飯の一覧表示
+function renderCopyMealsList() {
+  const el = document.getElementById('copymeals-list');
+  if (!el) return;
+  const meals = getCopyMeals();
+  if (!meals.length) {
+    el.innerHTML = '<div class="copy-empty">まだ登録がありません。下のボタンから追加できます。</div>';
+    return;
+  }
+  el.innerHTML = meals.map(cm => `
+    <div class="copy-item" style="cursor:default">
+      ${cm.previewSrc ? `<img src="${cm.previewSrc}" alt="">` : ''}
+      <span class="copy-name">${esc(cm.name)}</span>
+      <span class="copy-b">B ${fmtCount((cm.result && cm.result.total_b_count) || 0)}</span>
+      <button class="copy-del" onclick="deleteCopyMeal('${cm.id}')" title="削除">🗑</button>
+    </div>`).join('');
+}
+
+function deleteCopyMeal(copyId) {
+  if (!confirm('このコピーご飯を削除しますか？')) return;
+  saveCopyMeals(getCopyMeals().filter(c => c.id !== copyId));
+  renderCopyMealsList();
+}
+
+// 設定画面：コピーご飯を追加（写真を選ぶ→AI解析→名前をつけて保存）
+function startAddCopyMeal() {
+  document.getElementById('copy-file-input').click();
+}
+
+async function onCopyFileChange(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const status = document.getElementById('copy-add-status');
+  status.style.display = 'block';
+  status.textContent = '📷 解析中…（少しお待ちください）';
+  try {
+    const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
+    const formData = new FormData();
+    formData.append('image', compressed);
+    formData.append('user_id', USER_ID);
+    { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
+    const res = await fetch('/analyze', { method:'POST', body:formData });
+    const data = await res.json();
+    if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
+    let name = prompt('この食事の名前を入力してください（例：いつもの朝食）');
+    if (name === null) { status.style.display = 'none'; return; }  // キャンセル
+    name = (name || '').trim() || 'コピーご飯';
+    const meals = getCopyMeals();
+    meals.push({ id: 'cm-' + Date.now().toString(36), name, previewSrc: thumb, result: data });
+    saveCopyMeals(meals);
+    renderCopyMealsList();
+    status.textContent = `✅ 「${name}」を登録しました`;
+    setTimeout(() => { status.style.display = 'none'; }, 2500);
+  } catch(e) {
+    status.textContent = '⚠️ 追加に失敗しました。もう一度お試しください。';
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1482,6 +1622,7 @@ function loadProfileInputs() {
     updateGoalPreview();
   }
   renderProfileSummary();
+  renderCopyMealsList();
 }
 
 function getProfile() {
