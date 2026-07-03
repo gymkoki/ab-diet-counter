@@ -495,6 +495,14 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 たっぷりの油（揚げ物・油通し・炒め油が多い）と判断したら大さじ2（270kcal）＝B1カウントとする。
 - ドレッシング（大さじ1.5程度、約165kcal）→ 0.5カウント
 
+━━━━━━━━━━━━━━━━━━━━━━━
+■ 品数が多い料理（寿司・弁当・ビュッフェ等）の出力ルール
+━━━━━━━━━━━━━━━━━━━━━━━
+- 同じ食材・同じネタはまとめて1項目にする（例：まぐろの握り3貫→「まぐろの握り ×3貫」で1項目）。1貫ずつ個別に列挙しないこと。
+- foods配列は最大でも15項目程度に収め、reasonは簡潔に（計算式「量×密度=kcal→判定」は残すが、余計な説明は書かない）。
+- 出力が長くなりすぎないよう注意し、JSONは必ず最後まで完結させること（途中で切らない）。
+※ 寿司の例：シャリはB食材（1貫のシャリ約15〜20g）。ネタ（まぐろ・サーモン等）と合わせて握り単位でまとめ、握り全体のkcalで判定する。
+
 必ず以下のJSON形式のみで回答してください。JSONの前後に説明文やコードブロックは不要です：
 【重要】categoryフィールドは "A" または "B" のみ使用すること。"Good B"・"グッドB" は使用禁止。
 {
@@ -1559,7 +1567,7 @@ def analyze():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",   # 通常解析は精度重視でSonnet
-            max_tokens=2500,
+            max_tokens=8000,
             system=[
                 {
                     "type": "text",
@@ -1647,7 +1655,7 @@ def reanalyze():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",   # 再計算（修正時）は精度重視でSonnet
-            max_tokens=2500,
+            max_tokens=8000,
             system=[
                 {
                     "type": "text",
@@ -1729,7 +1737,7 @@ def analyze_text():
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",   # 文章入力も精度重視でSonnet
-            max_tokens=2500,
+            max_tokens=8000,
             system=[
                 {
                     "type": "text",
