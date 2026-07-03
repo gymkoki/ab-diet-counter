@@ -38,7 +38,9 @@ def _clean_secret(value: str) -> str:
 
 GMAIL_USER     = _clean_secret(os.environ.get("GMAIL_USER", ""))
 GMAIL_PASS     = _clean_secret(os.environ.get("GMAIL_APP_PASSWORD", ""))
-REPORT_TO      = os.environ.get("REPORT_TO", "rits.1159@gmail.com")
+# ${{ secrets.REPORT_TO }} が未設定でも workflow 側で空文字の環境変数として渡されるため、
+# os.environ.get の default 引数だけでは効かない。空文字化・空白混入の両方をここで吸収する。
+REPORT_TO      = _clean_secret(os.environ.get("REPORT_TO", "")) or "rits.1159@gmail.com"
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
