@@ -235,6 +235,49 @@ def chart_weight(data: dict) -> str:
     return fig_to_png(fig)
 
 
+def chart_weight_loss(data: dict) -> str:
+    """減量進捗（初回記録比）：スパゲッティ（個人）＋ 集団平均折れ線
+    値は「初回体重 − その日の体重」（プラス＝減量、マイナス＝増量）を表す。"""
+    dates  = data["dates"]
+    avg    = data["loss_avg_trend"]
+    indivs = data["individual_loss"]
+
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+
+    cmap = plt.get_cmap("tab20b")
+    for i, user in enumerate(indivs):
+        vals = user["values"]
+        pts  = [(j, v) for j, v in enumerate(vals) if v is not None]
+        if len(pts) < 2:
+            continue
+        xs, ys = zip(*pts)
+        ax.plot(xs, ys, color=cmap(i % 20), alpha=0.30, linewidth=1.3,
+                marker=".", markersize=4, zorder=2)
+
+    avg_pts = [(j, v) for j, v in enumerate(avg) if v is not None]
+    if avg_pts:
+        xs, ys = zip(*avg_pts)
+        latest = ys[-1]
+        latest_lbl = f"{latest:.1f}kg減量" if latest >= 0 else f"{-latest:.1f}kg増加"
+        ax.plot(xs, ys, color=C_AMBER, linewidth=2.8, zorder=4,
+                label=f"集団平均 (直近: {latest_lbl})")
+        ax.fill_between(xs, ys, alpha=0.12, color=C_AMBER, zorder=3)
+
+    ax.axhline(0, color=C_GRAY, linewidth=1, zorder=1)
+    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
+    ax.set_xticks(tick_idx)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=9)
+    ax.set_ylabel("初回記録からの減量 (kg)", fontsize=9)
+    ax.set_title("減量進捗（初回体重比）推移 — 個人 + 集団平均",
+                 fontsize=11, fontweight="bold", pad=8)
+    ax.legend(fontsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.25, zorder=0)
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
 def chart_exercise(data: dict) -> str:
     """運動によるBカウント消費：集団平均推移（棒グラフ）"""
     dates = data["dates"]
@@ -264,7 +307,7 @@ def chart_exercise(data: dict) -> str:
 
 # ── メール HTML 本文 ────────────────────────────────────────────
 # 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
-# cid:chart_weight / cid:chart_exercise で参照する（send_email() が
+# cid:chart_weight / cid:chart_weight_loss / cid:chart_exercise で参照する（send_email() が
 # main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
 def build_html(data: dict) -> str:
     rdate = data["report_date"]
@@ -281,6 +324,16 @@ def build_html(data: dict) -> str:
     w_avg_latest = next((v for v in reversed(data["w_avg_trend"]) if v is not None), None)
     b_latest_str = f"{b_avg_latest:.1f} B" if b_avg_latest is not None else "—"
     w_latest_str = f"{w_avg_latest:.1f} kg" if w_avg_latest is not None else "—"
+
+    # 減量希望者の平均減量実績（初回記録 vs 最新記録、全期間）
+    loss_avg = data.get("weight_loss_avg_kg")
+    loss_users = data.get("weight_loss_users", 0)
+    if loss_avg is None:
+        loss_avg_str = "—"
+    elif loss_avg >= 0:
+        loss_avg_str = f"{loss_avg:.1f} kg 減"
+    else:
+        loss_avg_str = f"{abs(loss_avg):.1f} kg 増"
 
     return f"""<!DOCTYPE html>
 <html lang="ja">
@@ -378,9 +431,15 @@ def build_html(data: dict) -> str:
           <div class="kpi-val" style="font-size:22px">{len(data['individual_b'])}</div>
           <div class="kpi-sub">（体重: {len(data['individual_w'])}名）</div>
         </div>
+        <div class="kpi">
+          <div class="kpi-lbl">減量希望者 平均減量実績</div>
+          <div class="kpi-val" style="font-size:22px;color:#F59E0B">{loss_avg_str}</div>
+          <div class="kpi-sub">初回記録比・{loss_users}名平均</div>
+        </div>
       </div>
       <img class="chart" src="cid:chart_b_count" alt="B-Count Trend" style="margin-top:12px">
       <img class="chart" src="cid:chart_weight" alt="Weight Trend" style="margin-top:6px">
+      <img class="chart" src="cid:chart_weight_loss" alt="Weight Loss Progress" style="margin-top:6px">
       <img class="chart" src="cid:chart_exercise" alt="Exercise B-Count Trend" style="margin-top:6px">
     </div>
 
@@ -469,6 +528,7 @@ def main():
         "chart_hourly":   chart_hourly(data),
         "chart_b_count":  chart_b_count(data),
         "chart_weight":   chart_weight(data),
+        "chart_weight_loss": chart_weight_loss(data),
         "chart_exercise": chart_exercise(data),
     }
 

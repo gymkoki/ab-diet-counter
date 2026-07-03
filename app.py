@@ -788,6 +788,29 @@ def admin_report_data():
         for uid, dt, w in cur.fetchall():
             w_by_user.setdefault(uid, {})[dt] = w
 
+        # ── 減量実績（初回記録 vs 最新記録、全期間） ──────────
+        cur.execute("SELECT user_id, date, weight FROM daily_weight ORDER BY user_id, date")
+        all_w_by_user: dict = {}
+        for uid, dt, w in cur.fetchall():
+            all_w_by_user.setdefault(uid, []).append((dt, w))
+
+        weight_loss_list = []
+        loss_by_user_day: dict = {}
+        for uid, rows in all_w_by_user.items():
+            if len(rows) < 2:
+                continue
+            initial_w = rows[0][1]
+            latest_w  = rows[-1][1]
+            weight_loss_list.append(initial_w - latest_w)
+            # プラス値 = 初回記録からの減量幅（体重が減っているほど大きくなる）
+            loss_by_user_day[uid] = {dt: (initial_w - w) for dt, w in rows}
+
+        weight_loss_avg_kg = (
+            round(sum(weight_loss_list) / len(weight_loss_list), 2)
+            if weight_loss_list else None
+        )
+        weight_loss_users = len(weight_loss_list)
+
         # ── 日別利用推移 ──────────────────────────────────────
         cur.execute(
             f"""SELECT SUBSTR(created_at,1,10) AS dt,
@@ -818,6 +841,15 @@ def admin_report_data():
         {"uid": uid[:5] + "…", "values": [dates_dict.get(d) for d in all_dates]}
         for uid, dates_dict in w_by_user.items()
     ]
+    individual_loss = [
+        {"uid": uid[:5] + "…", "values": [dates_dict.get(d) for d in all_dates]}
+        for uid, dates_dict in loss_by_user_day.items()
+    ]
+    loss_avg_by_day = {}
+    for d in all_dates:
+        vals = [dates_dict[d] for dates_dict in loss_by_user_day.values() if d in dates_dict]
+        if vals:
+            loss_avg_by_day[d] = round(sum(vals) / len(vals), 2)
 
     return jsonify({
         "report_date":          target_date,
@@ -835,6 +867,10 @@ def admin_report_data():
         "daily_analyses_trend": [usage_by_day.get(d, {}).get("analyses", 0) for d in all_dates],
         "individual_b":         individual_b,
         "individual_w":         individual_w,
+        "weight_loss_avg_kg":   weight_loss_avg_kg,
+        "weight_loss_users":    weight_loss_users,
+        "loss_avg_trend":       [loss_avg_by_day.get(d) for d in all_dates],
+        "individual_loss":      individual_loss,
     })
 
 
