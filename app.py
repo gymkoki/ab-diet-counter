@@ -159,6 +159,16 @@ def init_db():
                     UNIQUE(user_id, date)
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_exercise (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    date       TEXT   NOT NULL,
+                    ex_b_count REAL   NOT NULL,
+                    created_at TEXT   NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usage_log (
@@ -193,6 +203,16 @@ def init_db():
                     user_id    TEXT    NOT NULL,
                     date       TEXT    NOT NULL,
                     payload    TEXT    NOT NULL,
+                    created_at TEXT    NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_exercise (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    date       TEXT    NOT NULL,
+                    ex_b_count REAL    NOT NULL,
                     created_at TEXT    NOT NULL,
                     UNIQUE(user_id, date)
                 )
@@ -694,30 +714,40 @@ def admin_report_data():
         hourly_raw = {row[0]: row[1] for row in cur.fetchall()}
         hourly = [hourly_raw.get(f"{h:02d}", 0) for h in range(24)]
 
-        # ── 食事スロット別集計（daily_meals payloadをパース） ──
+        # ── 食事記録集計（daily_meals payloadをパース） ──
+        # アプリは「朝食/昼食/夕食/間食」の4スロットを廃止し、単一の food
+        # カテゴリへ統合済み（旧データ互換のため4キーも合わせて読む）。
         cur.execute(
             f"SELECT user_id, payload FROM daily_meals WHERE date={PH}",
             (target_date,),
         )
         meal_rows = cur.fetchall()
-        slot_counts = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
-        slot_photo  = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
-        slot_text   = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
-        for _uid, payload_str in meal_rows:
+        MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+        meal_count = meal_photo = meal_text = 0
+        meal_users = set()
+        for uid, payload_str in meal_rows:
             try:
                 payload = json.loads(payload_str)
-                for slot in slot_counts:
-                    items = payload.get(slot, {}).get("items", [])
+                user_has_record = False
+                for key in MEAL_KEYS:
+                    items = payload.get(key, {}).get("items", [])
                     for item in items:
                         if not item.get("result"):
                             continue
-                        slot_counts[slot] += 1
+                        meal_count += 1
+                        user_has_record = True
                         if item.get("isText"):
-                            slot_text[slot] += 1
+                            meal_text += 1
                         else:
-                            slot_photo[slot] += 1
+                            meal_photo += 1
+                if user_has_record:
+                    meal_users.add(uid)
             except Exception:
                 pass
+        meal_summary = {
+            "count": meal_count, "photo": meal_photo, "text": meal_text,
+            "users": len(meal_users),
+        }
 
         # ── 30日トレンド（集団平均） ──────────────────────────
         cur.execute(
@@ -733,6 +763,13 @@ def admin_report_data():
             (start_30d,),
         )
         w_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
+
+        cur.execute(
+            f"""SELECT date, AVG(ex_b_count) FROM daily_exercise
+               WHERE date>={PH} GROUP BY date ORDER BY date""",
+            (start_30d,),
+        )
+        ex_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
 
         # ── 個人別トレンド（スパゲッティプロット用） ──────────
         cur.execute(
@@ -788,13 +825,12 @@ def admin_report_data():
         "daily_analyses":       daily_analyses,
         "est_cost_jpy":         round(daily_analyses * COST_PER_ANALYSIS_JPY),
         "cost_per_analysis":    COST_PER_ANALYSIS_JPY,
-        "slot_counts":          slot_counts,
-        "slot_photo":           slot_photo,
-        "slot_text":            slot_text,
+        "meal_summary":         meal_summary,
         "hourly":               hourly,
         "dates":                all_dates,
         "b_avg_trend":          [b_avg_by_day.get(d) for d in all_dates],
         "w_avg_trend":          [w_avg_by_day.get(d) for d in all_dates],
+        "ex_avg_trend":         [ex_avg_by_day.get(d) for d in all_dates],
         "daily_users_trend":    [usage_by_day.get(d, {}).get("users", 0) for d in all_dates],
         "daily_analyses_trend": [usage_by_day.get(d, {}).get("analyses", 0) for d in all_dates],
         "individual_b":         individual_b,
@@ -952,21 +988,32 @@ def _build_report_html(target_date: str) -> str:
         peak_h = max(hourly, key=hourly.get, default="-")
         peak_v = max(hourly.values(), default=0)
 
-        # 食事スロット
-        cur.execute(f"SELECT payload FROM daily_meals WHERE date={PH}", (target_date,))
-        slot_counts = {"breakfast": 0, "lunch": 0, "dinner": 0, "snack": 0}
-        for (payload_str,) in cur.fetchall():
+        # 食事記録（アプリは朝食/昼食/夕食/間食の4スロットを廃止し food に統合済み。
+        # 旧データ互換のため4キーも合わせて読む）
+        cur.execute(f"SELECT user_id, payload FROM daily_meals WHERE date={PH}", (target_date,))
+        MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+        meal_count = meal_photo = meal_text = 0
+        meal_users = set()
+        for uid, payload_str in cur.fetchall():
             try:
                 pl = json.loads(payload_str)
-                for slot in slot_counts:
-                    slot_counts[slot] += sum(
-                        1 for i in pl.get(slot, {}).get("items", []) if i.get("result")
-                    )
+                user_has_record = False
+                for key in MEAL_KEYS:
+                    for item in pl.get(key, {}).get("items", []):
+                        if not item.get("result"):
+                            continue
+                        meal_count += 1
+                        user_has_record = True
+                        if item.get("isText"):
+                            meal_text += 1
+                        else:
+                            meal_photo += 1
+                if user_has_record:
+                    meal_users.add(uid)
             except Exception:
                 pass
-        total_slot = sum(slot_counts.values())
 
-        # 直近7日 Bカウント・体重
+        # 直近7日 Bカウント・体重・運動
         cur.execute(
             f"SELECT date, AVG(b_count) FROM daily_b_count WHERE date>={PH} GROUP BY date ORDER BY date",
             (start_7d,),
@@ -979,6 +1026,12 @@ def _build_report_html(target_date: str) -> str:
         )
         w_trend = [(r[0][5:], round(float(r[1]), 1)) for r in cur.fetchall()]
 
+        cur.execute(
+            f"SELECT date, AVG(ex_b_count) FROM daily_exercise WHERE date>={PH} GROUP BY date ORDER BY date",
+            (start_7d,),
+        )
+        ex_trend = [(r[0][5:], round(float(r[1]), 1)) for r in cur.fetchall()]
+
         # 直近30日 個人数
         cur.execute("SELECT COUNT(DISTINCT user_id) FROM daily_b_count WHERE date>={0}".format(PH), (start_30d,))
         active_b_users = cur.fetchone()[0] or 0
@@ -989,16 +1042,7 @@ def _build_report_html(target_date: str) -> str:
         conn.close()
 
     # ── HTML 組み立て ──────────────────────────
-    def slot_row(emoji, label, slot_id, color):
-        cnt = slot_counts[slot_id]
-        bg = f'<div style="background:#E5E7EB;border-radius:4px;overflow:hidden;height:10px">{_bar_html(cnt, max(total_slot, 1), color)}</div>'
-        return (
-            f'<tr><td style="padding:6px 10px;font-size:14px">{emoji} {label}</td>'
-            f'<td style="padding:6px 10px;font-size:16px;font-weight:900;color:{color};text-align:right">{cnt}</td>'
-            f'<td style="padding:6px 10px;width:180px">{bg}</td></tr>'
-        )
-
-    def trend_rows(rows, unit):
+    def trend_rows(rows, unit, color):
         if not rows:
             return '<tr><td colspan="3" style="color:#9CA3AF;padding:8px">データなし</td></tr>'
         max_v = max(v for _, v in rows)
@@ -1006,7 +1050,7 @@ def _build_report_html(target_date: str) -> str:
             f'<tr><td style="padding:4px 8px;font-size:13px;color:#6B7280">{d}</td>'
             f'<td style="padding:4px 8px;font-size:14px;font-weight:800;color:#374151;text-align:right">{v} {unit}</td>'
             f'<td style="padding:4px 8px;width:150px"><div style="background:#E5E7EB;border-radius:4px;overflow:hidden;height:8px">'
-            f'{_bar_html(int(v * 10), int(max_v * 10), "#FF6B35" if unit == "B" else "#10B981")}'
+            f'{_bar_html(int(v * 10), int(max_v * 10), color)}'
             f'</div></td></tr>'
             for d, v in rows
         )
@@ -1061,26 +1105,27 @@ def _build_report_html(target_date: str) -> str:
       </div>
     </div>
 
-    <!-- 食事スロット -->
-    <div style="font-size:13px;font-weight:700;color:#6B7280;margin-bottom:8px">食事スロット別記録回数</div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-      {slot_row("🌅","朝食","breakfast","#FF6B35")}
-      {slot_row("☀️","昼食","lunch","#F59E0B")}
-      {slot_row("🌙","夕食","dinner","#6366F1")}
-      {slot_row("🍪","間食","snack","#10B981")}
-      <tr style="border-top:2px solid #E5E7EB">
-        <td style="padding:8px 10px;font-size:14px;font-weight:800">合計</td>
-        <td style="padding:8px 10px;font-size:16px;font-weight:900;text-align:right">{total_slot}</td>
-        <td></td>
-      </tr>
-    </table>
+    <!-- 食事記録 -->
+    <div style="font-size:13px;font-weight:700;color:#6B7280;margin-bottom:8px">食事記録（{target_date}）</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+      <div style="flex:1;min-width:130px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;font-weight:700">記録件数</div>
+        <div style="font-size:26px;font-weight:900;color:#FF6B35">{meal_count}</div>
+        <div style="font-size:11px;color:#9CA3AF">📸{meal_photo} / 📝{meal_text}</div>
+      </div>
+      <div style="flex:1;min-width:130px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:11px;color:#6B7280;font-weight:700">記録した人数</div>
+        <div style="font-size:26px;font-weight:900;color:#FF6B35">{len(meal_users)}</div>
+        <div style="font-size:11px;color:#9CA3AF">ユーザー</div>
+      </div>
+    </div>
 
     <!-- 2. Bカウント推移 -->
     <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
       🍽️ Bカウント推移（直近7日・集団平均）
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-      {trend_rows(b_trend, "B")}
+      {trend_rows(b_trend, "B", "#FF6B35")}
     </table>
 
     <!-- 3. 体重推移 -->
@@ -1088,7 +1133,15 @@ def _build_report_html(target_date: str) -> str:
       ⚖️ 体重推移（直近7日・集団平均）
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-      {trend_rows(w_trend, "kg")}
+      {trend_rows(w_trend, "kg", "#10B981")}
+    </table>
+
+    <!-- 3b. 運動によるBカウント消費 -->
+    <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
+      🏃 運動によるBカウント消費（直近7日・集団平均）
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      {trend_rows(ex_trend, "B", "#6366F1")}
     </table>
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:24px">
       記録ユーザー数（直近30日）— Bカウント: {active_b_users}名 / 体重: {active_w_users}名
@@ -1392,6 +1445,45 @@ def post_daily_weight():
                        VALUES (?, ?, ?, ?)
                        ON CONFLICT(user_id, date) DO UPDATE SET weight=excluded.weight, created_at=excluded.created_at""",
                     (uid, date, weight, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/daily-exercise", methods=["POST"])
+def post_daily_exercise():
+    """その日の運動によるBカウント消費合計を記録（運動の保存・削除時に呼ばれる）"""
+    data = request.get_json()
+    uid        = (data or {}).get("user_id", "").strip()
+    ex_b_count = (data or {}).get("ex_b_count", 0)
+    date       = (data or {}).get("date", "")   # YYYY-MM-DD (JST)
+    try:
+        ex_b_count = float(ex_b_count)
+    except (TypeError, ValueError):
+        ex_b_count = 0
+    if not uid or not date:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_exercise (user_id, date, ex_b_count, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET ex_b_count=%s, created_at=%s""",
+                    (uid, date, ex_b_count, ts, ex_b_count, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_exercise (user_id, date, ex_b_count, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET ex_b_count=excluded.ex_b_count, created_at=excluded.created_at""",
+                    (uid, date, ex_b_count, ts)
                 )
             conn.commit()
         finally:

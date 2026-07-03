@@ -7,11 +7,11 @@ import os
 import io
 import json
 import time
-import base64
 import datetime
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from email.header import Header
 
 import requests
@@ -79,14 +79,14 @@ def fetch_data() -> dict:
 
 
 # ── グラフ生成 ─────────────────────────────────────────────────
-def fig_to_b64(fig) -> str:
+def fig_to_png(fig) -> bytes:
+    """図をPNGバイト列にする。メール本文にはbase64で直接埋め込まず、
+    cid参照の添付画像として送る（Gmailの本文102KB自動クリッピング対策）。"""
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=130, bbox_inches="tight",
                 facecolor="white", edgecolor="none")
-    buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode()
     plt.close(fig)
-    return b64
+    return buf.getvalue()
 
 
 def chart_usage(data: dict) -> str:
@@ -132,7 +132,7 @@ def chart_usage(data: dict) -> str:
         ax2.spines[sp].set_visible(False)
     ax1.grid(axis="y", alpha=0.25, zorder=0)
     fig.tight_layout()
-    return fig_to_b64(fig)
+    return fig_to_png(fig)
 
 
 def chart_hourly(data: dict) -> str:
@@ -153,7 +153,7 @@ def chart_hourly(data: dict) -> str:
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
     fig.tight_layout()
-    return fig_to_b64(fig)
+    return fig_to_png(fig)
 
 
 def chart_b_count(data: dict) -> str:
@@ -193,7 +193,7 @@ def chart_b_count(data: dict) -> str:
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
     fig.tight_layout()
-    return fig_to_b64(fig)
+    return fig_to_png(fig)
 
 
 def chart_weight(data: dict) -> str:
@@ -232,43 +232,44 @@ def chart_weight(data: dict) -> str:
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
     fig.tight_layout()
-    return fig_to_b64(fig)
+    return fig_to_png(fig)
+
+
+def chart_exercise(data: dict) -> str:
+    """運動によるBカウント消費：集団平均推移（棒グラフ）"""
+    dates = data["dates"]
+    avg   = data["ex_avg_trend"]
+
+    fig, ax = plt.subplots(figsize=(10, 3.2))
+
+    x = [j for j, v in enumerate(avg) if v is not None]
+    y = [v for v in avg if v is not None]
+    ax.bar(x, y, color=C_INDIGO + "CC", zorder=2)
+
+    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
+    ax.set_xticks(tick_idx)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=9)
+    ax.set_ylabel("消費Bカウント / 日", fontsize=9)
+    ax.set_ylim(bottom=0)
+    latest = next((v for v in reversed(avg) if v is not None), None)
+    title_suffix = f"（直近: {latest:.1f}B）" if latest is not None else ""
+    ax.set_title(f"運動によるBカウント消費 集団平均（直近30日）{title_suffix}",
+                 fontsize=11, fontweight="bold", pad=8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.25, zorder=0)
+    fig.tight_layout()
+    return fig_to_png(fig)
 
 
 # ── メール HTML 本文 ────────────────────────────────────────────
-def _bar(val: int, total: int, color: str) -> str:
-    pct = round(val / total * 100) if total else 0
-    return (
-        f'<div style="flex:1;height:8px;background:#E5E7EB;border-radius:4px;overflow:hidden">'
-        f'<div style="width:{pct}%;height:100%;background:{color};border-radius:4px"></div></div>'
-    )
-
-
-def build_html(data: dict, charts: dict) -> str:
+# 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
+# cid:chart_weight / cid:chart_exercise で参照する（send_email() が
+# main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
+def build_html(data: dict) -> str:
     rdate = data["report_date"]
-    sc    = data["slot_counts"]
-    sp    = data["slot_photo"]
-    st    = data["slot_text"]
-    total_slot = sum(sc.values())
+    meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
-
-    slot_rows = ""
-    for slot_id, emoji, label, color in [
-        ("breakfast", "🌅", "朝食", C_PRIMARY),
-        ("lunch",     "☀️", "昼食", C_AMBER),
-        ("dinner",    "🌙", "夕食", C_INDIGO),
-        ("snack",     "🍪", "間食", C_GREEN),
-    ]:
-        cnt = sc[slot_id]
-        slot_rows += f"""
-        <tr>
-          <td style="padding:8px 12px;font-size:14px;color:#374151;font-weight:700;white-space:nowrap">{emoji} {label}</td>
-          <td style="padding:8px 12px;font-size:16px;font-weight:900;color:{color};text-align:right">{cnt}</td>
-          <td style="padding:8px 12px;font-size:12px;color:#6B7280">
-            📸{sp[slot_id]} / 📝{st[slot_id]}
-          </td>
-          <td style="padding:8px 12px;width:200px">{_bar(cnt, total_slot, color)}</td>
-        </tr>"""
 
     # 時間帯ピーク
     hourly = data["hourly"]
@@ -334,32 +335,35 @@ def build_html(data: dict, charts: dict) -> str:
         </div>
       </div>
 
-      <!-- 食事スロット別 -->
+      <!-- 食事記録 -->
       <div style="margin-top:16px">
         <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px">
-          食事スロット別記録回数（📸=写真 / 📝=テキスト）
+          食事記録（📸=写真 / 📝=テキスト）
         </div>
-        <table style="width:100%;border-collapse:collapse">
-          <tbody>{slot_rows}
-            <tr style="border-top:2px solid #E5E7EB">
-              <td style="padding:8px 12px;font-size:14px;font-weight:800;color:#111827">合計</td>
-              <td style="padding:8px 12px;font-size:16px;font-weight:900;color:#111827;text-align:right">{total_slot}</td>
-              <td colspan="2"></td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="kpi-row">
+          <div class="kpi">
+            <div class="kpi-lbl">記録件数</div>
+            <div class="kpi-val" style="font-size:22px">{meal['count']}</div>
+            <div class="kpi-sub">📸{meal['photo']} / 📝{meal['text']}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">記録した人数</div>
+            <div class="kpi-val" style="font-size:22px">{meal['users']}</div>
+            <div class="kpi-sub">ユーザー</div>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- ① 日別推移グラフ -->
     <div class="section">
       <h2>📈 日別 利用推移（直近30日）</h2>
-      <img class="chart" src="data:image/png;base64,{charts['usage']}" alt="Usage Trend">
+      <img class="chart" src="cid:chart_usage" alt="Usage Trend">
     </div>
 
-    <!-- ② 体重・Bカウント推移 -->
+    <!-- ② 体重・Bカウント・運動 推移 -->
     <div class="section">
-      <h2>⚖️ 2. 体重 &amp; Bカウント推移</h2>
+      <h2>⚖️ 2. 体重 &amp; Bカウント &amp; 運動 推移</h2>
       <div class="kpi-row">
         <div class="kpi">
           <div class="kpi-lbl">Bカウント集団平均（直近）</div>
@@ -375,8 +379,9 @@ def build_html(data: dict, charts: dict) -> str:
           <div class="kpi-sub">（体重: {len(data['individual_w'])}名）</div>
         </div>
       </div>
-      <img class="chart" src="data:image/png;base64,{charts['b_count']}" alt="B-Count Trend" style="margin-top:12px">
-      <img class="chart" src="data:image/png;base64,{charts['weight']}" alt="Weight Trend" style="margin-top:6px">
+      <img class="chart" src="cid:chart_b_count" alt="B-Count Trend" style="margin-top:12px">
+      <img class="chart" src="cid:chart_weight" alt="Weight Trend" style="margin-top:6px">
+      <img class="chart" src="cid:chart_exercise" alt="Exercise B-Count Trend" style="margin-top:6px">
     </div>
 
     <!-- ③ システム・運用状況 -->
@@ -388,7 +393,7 @@ def build_html(data: dict, charts: dict) -> str:
         <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px">
           解析ピーク時間帯: <strong style="color:#FF6B35">{peak_h}:00〜{peak_h+1}:00</strong>（{peak_v}回）
         </div>
-        <img class="chart" src="data:image/png;base64,{charts['hourly']}" alt="Hourly Distribution">
+        <img class="chart" src="cid:chart_hourly" alt="Hourly Distribution">
       </div>
 
       <!-- コスト情報 -->
@@ -423,7 +428,10 @@ def build_html(data: dict, charts: dict) -> str:
 
 
 # ── メール送信 ──────────────────────────────────────────────────
-def send_email(subject: str, html_body: str):
+def send_email(subject: str, html_body: str, charts: dict):
+    """グラフ画像はbase64埋め込みではなく cid 参照の inline 添付にする。
+    base64直埋めだとHTML本文が数百KBに膨れ、Gmailの本文102KB自動クリッピングで
+    画像が壊れ、切り詰められたbase64が文字化けのように本文へ露出してしまうため。"""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = Header(subject, "utf-8")
     msg["From"]    = GMAIL_USER
@@ -431,7 +439,15 @@ def send_email(subject: str, html_body: str):
 
     plain = f"ABダイエット Bカウンター デイリーレポート\nHTMLメールをご覧ください。\n生成時刻: {datetime.datetime.now(JST)}"
     msg.attach(MIMEText(plain, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    related = MIMEMultipart("related")
+    related.attach(MIMEText(html_body, "html", "utf-8"))
+    for cid, png_bytes in charts.items():
+        img = MIMEImage(png_bytes, name=f"{cid}.png")
+        img.add_header("Content-ID", f"<{cid}>")
+        img.add_header("Content-Disposition", "inline", filename=f"{cid}.png")
+        related.attach(img)
+    msg.attach(related)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
         smtp.login(GMAIL_USER, GMAIL_PASS)
@@ -449,20 +465,21 @@ def main():
 
     print("Generating charts...")
     charts = {
-        "usage":   chart_usage(data),
-        "hourly":  chart_hourly(data),
-        "b_count": chart_b_count(data),
-        "weight":  chart_weight(data),
+        "chart_usage":    chart_usage(data),
+        "chart_hourly":   chart_hourly(data),
+        "chart_b_count":  chart_b_count(data),
+        "chart_weight":   chart_weight(data),
+        "chart_exercise": chart_exercise(data),
     }
 
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data, charts)
+    html    = build_html(data)
 
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")
-        send_email(subject, html)
+        send_email(subject, html, charts)
     else:
         out_path = f"report_{rdate}.html"
         with open(out_path, "w", encoding="utf-8") as f:

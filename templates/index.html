@@ -1315,6 +1315,16 @@ async function submitDailyWeight(weight, date) {
   } catch(e) {}
 }
 
+async function submitDailyExercise(exBCount, date) {
+  try {
+    await fetch('/api/daily-exercise', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, ex_b_count: exBCount, date })
+    });
+  } catch(e) {}
+}
+
 // ═══════════════════════════════════════════
 //  画面切り替え（記録 / 今週の履歴）
 // ═══════════════════════════════════════════
@@ -1810,6 +1820,7 @@ function recordExercise() {
   }
 
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
+  submitDailyExercise(getExBCountForDate(today), today);
   _exType = null; _exDuration = 30; _exFloors = 5;
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
   document.getElementById('speed-section').style.display = 'none';
@@ -1828,8 +1839,10 @@ function recordExercise() {
 function deleteExercise(ts) {
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  const removed = logs.find(l => l.ts === ts);
   logs = logs.filter(l => l.ts !== ts);
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
+  if (removed) submitDailyExercise(getExBCountForDate(removed.date), removed.date);
   if (_editingTs === ts) {
     _editingTs = null;
     document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
