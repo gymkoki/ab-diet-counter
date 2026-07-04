@@ -1245,7 +1245,7 @@ def _set_setting(key: str, value: str):
 @app.route("/setup-email", methods=["GET"])
 def setup_email_page():
     gmail_user = _get_setting("GMAIL_USER")
-    report_to  = _get_setting("REPORT_TO") or "rits.1159@gmail.com"
+    report_to  = _get_setting("REPORT_TO") or "reallgym.tokyo@gmail.com"
     saved = request.args.get("saved", "")
 
     err_msg = request.args.get("msg", "")
@@ -1340,7 +1340,7 @@ def api_send_test_report():
 def _send_daily_report():
     gmail_user = _get_setting("GMAIL_USER")
     gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
-    report_to  = _get_setting("REPORT_TO", gmail_user)
+    report_to  = _get_setting("REPORT_TO") or "reallgym.tokyo@gmail.com"
     if not gmail_user or not gmail_pass or not report_to:
         raise ValueError("メール設定が未登録です。/setup-email で設定してください。")
 

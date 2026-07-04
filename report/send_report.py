@@ -40,7 +40,7 @@ GMAIL_USER     = _clean_secret(os.environ.get("GMAIL_USER", ""))
 GMAIL_PASS     = _clean_secret(os.environ.get("GMAIL_APP_PASSWORD", ""))
 # ${{ secrets.REPORT_TO }} が未設定でも workflow 側で空文字の環境変数として渡されるため、
 # os.environ.get の default 引数だけでは効かない。空文字化・空白混入の両方をここで吸収する。
-REPORT_TO      = _clean_secret(os.environ.get("REPORT_TO", "")) or "rits.1159@gmail.com"
+REPORT_TO      = _clean_secret(os.environ.get("REPORT_TO", "")) or "reallgym.tokyo@gmail.com"
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
@@ -110,24 +110,24 @@ def chart_usage(data: dict) -> str:
                      linewidth=2.2, label="Active Users", zorder=3)
 
     ax1.set_xticks(tick_idx)
-    ax1.set_xticklabels(tick_lbl, fontsize=9)
-    ax1.set_ylabel("食事分析回数", fontsize=9, color=C_INDIGO)
-    ax2.set_ylabel("利用ユーザー数", fontsize=9, color=C_PRIMARY)
+    ax1.set_xticklabels(tick_lbl, fontsize=13)
+    ax1.set_ylabel("食事分析回数", fontsize=13, color=C_INDIGO)
+    ax2.set_ylabel("利用ユーザー数", fontsize=13, color=C_PRIMARY)
     ax1.set_ylim(bottom=0)
     ax2.set_ylim(bottom=0)
-    ax1.tick_params(axis="y", colors=C_INDIGO, labelsize=9)
-    ax2.tick_params(axis="y", colors=C_PRIMARY, labelsize=9)
+    ax1.tick_params(axis="y", colors=C_INDIGO, labelsize=13)
+    ax2.tick_params(axis="y", colors=C_PRIMARY, labelsize=13)
 
     # コストをツールチップ代わりに最後の棒だけ注釈
     total_cost = sum(costs)
     ax1.set_title(
         f"日別 食事分析回数 & 利用ユーザー数（直近30日） — 推定コスト合計 ¥{total_cost:,}",
-        fontsize=11, fontweight="bold", pad=8,
+        fontsize=15, fontweight="bold", pad=8,
     )
 
     handles = [bars, line]
     labels  = ["食事分析回数", "利用ユーザー数"]
-    ax1.legend(handles, labels, loc="upper left", fontsize=9)
+    ax1.legend(handles, labels, loc="upper left", fontsize=13)
 
     for sp in ["top"]:
         ax1.spines[sp].set_visible(False)
@@ -146,10 +146,10 @@ def chart_hourly(data: dict) -> str:
     colors = [C_PRIMARY if h in (7, 8, 12, 13, 19, 20) else C_INDIGO + "99" for h in x]
     ax.bar(x, hourly, color=colors, zorder=2)
     ax.set_xticks(range(24))
-    ax.set_xticklabels([f"{h}" for h in range(24)], fontsize=8)
-    ax.set_xlabel("時 (JST)", fontsize=9)
-    ax.set_ylabel("解析回数", fontsize=9)
-    ax.set_title(f"時間帯別 解析分布（{data['report_date']}）", fontsize=11, fontweight="bold", pad=8)
+    ax.set_xticklabels([f"{h}" for h in range(24)], fontsize=12)
+    ax.set_xlabel("時 (JST)", fontsize=13)
+    ax.set_ylabel("解析回数", fontsize=13)
+    ax.set_title(f"時間帯別 解析分布（{data['report_date']}）", fontsize=15, fontweight="bold", pad=8)
     ax.set_ylim(bottom=0)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -185,12 +185,12 @@ def chart_b_count(data: dict) -> str:
 
     tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=9)
-    ax.set_ylabel("Bカウント / 日", fontsize=9)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax.set_ylabel("Bカウント / 日", fontsize=13)
     ax.set_ylim(bottom=0)
     ax.set_title("Bカウント推移（直近30日）— 個人 + 集団平均",
-                 fontsize=11, fontweight="bold", pad=8)
-    ax.legend(fontsize=9)
+                 fontsize=15, fontweight="bold", pad=8)
+    ax.legend(fontsize=13)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
@@ -225,11 +225,11 @@ def chart_weight(data: dict) -> str:
 
     tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=9)
-    ax.set_ylabel("体重 (kg)", fontsize=9)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax.set_ylabel("体重 (kg)", fontsize=13)
     ax.set_title("体重推移（直近30日）— 個人 + 集団平均",
-                 fontsize=11, fontweight="bold", pad=8)
-    ax.legend(fontsize=9)
+                 fontsize=15, fontweight="bold", pad=8)
+    ax.legend(fontsize=13)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
@@ -268,11 +268,11 @@ def chart_weight_loss(data: dict) -> str:
     ax.axhline(0, color=C_GRAY, linewidth=1, zorder=1)
     tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=9)
-    ax.set_ylabel("初回記録からの減量 (kg)", fontsize=9)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax.set_ylabel("初回記録からの減量 (kg)", fontsize=13)
     ax.set_title("減量進捗（初回体重比）推移 — 個人 + 集団平均",
-                 fontsize=11, fontweight="bold", pad=8)
-    ax.legend(fontsize=9)
+                 fontsize=15, fontweight="bold", pad=8)
+    ax.legend(fontsize=13)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
@@ -293,13 +293,13 @@ def chart_exercise(data: dict) -> str:
 
     tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=9)
-    ax.set_ylabel("消費Bカウント / 日", fontsize=9)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax.set_ylabel("消費Bカウント / 日", fontsize=13)
     ax.set_ylim(bottom=0)
     latest = next((v for v in reversed(avg) if v is not None), None)
     title_suffix = f"（直近: {latest:.1f}B）" if latest is not None else ""
     ax.set_title(f"運動によるBカウント消費 集団平均（直近30日）{title_suffix}",
-                 fontsize=11, fontweight="bold", pad=8)
+                 fontsize=15, fontweight="bold", pad=8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25, zorder=0)
