@@ -169,6 +169,23 @@ def init_db():
                     UNIQUE(user_id, date)
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_profile (
+                    user_id      TEXT    PRIMARY KEY,
+                    display_name TEXT,
+                    is_vip       BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at   TEXT    NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS staff_comments (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT NOT NULL,
+                    date       TEXT NOT NULL,
+                    comment    TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usage_log (
@@ -215,6 +232,23 @@ def init_db():
                     ex_b_count REAL    NOT NULL,
                     created_at TEXT    NOT NULL,
                     UNIQUE(user_id, date)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_profile (
+                    user_id      TEXT    PRIMARY KEY,
+                    display_name TEXT,
+                    is_vip       INTEGER NOT NULL DEFAULT 0,
+                    updated_at   TEXT    NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS staff_comments (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT NOT NULL,
+                    date       TEXT NOT NULL,
+                    comment    TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 )
             """)
         # メール設定を保存するテーブル
@@ -897,15 +931,25 @@ def admin_users():
             "SELECT user_id, COUNT(*) FROM usage_log GROUP BY user_id"
         )
         analysis_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        cur.execute("SELECT user_id, display_name, is_vip FROM user_profile")
+        profiles = {
+            row[0]: {"display_name": row[1], "is_vip": bool(row[2])}
+            for row in cur.fetchall()
+        }
     finally:
         conn.close()
 
-    all_ids = set(b_stats.keys()) | set(analysis_counts.keys())
+    all_ids = set(b_stats.keys()) | set(analysis_counts.keys()) | set(profiles.keys())
     users = []
     for uid in all_ids:
         bs = b_stats.get(uid, {})
+        pf = profiles.get(uid, {})
         users.append({
+            "user_id": uid,
             "user_id_short": uid[:8] + "…",
+            "display_name": pf.get("display_name"),
+            "is_vip": pf.get("is_vip", False),
             "days_recorded": bs.get("days", 0),
             "avg_b_count": bs.get("avg_b"),
             "analyses_count": analysis_counts.get(uid, 0),
@@ -914,6 +958,196 @@ def admin_users():
     users.sort(key=lambda x: x["last_active"] or "", reverse=True)
 
     return jsonify({"users": users})
+
+
+@app.route("/api/profile", methods=["POST"])
+def api_profile():
+    """会員がアプリの設定画面で入力した表示名を保存（スタッフ確認用）。"""
+    data = request.get_json(silent=True) or {}
+    uid  = (data.get("user_id") or "").strip()
+    name = (data.get("display_name") or "").strip()[:30]
+    if not uid:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO user_profile (user_id, display_name, updated_at)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (user_id) DO UPDATE SET display_name=%s, updated_at=%s""",
+                    (uid, name, ts, name, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO user_profile (user_id, display_name, updated_at)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, updated_at=excluded.updated_at""",
+                    (uid, name, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<user_id>/vip", methods=["POST"])
+@_admin_required
+def admin_set_vip(user_id):
+    data = request.get_json(silent=True) or {}
+    is_vip = bool(data.get("is_vip"))
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO user_profile (user_id, is_vip, updated_at)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (user_id) DO UPDATE SET is_vip=%s, updated_at=%s""",
+                    (user_id, is_vip, ts, is_vip, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO user_profile (user_id, is_vip, updated_at)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(user_id) DO UPDATE SET is_vip=excluded.is_vip, updated_at=excluded.updated_at""",
+                    (user_id, is_vip, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True, "is_vip": is_vip})
+
+
+@app.route("/admin/user/<user_id>")
+@_admin_required
+def admin_user_page(user_id):
+    return render_template("admin_user.html", user_id=user_id)
+
+
+@app.route("/api/admin/user/<user_id>/detail")
+@_admin_required
+def admin_user_detail(user_id):
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+
+        cur.execute(f"SELECT display_name, is_vip FROM user_profile WHERE user_id={PH}", (user_id,))
+        row = cur.fetchone()
+        display_name = row[0] if row else None
+        is_vip = bool(row[1]) if row else False
+
+        cur.execute(
+            f"SELECT date, weight FROM daily_weight WHERE user_id={PH} ORDER BY date",
+            (user_id,),
+        )
+        weight = [{"date": r[0], "weight": r[1]} for r in cur.fetchall()]
+
+        cur.execute(
+            f"SELECT date, b_count FROM daily_b_count WHERE user_id={PH} ORDER BY date",
+            (user_id,),
+        )
+        b_count = [{"date": r[0], "b_count": r[1]} for r in cur.fetchall()]
+
+        cur.execute(
+            f"SELECT date, ex_b_count FROM daily_exercise WHERE user_id={PH} ORDER BY date",
+            (user_id,),
+        )
+        exercise = [{"date": r[0], "ex_b_count": r[1]} for r in cur.fetchall()]
+
+        cur.execute(
+            f"SELECT date, payload FROM daily_meals WHERE user_id={PH} ORDER BY date DESC",
+            (user_id,),
+        )
+        meal_rows = cur.fetchall()
+
+        cur.execute(
+            f"SELECT id, date, comment, created_at FROM staff_comments WHERE user_id={PH} ORDER BY date DESC, created_at DESC",
+            (user_id,),
+        )
+        comments = [
+            {"id": r[0], "date": r[1], "comment": r[2], "created_at": r[3]}
+            for r in cur.fetchall()
+        ]
+    finally:
+        conn.close()
+
+    MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+    meals = []
+    for dt, payload_str in meal_rows:
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        items = []
+        for key in MEAL_KEYS:
+            for item in payload.get(key, {}).get("items", []):
+                if not item.get("result") and not item.get("isText"):
+                    continue
+                items.append({
+                    "previewSrc": item.get("previewSrc"),
+                    "isText": item.get("isText", False),
+                    "text": item.get("text"),
+                    "result": item.get("result"),
+                })
+        if items:
+            meals.append({"date": dt, "items": items})
+
+    return jsonify({
+        "display_name": display_name,
+        "is_vip": is_vip,
+        "weight": weight,
+        "b_count": b_count,
+        "exercise": exercise,
+        "meals": meals,
+        "comments": comments,
+    })
+
+
+@app.route("/api/admin/user/<user_id>/comment", methods=["POST"])
+@_admin_required
+def admin_add_comment(user_id):
+    data = request.get_json(silent=True) or {}
+    date    = (data.get("date") or "").strip()
+    comment = (data.get("comment") or "").strip()
+    if not date or not comment:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"INSERT INTO staff_comments (user_id, date, comment, created_at) VALUES ({PH}, {PH}, {PH}, {PH})",
+                (user_id, date, comment, ts),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/user/<user_id>/comment/<int:comment_id>", methods=["DELETE"])
+@_admin_required
+def admin_delete_comment(user_id, comment_id):
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"DELETE FROM staff_comments WHERE id={PH} AND user_id={PH}",
+                (comment_id, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
 
 
 # ── 性別・目標に合わせたアドバイス用コンテキスト ──────────────
@@ -1579,7 +1813,8 @@ def get_monthly_b():
     })
 
 
-# 食事の明細＋写真サムネを日別に保存（過去3日分のみ保持し、それ以前は自動削除）
+# 食事の明細＋写真サムネを日別に保存（過去3日分のみ保持し、それ以前は自動削除。
+# ただしVIP会員（user_profile.is_vip）はスタッフ確認用に無期限保持する）
 MEALS_RETAIN_DAYS = 3
 
 
@@ -1612,7 +1847,11 @@ def post_daily_meals():
                        ON CONFLICT(user_id, date) DO UPDATE SET payload=excluded.payload, created_at=excluded.created_at""",
                     (uid, date, payload_str, ts)
                 )
-            cur.execute(f"DELETE FROM daily_meals WHERE user_id={PH} AND date < {PH}", (uid, cutoff))
+            cur.execute(f"SELECT is_vip FROM user_profile WHERE user_id={PH}", (uid,))
+            row = cur.fetchone()
+            is_vip = bool(row and row[0])
+            if not is_vip:
+                cur.execute(f"DELETE FROM daily_meals WHERE user_id={PH} AND date < {PH}", (uid, cutoff))
             conn.commit()
         finally:
             conn.close()

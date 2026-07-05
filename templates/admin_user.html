@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>会員詳細 | Bカウンター 管理ダッシュボード</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23FF6B35'/><text y='78' x='50' text-anchor='middle' font-size='70' font-family='sans-serif' fill='white'>管</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+      background: #F3F4F6;
+      color: #111827;
+      min-height: 100vh;
+    }
+    header {
+      background: linear-gradient(135deg, #FF6B35 0%, #e55a25 100%);
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(255,107,53,0.3);
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    header h1 { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; display:flex; align-items:center; gap:8px; }
+    .vip-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #FEF3C7;
+      color: #92400E;
+    }
+    .vip-toggle {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .vip-toggle:hover { background: rgba(255,255,255,0.35); }
+
+    main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    .back-link { display: inline-block; margin-bottom: 16px; font-size: 13px; color: #6B7280; text-decoration: none; }
+    .back-link:hover { color: #FF6B35; }
+
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      margin-bottom: 18px;
+    }
+    .card h2 { font-size: 14px; font-weight: 800; color: #374151; margin-bottom: 14px; }
+
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+
+    .spinner {
+      width: 26px; height: 26px;
+      border: 3px solid #F3F4F6;
+      border-top-color: #FF6B35;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .no-data { text-align: center; color: #9CA3AF; padding: 28px 0; font-size: 14px; }
+
+    /* ── 食事写真ギャラリー ── */
+    .meal-day { margin-bottom: 18px; }
+    .meal-day-title { font-size: 13px; font-weight: 800; color: #6B7280; margin-bottom: 8px; }
+    .meal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+    .meal-item {
+      border: 1px solid #F3F4F6;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #FAFAFA;
+    }
+    .meal-item img {
+      width: 100%; height: 130px; object-fit: cover; display: block; cursor: zoom-in;
+      background: #EEE;
+    }
+    .meal-item .cap { padding: 8px 10px; font-size: 12px; color: #374151; line-height: 1.5; }
+    .meal-item .cap .b-total { font-weight: 800; color: #FF6B35; }
+    .meal-item .cap .food-name { display:block; }
+    .meal-item .cap .cat-a { color:#059669; }
+    .meal-item .cap .cat-b { color:#DC2626; }
+
+    /* ── コメント ── */
+    .comment-form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .comment-form input[type=date] {
+      padding: 9px 12px; border: 1.5px solid #E5E7EB; border-radius: 10px; font-size: 14px;
+    }
+    .comment-form textarea {
+      flex: 1; min-width: 220px; padding: 9px 12px; border: 1.5px solid #E5E7EB; border-radius: 10px;
+      font-size: 14px; resize: vertical; min-height: 40px; font-family: inherit;
+    }
+    .comment-form button {
+      padding: 9px 18px; background: linear-gradient(135deg, #FF6B35, #e55a25); color: #fff;
+      border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .comment-list { display: flex; flex-direction: column; gap: 10px; }
+    .comment-row {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+      padding: 10px 12px; background: #FAFAFA; border-radius: 10px; font-size: 13px;
+    }
+    .comment-row .meta { color: #9CA3AF; font-size: 11px; margin-bottom: 4px; }
+    .comment-row .del-btn { border: none; background: none; color: #9CA3AF; cursor: pointer; font-size: 16px; line-height: 1; }
+    .comment-row .del-btn:hover { color: #DC2626; }
+
+    @media (max-width: 900px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>👤 <span id="header-name">読み込み中…</span> <span id="header-vip-badge"></span></h1>
+  <button class="vip-toggle" id="vip-toggle-btn" onclick="toggleVip()">-</button>
+</header>
+
+<main>
+  <a href="/admin" class="back-link">← 一覧に戻る</a>
+
+  <div class="charts-grid">
+    <div class="card">
+      <h2>⚖️ 体重推移</h2>
+      <canvas id="chart-weight" height="160"></canvas>
+    </div>
+    <div class="card">
+      <h2>🍽️ Bカウント推移</h2>
+      <canvas id="chart-b" height="160"></canvas>
+    </div>
+    <div class="card">
+      <h2>🏃 運動によるBカウント消費推移</h2>
+      <canvas id="chart-exercise" height="160"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📷 食事の写真</h2>
+    <div id="meals-wrap"><div class="spinner"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>📝 スタッフコメント（内部メモ・会員には非表示）</h2>
+    <div class="comment-form">
+      <input type="date" id="comment-date">
+      <textarea id="comment-text" placeholder="コメントを入力…"></textarea>
+      <button onclick="postComment()">投稿</button>
+    </div>
+    <div class="comment-list" id="comment-list"></div>
+  </div>
+</main>
+
+<script>
+  const USER_ID = {{ user_id | tojson }};
+  let chartWeight = null, chartB = null, chartExercise = null;
+  let currentIsVip = false;
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function fmtLabel(dateStr) {
+    const [, m, d] = dateStr.split('-');
+    return `${parseInt(m)}/${parseInt(d)}`;
+  }
+
+  function buildLineChart(canvasId, dates, values, label, color) {
+    const ctx = document.getElementById(canvasId);
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates.map(fmtLabel),
+        datasets: [{
+          label, data: values,
+          borderColor: color,
+          backgroundColor: color.replace('rgb', 'rgba').replace(')', ',0.1)'),
+          fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: false } }
+      }
+    });
+  }
+
+  function renderMeals(meals) {
+    const wrap = document.getElementById('meals-wrap');
+    if (!meals || meals.length === 0) {
+      wrap.innerHTML = '<div class="no-data">写真の記録がありません</div>';
+      return;
+    }
+    wrap.innerHTML = meals.map(day => `
+      <div class="meal-day">
+        <div class="meal-day-title">${escapeHtml(day.date)}</div>
+        <div class="meal-grid">
+          ${day.items.map(item => renderMealItem(item)).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderMealItem(item) {
+    const img = item.previewSrc
+      ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')">`
+      : `<div style="width:100%;height:130px;display:flex;align-items:center;justify-content:center;font-size:28px;background:#EEE">📝</div>`;
+    let cap = '';
+    const r = item.result;
+    if (r && typeof r === 'object' && Array.isArray(r.foods)) {
+      const foodsHtml = r.foods.map(f =>
+        `<span class="food-name"><span class="${f.category === 'A' ? 'cat-a' : 'cat-b'}">[${escapeHtml(f.category)}]</span> ${escapeHtml(f.name)}</span>`
+      ).join('');
+      cap = `<span class="b-total">合計 B${r.total_b_count ?? '-'}</span><br>${foodsHtml}`;
+    } else if (item.isText) {
+      cap = escapeHtml(item.text || '');
+    } else {
+      cap = '<span style="color:#9CA3AF">解析結果なし</span>';
+    }
+    return `<div class="meal-item">${img}<div class="cap">${cap}</div></div>`;
+  }
+
+  function openLightbox(src) {
+    const overlay = document.createElement('div');
+    overlay.style = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:999;cursor:zoom-out';
+    overlay.innerHTML = `<img src="${src}" style="max-width:92vw;max-height:92vh;border-radius:8px">`;
+    overlay.onclick = () => overlay.remove();
+    document.body.appendChild(overlay);
+  }
+
+  function renderComments(comments) {
+    const list = document.getElementById('comment-list');
+    if (!comments || comments.length === 0) {
+      list.innerHTML = '<div class="no-data">まだコメントがありません</div>';
+      return;
+    }
+    list.innerHTML = comments.map(c => `
+      <div class="comment-row">
+        <div>
+          <div class="meta">${escapeHtml(c.date)}（投稿: ${escapeHtml((c.created_at || '').slice(0, 16).replace('T', ' '))}）</div>
+          <div>${escapeHtml(c.comment)}</div>
+        </div>
+        <button class="del-btn" onclick="deleteComment(${c.id})" title="削除">✕</button>
+      </div>
+    `).join('');
+  }
+
+  async function toggleVip() {
+    const r = await fetch(`/api/admin/users/${encodeURIComponent(USER_ID)}/vip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_vip: !currentIsVip }),
+    });
+    const d = await r.json();
+    currentIsVip = d.is_vip;
+    updateVipUi();
+  }
+
+  function updateVipUi() {
+    document.getElementById('header-vip-badge').innerHTML = currentIsVip ? '<span class="vip-badge">★ VIP</span>' : '';
+    document.getElementById('vip-toggle-btn').textContent = currentIsVip ? 'VIP解除' : 'VIPにする';
+  }
+
+  async function postComment() {
+    const date = document.getElementById('comment-date').value;
+    const comment = document.getElementById('comment-text').value.trim();
+    if (!date || !comment) { alert('日付とコメントを入力してください'); return; }
+    await fetch(`/api/admin/user/${encodeURIComponent(USER_ID)}/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, comment }),
+    });
+    document.getElementById('comment-text').value = '';
+    load();
+  }
+
+  async function deleteComment(id) {
+    await fetch(`/api/admin/user/${encodeURIComponent(USER_ID)}/comment/${id}`, { method: 'DELETE' });
+    load();
+  }
+
+  async function load() {
+    const r = await fetch(`/api/admin/user/${encodeURIComponent(USER_ID)}/detail`);
+    const d = await r.json();
+
+    document.getElementById('header-name').textContent = d.display_name || `匿名ユーザー（${USER_ID.slice(0, 8)}…）`;
+    currentIsVip = !!d.is_vip;
+    updateVipUi();
+
+    if (chartWeight) chartWeight.destroy();
+    chartWeight = buildLineChart('chart-weight', d.weight.map(x => x.date), d.weight.map(x => x.weight), '体重(kg)', 'rgb(99,102,241)');
+
+    if (chartB) chartB.destroy();
+    chartB = buildLineChart('chart-b', d.b_count.map(x => x.date), d.b_count.map(x => x.b_count), 'Bカウント', 'rgb(255,107,53)');
+
+    if (chartExercise) chartExercise.destroy();
+    chartExercise = buildLineChart('chart-exercise', d.exercise.map(x => x.date), d.exercise.map(x => x.ex_b_count), '運動Bカウント消費', 'rgb(5,150,105)');
+
+    renderMeals(d.meals);
+    renderComments(d.comments);
+  }
+
+  document.getElementById('comment-date').value = new Date().toLocaleDateString('sv-SE');
+  load();
+</script>
+</body>
+</html>

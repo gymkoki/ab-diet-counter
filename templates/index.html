@@ -448,6 +448,7 @@
 <div id="view-settings" style="display:none;padding-bottom:80px">
   <div class="setting-card" id="profile-summary-card" style="display:none">
     <h2>📋 現在の設定</h2>
+    <div class="summary-row"><span class="lbl">お名前</span><span class="val" id="sum-name">-</span></div>
     <div class="summary-row"><span class="lbl">身長</span><span class="val" id="sum-height">-</span></div>
     <div class="summary-row"><span class="lbl">体重</span><span class="val" id="sum-weight">-</span></div>
     <div class="summary-row"><span class="lbl">性別</span><span class="val" id="sum-gender">-</span></div>
@@ -456,6 +457,8 @@
   </div>
   <div class="setting-card" id="profile-edit-card">
     <h2>⚙️ プロフィール設定</h2>
+    <label class="setting-label">お名前（トレーナーが確認する際に使用します・任意）</label>
+    <input class="setting-input" type="text" id="input-name" placeholder="例：近藤" maxlength="30">
     <label class="setting-label">身長 (cm)</label>
     <input class="setting-input" type="number" id="input-height" placeholder="例：170" min="100" max="250">
     <label class="setting-label">体重 (kg)</label>
@@ -1581,6 +1584,7 @@ function getGoalTarget(p) {
 function saveProfile() {
   const hv = document.getElementById('input-height').value;
   const wv = document.getElementById('input-weight').value;
+  const nv = document.getElementById('input-name').value.trim();
   const h = parseFloat(hv);
   const w = parseFloat(wv);
   const profile = getProfile() || {};
@@ -1589,7 +1593,15 @@ function saveProfile() {
   if (wv) { if (!w || w < 20)  { alert('体重を正しく入力してください'); return; } profile.weight = w; }
   if (_selGender) profile.gender = _selGender;
   if (_selGoal)   profile.goal   = _selGoal;
+  profile.name = nv;
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  if (nv) {
+    fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, display_name: nv })
+    }).catch(() => {});
+  }
   const msg = document.getElementById('profile-saved-msg');
   msg.style.display = 'block';
   setTimeout(() => msg.style.display = 'none', 2000);
@@ -1603,7 +1615,7 @@ function renderProfileSummary() {
   const editCard = document.getElementById('profile-edit-card');
   if (!card) return;
   const p = getProfile();
-  const hasProfile = p && (p.height || p.weight || p.gender || p.goal);
+  const hasProfile = p && (p.height || p.weight || p.gender || p.goal || p.name);
   if (!hasProfile) {
     card.style.display = 'none';
     if (editCard) editCard.style.display = '';   // 初回は入力フォームを表示
@@ -1611,6 +1623,7 @@ function renderProfileSummary() {
   }
   const genderLabel = p.gender === 'male' ? '男性' : p.gender === 'female' ? '女性' : '未設定';
   const goalLabel   = p.goal ? GOAL_NAMES[p.goal] : '未設定';
+  document.getElementById('sum-name').textContent = p.name || '未設定';
   document.getElementById('sum-height').textContent = p.height ? `${p.height} cm` : '未設定';
   document.getElementById('sum-weight').textContent = p.weight ? `${p.weight} kg` : '未設定';
   document.getElementById('sum-gender').textContent = genderLabel;
@@ -1631,6 +1644,7 @@ function openProfileEdit() {
 function loadProfileInputs() {
   const p = getProfile();
   if (p) {
+    if (p.name)   document.getElementById('input-name').value = p.name;
     if (p.height) document.getElementById('input-height').value = p.height;
     if (p.weight) document.getElementById('input-weight').value = p.weight;
     _selGender = p.gender || null;

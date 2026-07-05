@@ -106,6 +106,30 @@
       background: #FFF5F0;
       color: #FF6B35;
     }
+    .vip-badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #FEF3C7;
+      color: #92400E;
+    }
+    .vip-btn, .detail-link {
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid #E5E7EB;
+      background: #fff;
+      color: #374151;
+      white-space: nowrap;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .vip-btn:hover, .detail-link:hover { border-color: #FF6B35; color: #FF6B35; }
+    .vip-btn.is-vip { background: #FEF3C7; border-color: #F59E0B; color: #92400E; }
 
     /* ── API Key Section ── */
     .apikey-card { margin-bottom: 20px; }
@@ -241,15 +265,18 @@
       <table>
         <thead>
           <tr>
+            <th>表示名</th>
             <th>ユーザーID（先頭8文字）</th>
             <th>B記録日数</th>
             <th>平均Bカウント / 日</th>
             <th>食事分析回数</th>
             <th>最終利用日</th>
+            <th>VIP</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="users-tbody">
-          <tr><td colspan="5"><div class="spinner"></div></td></tr>
+          <tr><td colspan="8"><div class="spinner"></div></td></tr>
         </tbody>
       </table>
     </div>
@@ -375,6 +402,12 @@
     });
   }
 
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
   async function loadUsers() {
     const r = await fetch('/api/admin/users');
     if (!r.ok) throw new Error('users');
@@ -382,12 +415,13 @@
     const tbody = document.getElementById('users-tbody');
 
     if (!d.users || d.users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">データがまだありません</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="no-data">データがまだありません</td></tr>';
       return;
     }
 
     tbody.innerHTML = d.users.map(u => `
       <tr>
+        <td>${u.display_name ? escapeHtml(u.display_name) : '<span style="color:#9CA3AF">-</span>'}</td>
         <td class="uid">${u.user_id_short}</td>
         <td>${u.days_recorded} 日</td>
         <td>${u.avg_b_count != null
@@ -395,8 +429,22 @@
           : '<span style="color:#9CA3AF">-</span>'}</td>
         <td>${u.analyses_count} 回</td>
         <td style="color:#6B7280">${u.last_active || '-'}</td>
+        <td>${u.is_vip ? '<span class="vip-badge">★ VIP</span>' : ''}</td>
+        <td style="display:flex;gap:6px">
+          <button class="vip-btn${u.is_vip ? ' is-vip' : ''}" onclick="toggleVip('${u.user_id}', ${u.is_vip})">${u.is_vip ? 'VIP解除' : 'VIPにする'}</button>
+          <a class="detail-link" href="/admin/user/${encodeURIComponent(u.user_id)}">詳細</a>
+        </td>
       </tr>
     `).join('');
+  }
+
+  async function toggleVip(userId, currentIsVip) {
+    await fetch(`/api/admin/users/${encodeURIComponent(userId)}/vip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_vip: !currentIsVip }),
+    });
+    loadUsers();
   }
 
   async function loadApiStatus() {
