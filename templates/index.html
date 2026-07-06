@@ -156,8 +156,11 @@
     .oil-opt { flex:1; padding:10px 4px; border:1.5px solid #FCD34D; border-radius:10px; background:#FFFBEB; font-size:14px; font-weight:800; color:#92400E; cursor:pointer; line-height:1.3; }
     .oil-opt span { display:block; font-size:11px; font-weight:700; color:#B45309; margin-top:2px; }
     .oil-opt:active { background:#FEF3C7; }
+    .oil-opt.selected { background:#F59E0B; border-color:#B45309; color:#fff; }
     .oil-note-input { width:100%; padding:10px 12px; border:1.5px solid #FCD34D; border-radius:10px; font-size:15px; font-family:inherit; outline:none; background:#FFFBEB; }
     .oil-note-input:focus { border-color:#D97706; }
+    .btn-oil-save { width:100%; padding:12px; border-radius:10px; border:none; background:linear-gradient(135deg,#F59E0B,#D97706); color:white; font-size:15px; font-weight:800; cursor:pointer; }
+    .btn-oil-save:disabled { opacity:0.4; cursor:not-allowed; }
 
     .result-delete-btn { background:none; border:none; font-size:16px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.6; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
@@ -532,15 +535,11 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
     <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.9</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.10</div>
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
-      <div style="display:flex;gap:10px;margin-bottom:14px">
-        <span style="font-size:20px;flex-shrink:0">⚙️</span>
-        <span>設定画面から<strong>お名前・体重を入力</strong>できるようになりました。</span>
-      </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">⚖️</span>
-        <span>特に<strong>体重</strong>は、Bカウントとの相関を確認するために活用します。お手数をおかけしますが、<strong>なるべくこまめな入力</strong>にご協力をお願いいたします！</span>
+        <span style="font-size:20px;flex-shrink:0">🍙</span>
+        <span>B食材の手動追加がより分かりやすいように変更しました。</span>
       </div>
     </div>
     <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -747,16 +746,17 @@ function buildPanel(m) {
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
       </div>
       <div class="food-action-row">
-        <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">${oilIcon(18)} Bを手動追加</button>
+        <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">${onigiriIcon(18)} Bを手動追加</button>
         <button class="oil-btn" onclick="openCopyPicker('${m.id}')">🍚 コピーご飯を追加</button>
       </div>
       <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
         <div class="oil-menu-row">
-          <button class="oil-opt" onclick="addOil('${m.id}',0)">B0.5</button>
-          <button class="oil-opt" onclick="addOil('${m.id}',1)">B1</button>
-          <button class="oil-opt" onclick="addOil('${m.id}',2)">B2</button>
+          <button class="oil-opt" id="oilopt-${m.id}-0" onclick="selectOil('${m.id}',0)">B0.5</button>
+          <button class="oil-opt" id="oilopt-${m.id}-1" onclick="selectOil('${m.id}',1)">B1</button>
+          <button class="oil-opt" id="oilopt-${m.id}-2" onclick="selectOil('${m.id}',2)">B2</button>
         </div>
         <input type="text" class="oil-note-input" id="oilnote-${m.id}" placeholder="内訳（任意）例：マヨネーズ大さじ1" maxlength="60">
+        <button class="btn-oil-save" id="oilsave-${m.id}" onclick="saveOil('${m.id}')" disabled>保存</button>
       </div>
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
@@ -879,40 +879,61 @@ const OIL_OPTIONS = [
   { label:'B1',   bc:1,   kcal:'200~399kcal' },
   { label:'B2',   bc:2,   kcal:'400kcal以上' },
 ];
+const oilSelection = {}; // mealId -> 選択中のOIL_OPTIONSインデックス
 
-// 油ボトルのアイコン（油であることが伝わるSVGイラスト）
-function oilIcon(size) {
+// 手動追加のアイコン（おにぎり）
+function onigiriIcon(size) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" style="vertical-align:-0.18em" aria-hidden="true">`
-    + `<rect x="9.3" y="2" width="5.4" height="3" rx="1" fill="#92400E"/>`
-    + `<path d="M9 5h6l1 3v11.5A2.5 2.5 0 0 1 13.5 22h-3A2.5 2.5 0 0 1 8 19.5V8z" fill="#FCD34D" stroke="#B45309" stroke-width="1.3"/>`
-    + `<path d="M12 10.3c1.5 1.9 2.4 3.1 2.4 4.4a2.4 2.4 0 1 1-4.8 0c0-1.3.9-2.5 2.4-4.4z" fill="#D97706"/>`
+    + `<path d="M12 2.6 L21.3 20 A1.9 1.9 0 0 1 19.6 22.8 H4.4 A1.9 1.9 0 0 1 2.7 20 Z" fill="#FFFFFF" stroke="#D9C08A" stroke-width="1.3" stroke-linejoin="round"/>`
+    + `<path d="M3.3 17.8 H20.7 V19.6 A1.9 1.9 0 0 1 19.6 21.4 H4.4 A1.9 1.9 0 0 1 3.3 19.6 Z" fill="#1F2937"/>`
+    + `<circle cx="12" cy="11.5" r="1.5" fill="#EF4444"/>`
     + `</svg>`;
 }
 
 function toggleOilMenu(mealId) {
   const menu = document.getElementById(`oilmenu-${mealId}`);
   if (!menu) return;
-  menu.style.display = (getComputedStyle(menu).display === 'none') ? 'flex' : 'none';
+  const opening = getComputedStyle(menu).display === 'none';
+  menu.style.display = opening ? 'flex' : 'none';
+  if (!opening) {
+    oilSelection[mealId] = null;
+    updateOilMenuUI(mealId);
+  }
 }
 
-function addOil(mealId, idx) {
+function selectOil(mealId, idx) {
+  oilSelection[mealId] = idx;
+  updateOilMenuUI(mealId);
+}
+
+function updateOilMenuUI(mealId) {
+  OIL_OPTIONS.forEach((_, i) => {
+    const btn = document.getElementById(`oilopt-${mealId}-${i}`);
+    if (btn) btn.classList.toggle('selected', oilSelection[mealId] === i);
+  });
+  const saveBtn = document.getElementById(`oilsave-${mealId}`);
+  if (saveBtn) saveBtn.disabled = (oilSelection[mealId] == null);
+}
+
+function saveOil(mealId) {
+  const idx = oilSelection[mealId];
   const o = OIL_OPTIONS[idx];
   if (!o) return;
   const noteEl = document.getElementById(`oilnote-${mealId}`);
   const note = noteEl ? noteEl.value.trim() : '';
-  const reason = note ? note : `${o.label}を手動追加`;
   const id = ++itemIdSeq;
   const item = {
     id, file:null, previewSrc:null, loading:false, error:null,
     isOil:true, oilLabel:o.label, oilNote:note,
     result: {
-      foods: [{ name:'手動追加', category:'B', kcal_per_serving:o.kcal, amount:o.label, b_count:o.bc, reason }],
+      foods: [{ name: note || '手動追加', category:'B', kcal_per_serving:o.kcal, amount:'', b_count:o.bc, reason:'' }],
       total_b_count: o.bc,
       advice: '',
     },
   };
   state[mealId].items.push(item);
   if (noteEl) noteEl.value = '';
+  oilSelection[mealId] = null;
   const menu = document.getElementById(`oilmenu-${mealId}`);
   if (menu) menu.style.display = 'none';
   renderStrip(mealId);
@@ -1117,7 +1138,7 @@ function renderStrip(mealId) {
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? oilIcon(34) : item.isText ? '📝' : '📷'}</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? onigiriIcon(34) : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
           <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
@@ -1154,7 +1175,7 @@ function renderResults(mealId) {
         ${item.previewSrc
           ? `<img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : item.isOil
-            ? `<div class="text-entry-recap">${oilIcon(16)} Bを手動追加：${esc(item.oilLabel||'')}（B${fmtCount(item.result.total_b_count)}）${item.oilNote ? `<br>${esc(item.oilNote)}` : ''}</div>`
+            ? ''
             : `<div class="text-entry-recap">📝 入力内容：${esc(item.text||'')}</div>`}
         ${item.result.advice ? `<div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice)}</p></div>` : ''}
         <div class="food-list-wrap">
@@ -1350,9 +1371,9 @@ function buildFoodRows(foods) {
           <div class="food-name">${esc(food.name)}</div>
           <div class="food-meta">
             <span class="food-badge ${badgeClass}">${badgeLabel}</span>
-            ${kcalLabel} ・ ${esc(food.amount)}
+            ${kcalLabel}${food.amount ? ` ・ ${esc(food.amount)}` : ''}
           </div>
-          <div class="food-meta">${esc(food.reason)}</div>
+          ${food.reason ? `<div class="food-meta">${esc(food.reason)}</div>` : ''}
         </div>
         <div class="food-cnt">
           <div class="n ${!isB?'zero':''}">${isB ? fmtCount(food.b_count) : '−'}</div>
@@ -2383,7 +2404,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v10';
+const NOTICE_KEY = 'ab-diet-notice-v11';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
