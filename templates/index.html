@@ -791,6 +791,9 @@ function updateDailyTotal() {
   const net  = Math.max(0, foodTotal - exBc);
   const el = document.getElementById('daily-total-count');
   if (el) el.textContent = fmtCount(net);
+  // 食事を記録している日は、その時点のBカウントを端末ローカルへ即保存しておく。
+  // これで履歴グラフに当日分がすぐ反映され、サーバーDBがリセットされても折れ線が残る。
+  if (foodTotal > 0) setBCountLogEntry(currentDate(), net);
   const bar   = document.getElementById('ex-deduct-bar');
   const numEl = document.getElementById('ex-deduct-num');
   if (bar && numEl) {
