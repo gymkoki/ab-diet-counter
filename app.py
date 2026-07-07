@@ -95,23 +95,35 @@ def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
 _db_lock = threading.Lock()
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
+import sqlite3   # SQLite は常にフォールバック用に読み込む
+_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
+
 _DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if _DATABASE_URL:
     # Render は "postgres://" で渡してくる場合があるので修正
     _DATABASE_URL = _DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    import psycopg2
-    USE_PG = True
-    PH = "%s"          # psycopg2 のプレースホルダ
-else:
-    import sqlite3
-    _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
-    USE_PG = False
-    PH = "?"           # sqlite3 のプレースホルダ
+
+# 既定はSQLite。DATABASE_URLがあり、かつ実際に接続できたときだけPostgreSQLを使う。
+USE_PG = False
+PH = "?"              # sqlite3 のプレースホルダ
+if _DATABASE_URL:
+    try:
+        import psycopg2
+        _test = psycopg2.connect(_DATABASE_URL, connect_timeout=5)
+        _test.close()
+        USE_PG = True
+        PH = "%s"     # psycopg2 のプレースホルダ
+        print("[DB] PostgreSQL に接続しました")
+    except Exception as _e:
+        # 期限切れ・接続不可のときは落とさずSQLiteで継続
+        print(f"[DB][WARN] PostgreSQL に接続できません。SQLiteで継続します: {_e}")
+        USE_PG = False
+        PH = "?"
 
 
 def _get_conn():
     if USE_PG:
-        return psycopg2.connect(_DATABASE_URL)
+        return psycopg2.connect(_DATABASE_URL, connect_timeout=5)
     conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -263,7 +275,11 @@ def init_db():
         conn.close()
 
 
-init_db()
+try:
+    init_db()
+except Exception as _e:
+    # DB初期化に失敗してもアプリ自体は起動させる（記録は端末側にも保存されている）
+    print(f"[DB][WARN] init_db に失敗しました: {_e}")
 
 # ── 管理者認証 ──────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
