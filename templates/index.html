@@ -1437,7 +1437,23 @@ function getTodayJST() {
   }).replace(/\//g, '-');
 }
 
+// Bカウントの履歴も端末ローカルに保存しておく（体重と同じ仕組み）。
+// サーバーのDBが期限切れ等でリセットされても、履歴グラフのBカウント折れ線が消えないようにする。
+const BCOUNT_LOG_KEY = 'ab-diet-bcountlog-v1';   // { 'YYYY-MM-DD': b_count }
+
+function getBCountLog() {
+  try { return JSON.parse(localStorage.getItem(BCOUNT_LOG_KEY)) || {}; } catch { return {}; }
+}
+
+function setBCountLogEntry(date, bCount) {
+  if (!date || bCount == null || isNaN(bCount)) return;
+  const log = getBCountLog();
+  log[date] = bCount;
+  try { localStorage.setItem(BCOUNT_LOG_KEY, JSON.stringify(log)); } catch(e) {}
+}
+
 async function submitDailyB(bCount, date) {
+  setBCountLogEntry(date, bCount);   // まず端末ローカルへ保存（サーバー保存の成否に関わらず残す）
   try {
     await fetch('/api/daily-b', {
       method: 'POST',
@@ -2107,13 +2123,18 @@ async function loadHistory() {
     const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
     rangeEl.textContent = `${fmtDate(data.date_start)} 〜 ${fmtDate(data.date_end)}（直近50日）`;
 
-    // サーバーの履歴に、端末ローカルの体重記録も重ねる（当日分などを即反映）
+    // サーバーの履歴に、端末ローカルの体重・Bカウント記録も重ねる（当日分やDBリセット時の復元用）
     const byDate = {};
     (data.daily||[]).forEach(d => { byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight }; });
     const wlog = getWeightLog();
     Object.keys(wlog).forEach(date => {
       if (!byDate[date]) byDate[date] = { date, b_count:null, weight:wlog[date] };
       else if (byDate[date].weight == null) byDate[date].weight = wlog[date];
+    });
+    const blog = getBCountLog();
+    Object.keys(blog).forEach(date => {
+      if (!byDate[date]) byDate[date] = { date, b_count:blog[date], weight:null };
+      else if (byDate[date].b_count == null) byDate[date].b_count = blog[date];
     });
     const daily = Object.values(byDate).sort((a,b) => b.date.localeCompare(a.date));
 
