@@ -109,7 +109,7 @@ PH = "?"              # sqlite3 のプレースホルダ
 if _DATABASE_URL:
     try:
         import psycopg2
-        _test = psycopg2.connect(_DATABASE_URL, connect_timeout=5)
+        _test = psycopg2.connect(_DATABASE_URL, connect_timeout=15)
         _test.close()
         USE_PG = True
         PH = "%s"     # psycopg2 のプレースホルダ
@@ -123,7 +123,7 @@ if _DATABASE_URL:
 
 def _get_conn():
     if USE_PG:
-        return psycopg2.connect(_DATABASE_URL, connect_timeout=5)
+        return psycopg2.connect(_DATABASE_URL, connect_timeout=15)
     conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
