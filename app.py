@@ -1363,34 +1363,6 @@ def ping():
     return "ok", 200
 
 
-@app.route("/db-status")
-def db_status():
-    """どのDBに接続中か・実データが見えているかを確認する診断用エンドポイント。
-    PostgreSQL(Neon)に繋がっていれば use_pg=true で件数も本番の値になる。
-    件数のみ返し、個人情報は返さない。"""
-    info = {"use_pg": USE_PG, "has_database_url": bool(_DATABASE_URL),
-            "psycopg2_available": _PG_AVAILABLE, "backfill_done": _backfill_done}
-    try:
-        conn = _get_conn()
-        try:
-            cur = conn.cursor()
-            counts = {}
-            for tbl in ("daily_b_count", "daily_weight", "daily_exercise",
-                        "daily_meals", "user_profile"):
-                try:
-                    cur.execute(f"SELECT COUNT(*) FROM {tbl}")
-                    counts[tbl] = cur.fetchone()[0]
-                except Exception as _e:
-                    counts[tbl] = f"err: {_e}"
-            info["use_pg"] = USE_PG   # _get_conn 内で再接続した場合を反映
-            info["counts"] = counts
-        finally:
-            conn.close()
-    except Exception as e:
-        info["error"] = str(e)
-    return jsonify(info)
-
-
 # ── デイリーレポートメール ──────────────────────────────────────
 _last_report_sent: dict = {}
 
