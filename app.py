@@ -1363,38 +1363,6 @@ def ping():
     return "ok", 200
 
 
-@app.route("/diag-bcount")
-def diag_bcount():
-    """【一時診断】利用者ごとのBカウント履歴の件数・日付範囲を返す。原因調査後に削除する。
-    user_id は端末生成のランダム文字列で、氏名等の個人情報は含まない。"""
-    out = {"use_pg": USE_PG, "backfill_done": _backfill_done}
-    try:
-        conn = _get_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT user_id, COUNT(*), MIN(date), MAX(date) "
-                "FROM daily_b_count GROUP BY user_id ORDER BY COUNT(*) DESC"
-            )
-            out["b_by_user"] = [
-                {"user_id": r[0], "count": r[1], "min": r[2], "max": r[3]}
-                for r in cur.fetchall()
-            ]
-            cur.execute(
-                "SELECT user_id, COUNT(*), MIN(date), MAX(date) "
-                "FROM daily_meals GROUP BY user_id ORDER BY COUNT(*) DESC"
-            )
-            out["meals_by_user"] = [
-                {"user_id": r[0], "count": r[1], "min": r[2], "max": r[3]}
-                for r in cur.fetchall()
-            ]
-        finally:
-            conn.close()
-    except Exception as e:
-        out["error"] = str(e)
-    return jsonify(out)
-
-
 # ── デイリーレポートメール ──────────────────────────────────────
 _last_report_sent: dict = {}
 
