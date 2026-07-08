@@ -1371,6 +1371,31 @@ def ping():
     return "ok", 200
 
 
+@app.route("/db-status")
+def db_status():
+    """【一時確認用】各テーブルの件数・日付範囲を返す。確認後に削除する。"""
+    info = {"use_pg": USE_PG}
+    try:
+        conn = _get_conn()
+        try:
+            counts = {}
+            for tbl in ("daily_b_count", "daily_weight", "daily_meals", "daily_exercise"):
+                cur = conn.cursor()
+                try:
+                    cur.execute(f"SELECT COUNT(*), MIN(date), MAX(date) FROM {tbl}")
+                    r = cur.fetchone()
+                    counts[tbl] = {"count": r[0], "min": r[1], "max": r[2]}
+                except Exception as _e:
+                    counts[tbl] = {"error": str(_e)}
+                cur.close()
+            info["tables"] = counts
+        finally:
+            conn.close()
+    except Exception as e:
+        info["error"] = str(e)
+    return jsonify(info)
+
+
 # ── デイリーレポートメール ──────────────────────────────────────
 _last_report_sent: dict = {}
 _backup_check: dict = {}
