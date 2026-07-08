@@ -2,6 +2,7 @@ import os
 import io
 import base64
 import json
+import time
 import datetime
 import threading
 import smtplib
@@ -104,24 +105,68 @@ if _DATABASE_URL:
     _DATABASE_URL = _DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # 既定はSQLite。DATABASE_URLがあり、かつ実際に接続できたときだけPostgreSQLを使う。
+# 【重要】本番の顧客データはPostgreSQL(Neon)側にある。Neonはコールドスタートで
+# 起動直後の接続が失敗しやすいため、SQLiteへ即フォールバックすると空のローカルDBを
+# 見てしまい「履歴が全部消えた」ように見える。実際にはデータはNeonに残っているので、
+# ①起動時にリトライし、②起動後もPostgreSQLへ自動再接続（自己修復）する。
 USE_PG = False
 PH = "?"              # sqlite3 のプレースホルダ
+_PG_AVAILABLE = False  # psycopg2 が import できたか
+_last_pg_retry = 0.0
+
 if _DATABASE_URL:
     try:
         import psycopg2
-        _test = psycopg2.connect(_DATABASE_URL, connect_timeout=15)
-        _test.close()
-        USE_PG = True
-        PH = "%s"     # psycopg2 のプレースホルダ
-        print("[DB] PostgreSQL に接続しました")
+        _PG_AVAILABLE = True
     except Exception as _e:
-        # 期限切れ・接続不可のときは落とさずSQLiteで継続
-        print(f"[DB][WARN] PostgreSQL に接続できません。SQLiteで継続します: {_e}")
-        USE_PG = False
-        PH = "?"
+        print(f"[DB][WARN] psycopg2 を読み込めません。SQLiteで継続します: {_e}")
+
+
+def _try_connect_pg():
+    """PostgreSQL への接続を1回試す。成功したら接続を返し、失敗したら None。"""
+    global USE_PG, PH
+    if not (_DATABASE_URL and _PG_AVAILABLE):
+        return None
+    try:
+        conn = psycopg2.connect(_DATABASE_URL, connect_timeout=15)
+        if not USE_PG:
+            USE_PG = True
+            PH = "%s"     # psycopg2 のプレースホルダ
+            print("[DB] PostgreSQL に接続しました")
+        return conn
+    except Exception as _e:
+        print(f"[DB][WARN] PostgreSQL に接続できません: {_e}")
+        return None
+
+
+# 起動時：Neonのコールドスタートを見越して数回リトライしてから判断する
+if _DATABASE_URL and _PG_AVAILABLE:
+    _RETRY_WAITS = [1, 2, 4, 8, 12]   # 最後の試行後は待たない
+    for _attempt in range(len(_RETRY_WAITS) + 1):
+        _c = _try_connect_pg()
+        if _c is not None:
+            _c.close()
+            break
+        if _attempt < len(_RETRY_WAITS):
+            _wait = _RETRY_WAITS[_attempt]
+            print(f"[DB] PostgreSQL 再試行 {_attempt + 1}/{len(_RETRY_WAITS)}（{_wait}秒後）")
+            time.sleep(_wait)
+    if not USE_PG:
+        print("[DB][WARN] 起動時はPostgreSQLに接続できませんでした。"
+              "SQLiteで暫定継続し、以降のリクエストで自動再接続を試みます。")
 
 
 def _get_conn():
+    global _last_pg_retry
+    # まだPostgreSQLに繋がっていないが、DATABASE_URLはある場合、
+    # 一定間隔で自動再接続を試みる（Neonが後から起き上がっても実データへ復帰できる）。
+    if not USE_PG and _DATABASE_URL and _PG_AVAILABLE:
+        now = time.time()
+        if now - _last_pg_retry > 30:
+            _last_pg_retry = now
+            conn = _try_connect_pg()
+            if conn is not None:
+                return conn
     if USE_PG:
         return psycopg2.connect(_DATABASE_URL, connect_timeout=15)
     conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
@@ -1235,6 +1280,34 @@ def ping():
         _last_report_sent["date"] = now.date()
         threading.Thread(target=_send_daily_report, daemon=True).start()
     return "ok", 200
+
+
+@app.route("/db-status")
+def db_status():
+    """どのDBに接続中か・実データが見えているかを確認する診断用エンドポイント。
+    PostgreSQL(Neon)に繋がっていれば use_pg=true で件数も本番の値になる。
+    件数のみ返し、個人情報は返さない。"""
+    info = {"use_pg": USE_PG, "has_database_url": bool(_DATABASE_URL),
+            "psycopg2_available": _PG_AVAILABLE}
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            counts = {}
+            for tbl in ("daily_b_count", "daily_weight", "daily_exercise",
+                        "daily_meals", "user_profile"):
+                try:
+                    cur.execute(f"SELECT COUNT(*) FROM {tbl}")
+                    counts[tbl] = cur.fetchone()[0]
+                except Exception as _e:
+                    counts[tbl] = f"err: {_e}"
+            info["use_pg"] = USE_PG   # _get_conn 内で再接続した場合を反映
+            info["counts"] = counts
+        finally:
+            conn.close()
+    except Exception as e:
+        info["error"] = str(e)
+    return jsonify(info)
 
 
 # ── デイリーレポートメール ──────────────────────────────────────
