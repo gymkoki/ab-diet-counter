@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HYROX × リオールジム｜トレーナー募集</title>
+  <meta name="description" content="世界で急拡大するフィットネスレース『HYROX』。その魅力を伝え、ハイロックスに情熱を持つ若手をリオールジムのトレーナーとして募集します。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230B0B0F'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%23E8FE4C' font-family='sans-serif' font-weight='900'%3EH%3C/text%3E%3C/svg%3E">
+  <style>
+    :root{
+      --ink:#0B0B0F;
+      --ink2:#15151C;
+      --paper:#F5F5F2;
+      --muted:#6B6B76;
+      --line:#E4E4DE;
+      --accent:#E8FE4C;   /* HYROX調のライムイエロー */
+      --accent-d:#C7E000;
+      --card:#FFFFFF;
+      --shadow:0 10px 30px rgba(0,0,0,.08);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html{scroll-behavior:smooth;}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+      background:var(--paper);color:var(--ink);line-height:1.7;
+      -webkit-font-smoothing:antialiased;padding-bottom:88px;
+    }
+    a{color:inherit;text-decoration:none;}
+    .wrap{max-width:960px;margin:0 auto;padding:0 20px;}
+
+    /* ===== Header ===== */
+    header{
+      position:sticky;top:0;z-index:50;background:rgba(11,11,15,.92);
+      backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .head-inner{max-width:960px;margin:0 auto;display:flex;align-items:center;
+      justify-content:space-between;padding:14px 20px;}
+    .brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;
+      letter-spacing:.04em;font-size:18px;}
+    .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);
+      box-shadow:0 0 14px var(--accent);}
+    .brand small{display:block;font-size:10px;font-weight:600;color:var(--accent);
+      letter-spacing:.18em;margin-top:-2px;}
+    .head-cta{display:inline-block;background:var(--accent);color:var(--ink);
+      font-weight:800;font-size:13px;padding:9px 16px;border-radius:999px;}
+
+    /* ===== Tabs (ホームタブ) ===== */
+    .tabs{position:sticky;top:57px;z-index:40;background:var(--ink);
+      border-bottom:1px solid rgba(255,255,255,.08);}
+    .tabs-inner{max-width:960px;margin:0 auto;display:flex;overflow-x:auto;
+      scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+    .tabs-inner::-webkit-scrollbar{display:none;}
+    .tab{flex:0 0 auto;padding:14px 18px;color:#9A9AA6;font-weight:700;font-size:14px;
+      background:none;border:none;cursor:pointer;position:relative;white-space:nowrap;
+      font-family:inherit;transition:color .2s;}
+    .tab .ico{margin-right:6px;}
+    .tab[aria-selected="true"]{color:#fff;}
+    .tab[aria-selected="true"]::after{content:"";position:absolute;left:14px;right:14px;
+      bottom:0;height:3px;background:var(--accent);border-radius:3px 3px 0 0;}
+
+    /* ===== Panels ===== */
+    .panel{display:none;animation:fade .35s ease;}
+    .panel.active{display:block;}
+    @keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+    section{padding:52px 0;}
+    .eyebrow{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.22em;
+      color:var(--muted);text-transform:uppercase;margin-bottom:14px;}
+    h2{font-size:clamp(26px,5vw,38px);font-weight:900;letter-spacing:-.01em;line-height:1.25;}
+    h3{font-size:20px;font-weight:800;margin-bottom:8px;}
+    .lead{color:#3A3A44;font-size:17px;margin-top:14px;}
+
+    /* ===== Hero ===== */
+    .hero{background:var(--ink);color:#fff;padding:72px 0 64px;position:relative;overflow:hidden;}
+    .hero::before{content:"HYROX";position:absolute;right:-30px;bottom:-30px;
+      font-size:34vw;font-weight:900;color:rgba(255,255,255,.03);letter-spacing:-.04em;
+      pointer-events:none;line-height:.8;}
+    .hero .tag{display:inline-flex;align-items:center;gap:8px;background:rgba(232,254,76,.12);
+      color:var(--accent);border:1px solid rgba(232,254,76,.35);font-size:12px;font-weight:800;
+      letter-spacing:.14em;padding:7px 14px;border-radius:999px;margin-bottom:22px;}
+    .hero h1{font-size:clamp(34px,8vw,64px);font-weight:900;line-height:1.06;letter-spacing:-.02em;}
+    .hero h1 .hl{color:var(--accent);}
+    .hero p{color:#C7C7D0;font-size:clamp(16px,2.4vw,19px);margin-top:20px;max-width:600px;}
+    .hero-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px;}
+    .btn{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:15px;
+      padding:15px 26px;border-radius:999px;cursor:pointer;border:none;font-family:inherit;
+      transition:transform .15s,box-shadow .2s;}
+    .btn:active{transform:scale(.97);}
+    .btn-primary{background:var(--accent);color:var(--ink);box-shadow:0 8px 26px rgba(232,254,76,.3);}
+    .btn-ghost{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.28);}
+    .hero-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:46px;
+      max-width:520px;position:relative;z-index:1;}
+    .hero-stats .st{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);
+      border-radius:16px;padding:18px 14px;}
+    .hero-stats .num{font-size:26px;font-weight:900;color:var(--accent);}
+    .hero-stats .lbl{font-size:11px;color:#9A9AA6;margin-top:4px;letter-spacing:.04em;}
+
+    /* ===== Cards / grids ===== */
+    .grid{display:grid;gap:18px;margin-top:34px;}
+    .grid-2{grid-template-columns:repeat(2,1fr);}
+    .grid-3{grid-template-columns:repeat(3,1fr);}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;
+      padding:26px 24px;box-shadow:var(--shadow);}
+    .card .ic{width:46px;height:46px;border-radius:12px;background:var(--ink);color:var(--accent);
+      display:grid;place-items:center;font-size:22px;margin-bottom:16px;}
+
+    /* ===== Stations list ===== */
+    .stations{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:34px;}
+    .station{display:flex;gap:14px;background:var(--card);border:1px solid var(--line);
+      border-radius:16px;padding:18px 18px;box-shadow:var(--shadow);}
+    .station .n{flex:0 0 auto;width:40px;height:40px;border-radius:11px;background:var(--accent);
+      color:var(--ink);font-weight:900;display:grid;place-items:center;font-size:16px;}
+    .station b{display:block;font-size:16px;}
+    .station span{font-size:13px;color:var(--muted);}
+    .run-note{margin-top:18px;background:var(--ink);color:#fff;border-radius:16px;padding:20px 22px;
+      display:flex;align-items:center;gap:14px;}
+    .run-note .big{font-size:30px;font-weight:900;color:var(--accent);}
+
+    /* ===== Steps / timeline ===== */
+    .flow{margin-top:34px;display:grid;gap:0;}
+    .flow .step{display:flex;gap:18px;padding-bottom:26px;position:relative;}
+    .flow .step:not(:last-child)::before{content:"";position:absolute;left:19px;top:44px;bottom:0;
+      width:2px;background:var(--line);}
+    .flow .step .b{flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--ink);
+      color:var(--accent);font-weight:900;display:grid;place-items:center;z-index:1;}
+
+    /* ===== Recruit highlights ===== */
+    .perks{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:34px;}
+    .perk{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 20px;
+      box-shadow:var(--shadow);}
+    .perk .e{font-size:26px;}
+    .perk b{display:block;margin:10px 0 6px;font-size:16px;}
+    .perk p{font-size:14px;color:var(--muted);}
+
+    .want-list{list-style:none;margin-top:28px;display:grid;gap:12px;}
+    .want-list li{display:flex;gap:12px;align-items:flex-start;background:var(--card);
+      border:1px solid var(--line);border-radius:14px;padding:16px 18px;font-weight:600;}
+    .want-list .ck{flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:var(--accent);
+      color:var(--ink);display:grid;place-items:center;font-weight:900;font-size:15px;}
+    .want-list small{display:block;font-weight:400;color:var(--muted);margin-top:2px;font-size:13px;}
+
+    /* ===== Callout / band ===== */
+    .band{background:var(--accent);border-radius:24px;padding:44px 32px;margin-top:20px;text-align:center;}
+    .band h2{letter-spacing:-.01em;}
+    .band p{color:#2E340A;margin-top:14px;font-weight:600;}
+    .band .btn-primary{background:var(--ink);color:#fff;margin-top:26px;box-shadow:0 10px 30px rgba(0,0,0,.25);}
+
+    /* ===== FAQ ===== */
+    .faq{margin-top:30px;display:grid;gap:12px;}
+    details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:4px 20px;}
+    summary{cursor:pointer;list-style:none;padding:18px 0;font-weight:800;font-size:16px;
+      display:flex;justify-content:space-between;align-items:center;gap:12px;}
+    summary::-webkit-details-marker{display:none;}
+    summary::after{content:"+";font-size:22px;color:var(--accent-d);font-weight:900;transition:.2s;}
+    details[open] summary::after{transform:rotate(45deg);}
+    details p{padding-bottom:20px;color:#3A3A44;}
+
+    /* ===== Apply form ===== */
+    .form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px 26px;
+      box-shadow:var(--shadow);margin-top:30px;}
+    .field{margin-bottom:18px;}
+    .field label{display:block;font-weight:700;font-size:14px;margin-bottom:7px;}
+    .field label .req{color:#E5484D;font-size:12px;margin-left:5px;}
+    .field input,.field select,.field textarea{width:100%;padding:13px 15px;border:1.5px solid var(--line);
+      border-radius:12px;font-size:16px;font-family:inherit;outline:none;background:#FBFBF9;transition:border .2s;}
+    .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--ink);}
+    .field textarea{min-height:120px;resize:vertical;}
+    .contact-alt{margin-top:26px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+    .contact-alt a{background:var(--ink);color:#fff;border-radius:14px;padding:16px;text-align:center;
+      font-weight:800;font-size:14px;display:flex;flex-direction:column;gap:4px;align-items:center;}
+    .contact-alt a small{font-weight:400;color:#9A9AA6;font-size:12px;}
+    .note{font-size:13px;color:var(--muted);margin-top:14px;}
+
+    /* ===== Footer ===== */
+    footer{background:var(--ink);color:#9A9AA6;text-align:center;padding:40px 20px;margin-top:20px;}
+    footer .brand{justify-content:center;margin-bottom:12px;}
+    footer small{font-size:12px;}
+
+    /* ===== Bottom nav (mobile ホームタブ) ===== */
+    .bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(11,11,15,.96);
+      backdrop-filter:blur(10px);border-top:1px solid rgba(255,255,255,.08);display:flex;
+      padding:8px 6px calc(8px + env(safe-area-inset-bottom));}
+    .bottomnav button{flex:1;background:none;border:none;color:#8A8A96;font-family:inherit;
+      font-size:10.5px;font-weight:700;cursor:pointer;padding:6px 2px;display:flex;flex-direction:column;
+      align-items:center;gap:3px;transition:color .2s;}
+    .bottomnav button .bi{font-size:19px;line-height:1;}
+    .bottomnav button[aria-selected="true"]{color:var(--accent);}
+
+    @media(max-width:720px){
+      .grid-2,.grid-3,.stations,.perks{grid-template-columns:1fr;}
+      .hero-stats{grid-template-columns:repeat(3,1fr);gap:8px;}
+      .hero-stats .num{font-size:20px;}
+      .contact-alt{grid-template-columns:1fr;}
+      .tabs{display:none;} /* モバイルは下部ナビをホームタブとして使用 */
+      header{position:static;}
+    }
+    @media(min-width:721px){ .bottomnav{display:none;} body{padding-bottom:0;} }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="head-inner">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>リオールジム<small>HYROX TRAINER RECRUIT</small></div>
+    </div>
+    <a class="head-cta" href="#" onclick="go('apply');return false;">応募する</a>
+  </div>
+</header>
+
+<!-- ホームタブを含むタブナビ -->
+<nav class="tabs" role="tablist" aria-label="サイトナビ">
+  <div class="tabs-inner">
+    <button class="tab" role="tab" data-tab="home"     aria-selected="true"><span class="ico">🏠</span>ホーム</button>
+    <button class="tab" role="tab" data-tab="about"    aria-selected="false"><span class="ico">🔥</span>HYROXとは</button>
+    <button class="tab" role="tab" data-tab="stations" aria-selected="false"><span class="ico">🏋️</span>8つの種目</button>
+    <button class="tab" role="tab" data-tab="recruit"  aria-selected="false"><span class="ico">💪</span>トレーナー募集</button>
+    <button class="tab" role="tab" data-tab="apply"    aria-selected="false"><span class="ico">✉️</span>応募する</button>
+  </div>
+</nav>
+
+<main>
+
+<!-- ================= HOME ================= -->
+<div class="panel active" id="home" role="tabpanel">
+  <div class="hero">
+    <div class="wrap">
+      <span class="tag">● 世界が熱狂するフィットネスレース</span>
+      <h1>ハイロックスと生きる。<br><span class="hl">その熱を、仕事にする。</span></h1>
+      <p>走る。押す。運ぶ。8種目 × 8km——世界で最も熱いフィットネスレース「HYROX」。
+        その魅力に本気で惹かれた若手を、リオールジムは<b style="color:#fff;">トレーナー</b>として迎えます。</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" onclick="go('recruit')">募集内容を見る →</button>
+        <button class="btn btn-ghost" onclick="go('about')">HYROXって何？</button>
+      </div>
+      <div class="hero-stats">
+        <div class="st"><div class="num">8+8</div><div class="lbl">ラン × 種目</div></div>
+        <div class="st"><div class="num">65万+</div><div class="lbl">世界の年間参加者</div></div>
+        <div class="st"><div class="num">未経験<br>OK</div><div class="lbl">情熱があれば</div></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="wrap">
+    <span class="eyebrow">Why now</span>
+    <h2>いま、ハイロックスの波が来ている。</h2>
+    <p class="lead">2017年にドイツで生まれたHYROXは、いまや世界中の都市で開催され、参加者は爆発的に増加中。
+      日本でも大会が開催され、「みんなで挑む本気のフィットネス」として一気に広がりつつあります。
+      この成長市場で、選手として、そして指導者として活躍できるトレーナーを育てたい。それがリオールジムの想いです。</p>
+
+    <div class="grid grid-3">
+      <div class="card"><div class="ic">🌍</div><h3>成長市場</h3>
+        <p>世界の主要都市に拡大中。日本でもコミュニティが急成長し、指導者の需要が高まっています。</p></div>
+      <div class="card"><div class="ic">🎯</div><h3>明確なゴール</h3>
+        <p>「完走」「自己ベスト」——結果が数字で出るから、指導のやりがいも成果もはっきり見える。</p></div>
+      <div class="card"><div class="ic">🤝</div><h3>仲間と挑む</h3>
+        <p>個人にも、ペアにも、チームにもなれる競技。人と繋がる仕事がしたい人にぴったりです。</p></div>
+    </div>
+  </section>
+
+  <section class="wrap" style="padding-top:0;">
+    <div class="band">
+      <h2>ハイロックスが好きなら、<br>その気持ちが最大の資格です。</h2>
+      <p>経験より、情熱と伸びしろ。リオールジムで、指導する側へ。</p>
+      <button class="btn btn-primary" onclick="go('recruit')">トレーナー募集を見る</button>
+    </div>
+  </section>
+</div>
+
+<!-- ================= ABOUT ================= -->
+<div class="panel" id="about" role="tabpanel">
+  <section class="wrap">
+    <span class="eyebrow">What is HYROX</span>
+    <h2>HYROX（ハイロックス）とは？</h2>
+    <p class="lead">HYROXは、<b>ランニング</b>と<b>機能的なワークアウト</b>を組み合わせた、
+      誰もが同じルールで挑める世界共通のフィットネスレース。屋内会場で開催され、
+      年齢や競技レベルを問わず「自分との勝負」に挑めるのが最大の魅力です。</p>
+
+    <div class="run-note">
+      <div class="big">1km × 8</div>
+      <div>ランニング1kmと、その合間に行う<b style="color:#fff;">8種目のワークアウト</b>を交互にこなし、
+        合計タイムを競います。走力・筋力・持久力・メンタル——すべてが試される総合競技です。</div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card"><div class="ic">📅</div><h3>2017年、ドイツ発</h3>
+        <p>ハンブルクで誕生。以降ヨーロッパ・北米・アジアへと爆発的に拡大し、
+          世界各地の都市でシーズンを通して大会が行われています。</p></div>
+      <div class="card"><div class="ic">👥</div><h3>誰でも同じ土俵で</h3>
+        <p>会場もルールも世界共通。だから初心者からエリートまで、
+          男女・年代別・ペア・リレーなど多彩なカテゴリーで挑戦できます。</p></div>
+      <div class="card"><div class="ic">📈</div><h3>数字で伸びが見える</h3>
+        <p>タイムという明確な指標があるから、トレーニングの成果がはっきり。
+          「次はもっと速く」がモチベーションになります。</p></div>
+      <div class="card"><div class="ic">🔥</div><h3>ジムトレと相性抜群</h3>
+        <p>特別な技術より、正しいフォームと基礎体力が鍵。
+          日々のジムワークがそのまま競技力に直結します。</p></div>
+    </div>
+
+    <div style="margin-top:34px;text-align:center;">
+      <button class="btn btn-primary" onclick="go('stations')" style="background:var(--ink);color:#fff;">8つの種目を見る →</button>
+    </div>
+  </section>
+</div>
+
+<!-- ================= STATIONS ================= -->
+<div class="panel" id="stations" role="tabpanel">
+  <section class="wrap">
+    <span class="eyebrow">8 Workouts</span>
+    <h2>8つの種目 × 8kmのラン</h2>
+    <p class="lead">1kmのランを走るたびに、次のワークアウトが待っている。
+      この8種目を順番に、途切れず攻略していくのがHYROX。指導するトレーナーには、
+      各種目のフォームと戦略への理解が求められます。</p>
+
+    <div class="stations">
+      <div class="station"><div class="n">1</div><div><b>スキーエルグ</b><span>1,000m｜全身を使う有酸素の入り口</span></div></div>
+      <div class="station"><div class="n">2</div><div><b>スレッドプッシュ</b><span>50m｜重量ソリを押す下半身の爆発力</span></div></div>
+      <div class="station"><div class="n">3</div><div><b>スレッドプル</b><span>50m｜ソリを引き寄せる背中と握力</span></div></div>
+      <div class="station"><div class="n">4</div><div><b>バーピー・ブロードジャンプ</b><span>80m｜全身持久力の壁</span></div></div>
+      <div class="station"><div class="n">5</div><div><b>ローイング</b><span>1,000m｜心肺を追い込む漕ぎ</span></div></div>
+      <div class="station"><div class="n">6</div><div><b>ファーマーズキャリー</b><span>200m｜重りを運ぶ体幹と握力</span></div></div>
+      <div class="station"><div class="n">7</div><div><b>サンドバッグランジ</b><span>100m｜担いで歩く脚の地獄</span></div></div>
+      <div class="station"><div class="n">8</div><div><b>ウォールボール</b><span>75/100回｜最後を締める全身反復</span></div></div>
+    </div>
+
+    <div class="run-note" style="margin-top:24px;">
+      <div class="big">= 8km</div>
+      <div>各種目の前後に1kmずつ、合計<b style="color:#fff;">8kmを走破</b>。
+        走力と筋持久力、そして「止まらない心」が問われます。</div>
+    </div>
+    <p class="note">※ 距離・回数・重量はカテゴリー（男女・年代・ペア等）により異なります。</p>
+  </section>
+</div>
+
+<!-- ================= RECRUIT ================= -->
+<div class="panel" id="recruit" role="tabpanel">
+  <section class="wrap">
+    <span class="eyebrow">Trainer Recruit</span>
+    <h2>リオールジムで、<br>ハイロックスを教える人になろう。</h2>
+    <p class="lead">私たちが探しているのは、完成されたベテランではありません。
+      <b>ハイロックスに本気で惹かれ、これから伸びていきたい若手</b>です。
+      指導スキルは入ってから磨けばいい。まずはその情熱を、リオールジムで形にしませんか。</p>
+
+    <span class="eyebrow" style="display:block;margin-top:44px;">こんな人を待っています</span>
+    <ul class="want-list">
+      <li><span class="ck">✓</span><div>ハイロックスやフィットネスが好きで、その魅力を人に伝えたい人<small>「好き」を仕事にしたい気持ちが一番の強み。</small></div></li>
+      <li><span class="ck">✓</span><div>自分もトレーニングを続けていきたい20〜30代の若手<small>選手として挑戦しながら、指導者として成長できます。</small></div></li>
+      <li><span class="ck">✓</span><div>人と関わること・誰かを応援することが好きな人<small>会員さんの「できた！」を一緒に喜べる仕事です。</small></div></li>
+      <li><span class="ck">✓</span><div>未経験でも、素直に学び挑戦し続けられる人<small>研修とサポート体制があるので、経験ゼロからでも安心。</small></div></li>
+    </ul>
+
+    <span class="eyebrow" style="display:block;margin-top:48px;">リオールジムで働く魅力</span>
+    <div class="perks">
+      <div class="perk"><div class="e">🎓</div><b>未経験から育てる研修</b><p>トレーニング理論からハイロックス種目の指導法まで、基礎から学べる環境を用意しています。</p></div>
+      <div class="perk"><div class="e">🏆</div><b>選手としても挑戦</b><p>スタッフの大会出場を応援。教えるだけでなく、自分自身も競技者として成長できます。</p></div>
+      <div class="perk"><div class="e">🕒</div><b>柔軟な働き方</b><p>学生・フリーター・副業からのスタートもOK。ライフスタイルに合わせて相談可能です。</p></div>
+      <div class="perk"><div class="e">🚀</div><b>成長市場の先駆者に</b><p>これから伸びるハイロックス領域で、早くから経験を積める。キャリアの武器になります。</p></div>
+    </div>
+
+    <span class="eyebrow" style="display:block;margin-top:48px;">応募から採用までの流れ</span>
+    <div class="flow">
+      <div class="step"><div class="b">1</div><div><h3>応募</h3><p>「応募する」タブのフォーム、またはSNS・メールからご連絡ください。経歴書は不要です。</p></div></div>
+      <div class="step"><div class="b">2</div><div><h3>カジュアル面談</h3><p>まずは気軽にお話ししましょう。ハイロックスへの想いや、これからやりたいことを聞かせてください。</p></div></div>
+      <div class="step"><div class="b">3</div><div><h3>体験・見学</h3><p>実際のジムやトレーニングを体験。雰囲気を確かめてから決められます。</p></div></div>
+      <div class="step"><div class="b">4</div><div><h3>採用・研修スタート</h3><p>お互いに納得できたら採用。研修を経て、トレーナーデビューです。</p></div></div>
+    </div>
+
+    <div class="band" style="margin-top:44px;">
+      <h2>その情熱、リオールジムで。</h2>
+      <p>迷っているなら、まずは話を聞きに来てください。</p>
+      <button class="btn btn-primary" onclick="go('apply')">応募・お問い合わせへ</button>
+    </div>
+
+    <span class="eyebrow" style="display:block;margin-top:48px;">よくある質問</span>
+    <div class="faq">
+      <details><summary>トレーナー未経験でも大丈夫ですか？</summary><p>はい、大歓迎です。私たちが重視するのは経験より情熱と伸びしろ。研修とサポート体制があるので、未経験からスタートした先輩もいます。</p></details>
+      <details><summary>ハイロックスに出たことがなくても応募できますか？</summary><p>もちろんOKです。「これから挑戦したい」「興味がある」という気持ちがあれば十分。指導しながら自分も選手として成長していけます。</p></details>
+      <details><summary>資格は必要ですか？</summary><p>必須の資格はありません。働きながら学び、必要に応じて資格取得を目指すこともできます。</p></details>
+      <details><summary>学生や副業でも応募できますか？</summary><p>可能です。勤務時間や働き方は柔軟に相談できますので、まずはお気軽にご連絡ください。</p></details>
+    </div>
+  </section>
+</div>
+
+<!-- ================= APPLY ================= -->
+<div class="panel" id="apply" role="tabpanel">
+  <section class="wrap">
+    <span class="eyebrow">Apply</span>
+    <h2>応募・お問い合わせ</h2>
+    <p class="lead">下のフォームに入力して送信すると、メールアプリが立ち上がります。
+      SNSやメールから直接ご連絡いただいてもかまいません。まずは気軽に一歩を。</p>
+
+    <form class="form" id="applyForm" onsubmit="return submitApply(event)">
+      <div class="field">
+        <label>お名前 <span class="req">必須</span></label>
+        <input type="text" id="f-name" required placeholder="山田 太郎">
+      </div>
+      <div class="field">
+        <label>年齢</label>
+        <input type="text" id="f-age" placeholder="24">
+      </div>
+      <div class="field">
+        <label>連絡先（メール／電話／SNS） <span class="req">必須</span></label>
+        <input type="text" id="f-contact" required placeholder="example@mail.com / Instagram @... など">
+      </div>
+      <div class="field">
+        <label>ハイロックス・トレーニング経験</label>
+        <select id="f-exp">
+          <option value="未経験・興味がある段階">未経験・興味がある段階</option>
+          <option value="自分でトレーニングしている">自分でトレーニングしている</option>
+          <option value="ハイロックス出場経験あり">ハイロックス出場経験あり</option>
+          <option value="指導経験あり">指導経験あり</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>応募のきっかけ・意気込み</label>
+        <textarea id="f-msg" placeholder="ハイロックスやトレーナーの仕事に興味を持った理由を教えてください。"></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit" style="width:100%;justify-content:center;">この内容で応募する ✉️</button>
+      <p class="note">※ 送信ボタンでメールアプリが起動します。うまく開かない場合は、下の連絡先へ直接ご連絡ください。</p>
+    </form>
+
+    <div class="contact-alt">
+      <a href="mailto:recruit@example.com"><span>📧 メール</span><small>recruit@example.com</small></a>
+      <a href="#" onclick="alert('公式Instagramアカウントを設定してください');return false;"><span>📸 Instagram</span><small>@riall_gym</small></a>
+      <a href="#" onclick="alert('公式LINEを設定してください');return false;"><span>💬 LINE</span><small>友だち追加でDM</small></a>
+      <a href="tel:000-0000-0000"><span>📞 電話</span><small>000-0000-0000</small></a>
+    </div>
+    <p class="note">※ メール・Instagram・LINE・電話番号は、リオールジムの実際の連絡先に差し替えてください。</p>
+  </section>
+</div>
+
+</main>
+
+<footer>
+  <div class="brand"><span class="dot"></span><div style="color:#fff;">リオールジム<small>HYROX TRAINER RECRUIT</small></div></div>
+  <small>ハイロックスに情熱を持つ若手トレーナーを募集しています。<br>© <span id="yr"></span> リオールジム</small>
+</footer>
+
+<!-- モバイル用ホームタブ（下部ナビ） -->
+<nav class="bottomnav" role="tablist" aria-label="モバイルナビ">
+  <button data-tab="home" aria-selected="true"><span class="bi">🏠</span>ホーム</button>
+  <button data-tab="about" aria-selected="false"><span class="bi">🔥</span>HYROX</button>
+  <button data-tab="stations" aria-selected="false"><span class="bi">🏋️</span>種目</button>
+  <button data-tab="recruit" aria-selected="false"><span class="bi">💪</span>募集</button>
+  <button data-tab="apply" aria-selected="false"><span class="bi">✉️</span>応募</button>
+</nav>
+
+<script>
+  const tabs = document.querySelectorAll('[data-tab]');
+  const panels = document.querySelectorAll('.panel');
+  function go(name){
+    panels.forEach(p=>p.classList.toggle('active', p.id===name));
+    tabs.forEach(t=>t.setAttribute('aria-selected', t.dataset.tab===name));
+    window.scrollTo({top:0,behavior:'smooth'});
+    if(history.replaceState) history.replaceState(null,'','#'+name);
+  }
+  tabs.forEach(t=>t.addEventListener('click',()=>go(t.dataset.tab)));
+
+  // ハッシュで直接開けるように
+  const initial = (location.hash||'').replace('#','');
+  if(initial && document.getElementById(initial)) go(initial);
+
+  document.getElementById('yr').textContent = new Date().getFullYear();
+
+  function submitApply(e){
+    e.preventDefault();
+    const g = id => (document.getElementById(id).value||'').trim();
+    const body =
+`リオールジム トレーナー応募
+
+お名前：${g('f-name')}
+年齢：${g('f-age')}
+連絡先：${g('f-contact')}
+経験：${g('f-exp')}
+
+きっかけ・意気込み：
+${g('f-msg')}`;
+    const subject = 'トレーナー応募（HYROX）｜' + (g('f-name')||'応募');
+    window.location.href = 'mailto:recruit@example.com'
+      + '?subject=' + encodeURIComponent(subject)
+      + '&body=' + encodeURIComponent(body);
+    return false;
+  }
+</script>
+</body>
+</html>

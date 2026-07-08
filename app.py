@@ -765,6 +765,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/recruit")
+def recruit():
+    """HYROXトレーナー募集サイト（ホームタブ付きマルチタブ構成）"""
+    return render_template("recruit.html")
+
+
 @app.route("/admin")
 @_admin_required
 def admin():
