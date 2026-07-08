@@ -326,6 +326,87 @@ except Exception as _e:
     # DB初期化に失敗してもアプリ自体は起動させる（記録は端末側にも保存されている）
     print(f"[DB][WARN] init_db に失敗しました: {_e}")
 
+
+_backfill_done = False
+
+
+def _parse_meal_payload_total(payload):
+    """daily_meals の payload から、その日の食事Bカウント合計を算出する。
+    payload = { mealKey: { items: [ { result: { total_b_count: N } } ] } }。
+    旧データの複数食事キー（breakfast/lunch/...）も合算する。"""
+    try:
+        data = json.loads(payload) if isinstance(payload, str) else payload
+    except Exception:
+        return 0.0
+    if not isinstance(data, dict):
+        return 0.0
+    total = 0.0
+    for _mk, mv in data.items():
+        if not isinstance(mv, dict):
+            continue
+        items = mv.get("items")
+        if not isinstance(items, list):
+            continue
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            res = it.get("result")
+            if isinstance(res, dict) and res.get("total_b_count") is not None:
+                try:
+                    total += float(res.get("total_b_count") or 0)
+                except (TypeError, ValueError):
+                    pass
+    return total
+
+
+def backfill_bcount_from_meals():
+    """障害で取りこぼした日ごとのBカウントを、食事明細(daily_meals)から再計算して復元する。
+    既存の daily_b_count は上書きせず、まだ無い(user_id, date)だけを補完する（非破壊）。
+    PostgreSQL(本番データ)に接続しているときだけ実行する。"""
+    global _backfill_done
+    if _backfill_done or not USE_PG:
+        return
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, date, payload FROM daily_meals")
+            meal_rows = cur.fetchall()
+            cur.execute("SELECT user_id, date, ex_b_count FROM daily_exercise")
+            ex_map = {(r[0], r[1]): (r[2] or 0) for r in cur.fetchall()}
+            cur.execute("SELECT user_id, date FROM daily_b_count")
+            existing = {(r[0], r[1]) for r in cur.fetchall()}
+            ts = datetime.datetime.now(JST).isoformat()
+            inserted = 0
+            for uid, date, payload in meal_rows:
+                if (uid, date) in existing:
+                    continue  # 既存の値は尊重して上書きしない
+                food_total = _parse_meal_payload_total(payload)
+                if food_total <= 0:
+                    continue
+                net = max(0.0, food_total - float(ex_map.get((uid, date), 0) or 0))
+                cur.execute(
+                    f"""INSERT INTO daily_b_count (user_id, date, b_count, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH})
+                        ON CONFLICT (user_id, date) DO NOTHING""",
+                    (uid, date, net, ts),
+                )
+                inserted += 1
+            conn.commit()
+            print(f"[BACKFILL] 食事明細から {inserted} 件のBカウント履歴を復元しました")
+        finally:
+            conn.close()
+        _backfill_done = True
+    except Exception as _e:
+        print(f"[BACKFILL][WARN] Bカウント履歴の復元に失敗: {_e}")
+
+
+# 起動時、本番DBに繋がっていれば取りこぼし分を自動復元する
+try:
+    backfill_bcount_from_meals()
+except Exception as _e:
+    print(f"[BACKFILL][WARN] 起動時復元に失敗: {_e}")
+
 # ── 管理者認証 ──────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
 
@@ -1288,7 +1369,7 @@ def db_status():
     PostgreSQL(Neon)に繋がっていれば use_pg=true で件数も本番の値になる。
     件数のみ返し、個人情報は返さない。"""
     info = {"use_pg": USE_PG, "has_database_url": bool(_DATABASE_URL),
-            "psycopg2_available": _PG_AVAILABLE}
+            "psycopg2_available": _PG_AVAILABLE, "backfill_done": _backfill_done}
     try:
         conn = _get_conn()
         try:
@@ -1866,6 +1947,10 @@ def get_monthly_b():
     uid = request.args.get("user_id", "")
     if not uid:
         return jsonify({"total": 0, "days_count": 0, "daily": [], "date_start": "", "date_end": ""})
+
+    # 起動時にPostgreSQLへ繋がっていなかった場合でも、履歴表示時に一度だけ復元を試みる
+    if not _backfill_done and USE_PG:
+        backfill_bcount_from_meals()
 
     now = datetime.datetime.now(JST)
     date_end   = now.strftime("%Y-%m-%d")
