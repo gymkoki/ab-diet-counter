@@ -2,6 +2,9 @@ name: DB Status Check
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/db-check.yml'
 
 jobs:
   check:
@@ -9,14 +12,25 @@ jobs:
     steps:
       - name: Wake server and query DB status
         run: |
-          echo "=== warming up (Render cold start) ==="
-          for i in 1 2 3 4 5 6; do
+          echo "=== warming up (Render cold start / deploy in progress) ==="
+          for i in $(seq 1 18); do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://ab-diet-counter.onrender.com/ping || echo "000")
             echo "ping attempt $i -> HTTP $code"
             if [ "$code" = "200" ]; then break; fi
             sleep 10
           done
-          echo "=== /db-status ==="
-          curl -s --max-time 60 https://ab-diet-counter.onrender.com/db-status | tee db-status.json
-          echo
-          echo "=== done ==="
+          echo "=== /db-status (retry until use_pg appears) ==="
+          for i in $(seq 1 18); do
+            body=$(curl -s --max-time 60 https://ab-diet-counter.onrender.com/db-status || echo "")
+            echo "--- attempt $i ---"
+            echo "$body"
+            if echo "$body" | grep -q '"use_pg"'; then
+              if echo "$body" | grep -q '"use_pg": *true'; then
+                echo ">>> RESULT: connected to PostgreSQL (Neon). Data should be restored."
+                exit 0
+              fi
+              echo ">>> still on SQLite; waiting for auto-reconnect..."
+            fi
+            sleep 10
+          done
+          echo ">>> RESULT: did not confirm PostgreSQL connection within the wait window."
