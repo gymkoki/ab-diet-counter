@@ -19,18 +19,18 @@ jobs:
             if [ "$code" = "200" ]; then break; fi
             sleep 10
           done
-          echo "=== /db-status (retry until use_pg appears) ==="
-          for i in $(seq 1 18); do
+          echo "=== /db-status (wait for new deploy + backfill) ==="
+          last=""
+          for i in $(seq 1 30); do
             body=$(curl -s --max-time 60 https://ab-diet-counter.onrender.com/db-status || echo "")
             echo "--- attempt $i ---"
             echo "$body"
-            if echo "$body" | grep -q '"use_pg"'; then
-              if echo "$body" | grep -q '"use_pg": *true'; then
-                echo ">>> RESULT: connected to PostgreSQL (Neon). Data should be restored."
-                exit 0
-              fi
-              echo ">>> still on SQLite; waiting for auto-reconnect..."
+            last="$body"
+            if echo "$body" | grep -q '"backfill_done": *true'; then
+              echo ">>> RESULT: new build live, backfill complete. See daily_b_count above."
+              exit 0
             fi
-            sleep 10
+            sleep 12
           done
-          echo ">>> RESULT: did not confirm PostgreSQL connection within the wait window."
+          echo ">>> last response: $last"
+          echo ">>> RESULT: did not observe backfill_done=true within the wait window."
