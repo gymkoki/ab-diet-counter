@@ -544,7 +544,7 @@
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
       <div style="display:flex;gap:10px">
         <span style="font-size:20px;flex-shrink:0">🥩</span>
-        <span>写真から推定タンパク質(g)を計算し、1日の目標(g)と一緒に記録欄に表示するようにしました。目標は体重×1gを目安にしています。</span>
+        <span>写真から推定タンパク質(g)を計算し、1日の目標(g)と一緒に記録欄に表示するようにしました。目標は体重×1.2〜1.6gを目安にしています。</span>
       </div>
     </div>
     <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -833,7 +833,7 @@ function updateDailyTotal() {
     if (proteinTotal > 0) {
       pTotal.textContent = `${Math.round(proteinTotal)}g`;
       const pTarget = getProteinTarget();
-      pTgtEl.textContent = pTarget ? ` / 目標 ${pTarget}g` : '';
+      pTgtEl.textContent = pTarget ? ` / 目標 ${pTarget.min}〜${pTarget.max}g` : '';
       pbar.style.display = '';
     } else {
       pbar.style.display = 'none';
@@ -848,12 +848,12 @@ function mealProtein(r) {
   return (r.foods || []).reduce((s, f) => s + (f.protein_g || 0), 0);
 }
 
-// 1日のタンパク質目標(g)。ひとまず体重×1g/日を目安にする（体重未設定ならnull）。
+// 1日のタンパク質目標(g)。体重×1.2〜1.6g/日の幅を持たせる（体重未設定ならnull）。
 function getProteinTarget() {
   const p = getProfile();
   const w = p && p.weight ? parseFloat(p.weight) : null;
   if (!w || w <= 0) return null;
-  return Math.round(w * 1);
+  return { min: Math.round(w * 1.2), max: Math.round(w * 1.6) };
 }
 
 // ═══════════════════════════════════════════
@@ -2463,7 +2463,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v13';
+const NOTICE_KEY = 'ab-diet-notice-v14';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
