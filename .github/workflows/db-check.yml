@@ -1,0 +1,37 @@
+name: DB Status Check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/db-check.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose B-count visibility
+        run: |
+          echo "=== warming up ==="
+          for i in $(seq 1 18); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://ab-diet-counter.onrender.com/ping || echo "000")
+            echo "ping $i -> $code"
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+          echo "=== wait for new build (diag-bcount available) ==="
+          for i in $(seq 1 30); do
+            body=$(curl -s --max-time 60 https://ab-diet-counter.onrender.com/diag-bcount || echo "")
+            if echo "$body" | grep -q '"b_by_user"'; then
+              echo "$body"
+              break
+            fi
+            echo "attempt $i: not ready yet"
+            sleep 12
+          done
+          echo "=== frontend deployed? (look for BCOUNT_LOG_KEY marker) ==="
+          if curl -s --max-time 60 https://ab-diet-counter.onrender.com/ | grep -q "BCOUNT_LOG_KEY"; then
+            echo "FRONTEND: new code present (BCOUNT_LOG_KEY found)"
+          else
+            echo "FRONTEND: marker NOT found (old template still served)"
+          fi
