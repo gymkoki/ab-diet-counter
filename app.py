@@ -1854,6 +1854,47 @@ def download_backup():
     )
 
 
+@app.route("/admin/restore", methods=["GET"])
+@_admin_required
+def restore_page():
+    """ブラウザからバックアップファイルをアップロードして復元する画面（コマンド操作不要）。"""
+    html = """<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>データ復元</title>
+<style>
+ body{font-family:sans-serif;max-width:560px;margin:40px auto;padding:0 16px;line-height:1.7;color:#222}
+ h1{font-size:20px}.card{border:1px solid #ddd;border-radius:12px;padding:20px;margin-top:16px}
+ input[type=file]{margin:12px 0}
+ button{background:#FF6B35;color:#fff;border:0;border-radius:8px;padding:12px 20px;font-size:16px;font-weight:700}
+ .note{color:#6B7280;font-size:13px}#result{white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:12px;margin-top:12px;display:none}
+</style></head><body>
+<h1>📥 データ復元</h1>
+<p class="note">バックアップファイル（ab-diet-backup-*.json.gz）を選んで「復元する」を押してください。
+既存のデータは上書きされず、足りない分だけ復元されます。</p>
+<div class="card">
+  <form id="f">
+    <input type="file" id="file" accept=".gz,.json" required><br>
+    <button type="submit">復元する</button>
+  </form>
+  <div id="result"></div>
+</div>
+<script>
+document.getElementById('f').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fi=document.getElementById('file'); const r=document.getElementById('result');
+  if(!fi.files[0]){return;}
+  r.style.display='block'; r.textContent='復元中…';
+  const fd=new FormData(); fd.append('file', fi.files[0]);
+  try{
+    const res=await fetch('/admin/restore-backup',{method:'POST',body:fd});
+    const j=await res.json();
+    r.textContent = res.ok ? ('✅ 復元しました\\n'+JSON.stringify(j.restored,null,2)) : ('⚠️ '+(j.error||'失敗'));
+  }catch(err){ r.textContent='⚠️ 通信エラー: '+err; }
+});
+</script></body></html>"""
+    return Response(html, mimetype="text/html")
+
+
 @app.route("/admin/restore-backup", methods=["POST"])
 @_admin_required
 def restore_backup():
