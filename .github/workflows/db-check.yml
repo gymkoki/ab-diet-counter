@@ -1,0 +1,22 @@
+name: DB Status Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake server and query DB status
+        run: |
+          echo "=== warming up (Render cold start) ==="
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://ab-diet-counter.onrender.com/ping || echo "000")
+            echo "ping attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 10
+          done
+          echo "=== /db-status ==="
+          curl -s --max-time 60 https://ab-diet-counter.onrender.com/db-status | tee db-status.json
+          echo
+          echo "=== done ==="
