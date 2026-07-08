@@ -1371,31 +1371,6 @@ def ping():
     return "ok", 200
 
 
-@app.route("/db-status")
-def db_status():
-    """【一時確認用】各テーブルの件数・日付範囲を返す。確認後に削除する。"""
-    info = {"use_pg": USE_PG}
-    try:
-        conn = _get_conn()
-        try:
-            counts = {}
-            for tbl in ("daily_b_count", "daily_weight", "daily_meals", "daily_exercise"):
-                cur = conn.cursor()
-                try:
-                    cur.execute(f"SELECT COUNT(*), MIN(date), MAX(date) FROM {tbl}")
-                    r = cur.fetchone()
-                    counts[tbl] = {"count": r[0], "min": r[1], "max": r[2]}
-                except Exception as _e:
-                    counts[tbl] = {"error": str(_e)}
-                cur.close()
-            info["tables"] = counts
-        finally:
-            conn.close()
-    except Exception as e:
-        info["error"] = str(e)
-    return jsonify(info)
-
-
 # ── デイリーレポートメール ──────────────────────────────────────
 _last_report_sent: dict = {}
 _backup_check: dict = {}
@@ -1970,103 +1945,6 @@ def restore_backup():
     finally:
         conn.close()
     return jsonify({"ok": True, "restored": result})
-
-
-@app.route("/admin/import-from", methods=["GET", "POST"])
-@_admin_required
-def import_from():
-    """別のPostgreSQL（例：切替前のNeon）に接続し、足りない行だけを今のDBへ取り込む。
-    既存行は上書きしない（ON CONFLICT DO NOTHING）。取り込み元URLは管理者が入力する。"""
-    if request.method == "GET":
-        html = """<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>別DBから取り込み</title>
-<style>
- body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 16px;line-height:1.7;color:#222}
- h1{font-size:20px}.card{border:1px solid #ddd;border-radius:12px;padding:20px;margin-top:16px}
- input[type=text]{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;margin:8px 0}
- button{background:#FF6B35;color:#fff;border:0;border-radius:8px;padding:12px 20px;font-size:16px;font-weight:700}
- .note{color:#6B7280;font-size:13px}#result{white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:12px;margin-top:12px;display:none}
-</style></head><body>
-<h1>📤 別のデータベースから取り込み</h1>
-<p class="note">切替前のDB（Neon）の接続URL（<code>postgresql://…</code>）を貼って「取り込む」を押してください。
-足りない日付分だけが追加され、今あるデータは上書きされません。処理はサーバー内で完結し、URLは保存しません。</p>
-<div class="card">
-  <form id="f">
-    <input type="text" id="url" placeholder="postgresql://ユーザー:パスワード@ホスト/DB名" autocomplete="off" required>
-    <button type="submit">取り込む</button>
-  </form>
-  <div id="result"></div>
-</div>
-<script>
-document.getElementById('f').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const u=document.getElementById('url').value.trim(); const r=document.getElementById('result');
-  if(!u){return;}
-  r.style.display='block'; r.textContent='取り込み中…（少しかかります）';
-  const fd=new FormData(); fd.append('source_url', u);
-  try{
-    const res=await fetch('/admin/import-from',{method:'POST',body:fd});
-    const j=await res.json();
-    r.textContent = res.ok ? ('✅ 取り込み完了\\n'+JSON.stringify(j.imported,null,2)) : ('⚠️ '+(j.error||'失敗'));
-  }catch(err){ r.textContent='⚠️ 通信エラー: '+err; }
-});
-</script></body></html>"""
-        return Response(html, mimetype="text/html")
-
-    # POST
-    if not USE_PG:
-        return jsonify({"error": "現在のDBがPostgreSQLでないため取り込めません"}), 400
-    if not _PG_AVAILABLE:
-        return jsonify({"error": "psycopg2が使えません"}), 400
-    source_url = (request.form.get("source_url") or "").strip()
-    if not source_url:
-        return jsonify({"error": "接続URLが空です"}), 400
-    if source_url.startswith("postgres://"):
-        source_url = source_url.replace("postgres://", "postgresql://", 1)
-    try:
-        src = psycopg2.connect(source_url, connect_timeout=20)
-        src.autocommit = True
-    except Exception as e:
-        return jsonify({"error": f"取り込み元DBに接続できません: {e}"}), 400
-
-    result = {}
-    dst = _get_conn()
-    try:
-        dst.autocommit = True  # 1行ずつ確定。1行失敗しても他に影響させない
-        dcur = dst.cursor()
-        for tbl in _BACKUP_TABLES:
-            scur = src.cursor()
-            try:
-                scur.execute(f"SELECT * FROM {tbl}")
-                cols = [d[0] for d in scur.description]
-                rows = scur.fetchall()
-            except Exception as e:
-                result[tbl] = {"error": f"読取失敗: {e}"}
-                scur.close()
-                continue
-            scur.close()
-            idx = [i for i, c in enumerate(cols) if c != "id"]  # id列はDB側で採番
-            use_cols = [cols[i] for i in idx]
-            if not use_cols:
-                continue
-            collist = ",".join(use_cols)
-            ph = ",".join(["%s"] * len(use_cols))
-            inserted = 0
-            for row in rows:
-                try:
-                    dcur.execute(
-                        f"INSERT INTO {tbl} ({collist}) VALUES ({ph}) ON CONFLICT DO NOTHING",
-                        [row[i] for i in idx],
-                    )
-                    if dcur.rowcount and dcur.rowcount > 0:
-                        inserted += dcur.rowcount
-                except Exception:
-                    pass
-            result[tbl] = {"read": len(rows), "inserted": inserted}
-    finally:
-        dst.close()
-        src.close()
-    return jsonify({"ok": True, "imported": result})
 
 
 @app.route("/api/setup", methods=["POST"])
