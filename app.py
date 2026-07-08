@@ -1,5 +1,6 @@
 import os
 import io
+import gzip
 import base64
 import json
 import time
@@ -8,7 +9,9 @@ import threading
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
 from email.header import Header
+from email import encoders
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response
 import anthropic
@@ -1355,16 +1358,22 @@ def status():
 
 @app.route("/ping")
 def ping():
-    """Render無料プランのスリープ防止用エンドポイント。毎朝8時にレポートメールも送信する。"""
+    """Render無料プランのスリープ防止用エンドポイント。毎朝8時にレポートメール、
+    1日1回データバックアップメールを送信する。"""
     now = datetime.datetime.now(JST)
     if now.hour == 8 and _last_report_sent.get("date") != now.date():
         _last_report_sent["date"] = now.date()
         threading.Thread(target=_send_daily_report, daemon=True).start()
+    # 1日1回、全データのバックアップをメール送信（多重送信は関数内で抑止）
+    if _backup_check.get("date") != now.date():
+        _backup_check["date"] = now.date()
+        threading.Thread(target=_maybe_send_backup, daemon=True).start()
     return "ok", 200
 
 
 # ── デイリーレポートメール ──────────────────────────────────────
 _last_report_sent: dict = {}
+_backup_check: dict = {}
 
 
 def _bar_html(val: int, total: int, color: str) -> str:
@@ -1722,6 +1731,55 @@ def api_send_test_report():
         return redirect(f"/setup-email?saved=err&msg={quote(str(e))}")
 
 
+# バックアップ対象のテーブル一覧（全データ）
+_BACKUP_TABLES = [
+    "daily_b_count", "daily_weight", "daily_exercise", "daily_meals",
+    "user_profile", "staff_comments", "usage_log", "settings",
+]
+
+
+def build_db_backup_json():
+    """全テーブルの中身をJSON文字列にまとめて返す（列名＋行データ）。
+    スキーマ非依存でcursor.descriptionから列名を取得する。"""
+    dump = {
+        "generated_at": datetime.datetime.now(JST).isoformat(),
+        "use_pg": USE_PG,
+        "tables": {},
+    }
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        for tbl in _BACKUP_TABLES:
+            try:
+                cur.execute(f"SELECT * FROM {tbl}")
+                cols = [d[0] for d in cur.description]
+                rows = [list(r) for r in cur.fetchall()]
+                dump["tables"][tbl] = {"columns": cols, "rows": rows}
+            except Exception as _e:
+                dump["tables"][tbl] = {"error": str(_e)}
+    finally:
+        conn.close()
+    return json.dumps(dump, ensure_ascii=False, default=str)
+
+
+def _make_backup_attachment():
+    """バックアップJSONをgzip圧縮してメール添付パーツを作る。(part, 行数合計) を返す。"""
+    raw = build_db_backup_json().encode("utf-8")
+    total_rows = 0
+    try:
+        total_rows = sum(len(t.get("rows", [])) for t in json.loads(raw)["tables"].values()
+                         if isinstance(t, dict))
+    except Exception:
+        pass
+    gz = gzip.compress(raw)
+    fname = f"ab-diet-backup-{datetime.datetime.now(JST).strftime('%Y%m%d')}.json.gz"
+    part = MIMEBase("application", "gzip")
+    part.set_payload(gz)
+    encoders.encode_base64(part)
+    part.add_header("Content-Disposition", f'attachment; filename="{fname}"')
+    return part, total_rows
+
+
 def _send_daily_report():
     gmail_user = _get_setting("GMAIL_USER")
     gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
@@ -1740,6 +1798,112 @@ def _send_daily_report():
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
         smtp.login(gmail_user, gmail_pass)
         smtp.sendmail(gmail_user, [report_to], msg.as_bytes())
+
+
+def _send_backup_email():
+    """全データのバックアップ(.json.gz)をメール添付で送る。復元用の命綱。"""
+    gmail_user = _get_setting("GMAIL_USER")
+    gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
+    report_to  = _get_setting("REPORT_TO") or "reallgym.tokyo@gmail.com"
+    if not gmail_user or not gmail_pass or not report_to:
+        print("[BACKUP][WARN] メール未設定のためバックアップを送れません")
+        return
+    part, total_rows = _make_backup_attachment()
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = Header(f"[ABダイエット] データバックアップ {today}（{total_rows}件）", "utf-8")
+    msg["From"]    = gmail_user
+    msg["To"]      = report_to
+    note = ("<p>ABダイエットの全データのバックアップです。<br>"
+            "<b>このメールは削除せず保管してください。</b>万一またデータが消えても、"
+            "この添付ファイルから復元できます。</p>")
+    msg.attach(MIMEText(note, "html", "utf-8"))
+    msg.attach(part)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+        smtp.login(gmail_user, gmail_pass)
+        smtp.sendmail(gmail_user, [report_to], msg.as_bytes())
+    print(f"[BACKUP] バックアップメールを送信しました（{total_rows}件）")
+
+
+def _maybe_send_backup(force=False):
+    """1日1回だけバックアップメールを送る（本番DB接続時のみ）。
+    settingsに最終送信日を記録し、再起動が続いても多重送信しない。"""
+    if not USE_PG:
+        return
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    if not force and _get_setting("LAST_BACKUP_DATE") == today:
+        return
+    try:
+        _send_backup_email()
+        _set_setting("LAST_BACKUP_DATE", today)
+    except Exception as _e:
+        print(f"[BACKUP][WARN] バックアップ送信に失敗: {_e}")
+
+
+@app.route("/admin/backup", methods=["GET"])
+@_admin_required
+def download_backup():
+    """管理者が今すぐ全データのバックアップ(.json.gz)をダウンロードする。"""
+    raw = build_db_backup_json().encode("utf-8")
+    gz = gzip.compress(raw)
+    fname = f"ab-diet-backup-{datetime.datetime.now(JST).strftime('%Y%m%d-%H%M')}.json.gz"
+    return Response(
+        gz,
+        mimetype="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.route("/admin/restore-backup", methods=["POST"])
+@_admin_required
+def restore_backup():
+    """バックアップ(.json.gz か 生JSON)を受け取り、全テーブルへ復元する。
+    既存行は上書きしない（ON CONFLICT DO NOTHING）。PostgreSQL接続時のみ。"""
+    if not USE_PG:
+        return jsonify({"error": "PostgreSQLに接続していないため復元できません"}), 400
+    f = request.files.get("file")
+    data = f.read() if f else request.get_data()
+    try:
+        raw = gzip.decompress(data)
+    except Exception:
+        raw = data
+    try:
+        dump = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        return jsonify({"error": f"バックアップの読み込みに失敗: {e}"}), 400
+
+    result = {}
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        for tbl, tdata in (dump.get("tables") or {}).items():
+            if tbl not in _BACKUP_TABLES or not isinstance(tdata, dict) or "columns" not in tdata:
+                continue
+            cols = tdata["columns"]
+            rows = tdata.get("rows", [])
+            idx = [i for i, c in enumerate(cols) if c != "id"]  # id列はDB側で採番
+            use_cols = [cols[i] for i in idx]
+            if not use_cols:
+                continue
+            collist = ",".join(use_cols)
+            placeholders = ",".join(["%s"] * len(use_cols))
+            inserted = 0
+            for row in rows:
+                try:
+                    cur.execute(
+                        f"INSERT INTO {tbl} ({collist}) VALUES ({placeholders}) "
+                        f"ON CONFLICT DO NOTHING",
+                        [row[i] for i in idx],
+                    )
+                    if cur.rowcount and cur.rowcount > 0:
+                        inserted += cur.rowcount
+                except Exception:
+                    pass
+            result[tbl] = {"rows_in_backup": len(rows), "inserted": inserted}
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "restored": result})
 
 
 @app.route("/api/setup", methods=["POST"])
