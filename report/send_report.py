@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ABダイエット Bカウンター デイリーレポート送信スクリプト
+ABダイエット デイリーレポート送信スクリプト
 毎朝 8:00 JST に GitHub Actions から実行される。
 """
 import os
@@ -364,7 +364,7 @@ def build_html(data: dict) -> str:
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>🏋️ AB Diet Bカウンター デイリーレポート</h1>
+    <h1>🏋️ ABダイエット デイリーレポート</h1>
     <p>対象日: {rdate} &nbsp;|&nbsp; 配信: {now_str}</p>
   </div>
   <div class="body">
@@ -480,7 +480,7 @@ def build_html(data: dict) -> str:
 
   </div>
   <div class="footer">
-    <p>ABダイエット Bカウンター 自動レポート | 毎朝 8:00 JST 配信</p>
+    <p>ABダイエット 自動レポート | 毎朝 8:00 JST 配信</p>
     <p>Generated: {now_str}</p>
   </div>
 </div>
@@ -498,7 +498,7 @@ def send_email(subject: str, html_body: str, charts: dict):
     msg["From"]    = GMAIL_USER
     msg["To"]      = REPORT_TO
 
-    plain = f"ABダイエット Bカウンター デイリーレポート\nHTMLメールをご覧ください。\n生成時刻: {datetime.datetime.now(JST)}"
+    plain = f"ABダイエット デイリーレポート\nHTMLメールをご覧ください。\n生成時刻: {datetime.datetime.now(JST)}"
     msg.attach(MIMEText(plain, "plain", "utf-8"))
 
     related = MIMEMultipart("related")

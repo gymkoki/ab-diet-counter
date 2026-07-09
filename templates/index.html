@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ABダイエット Bカウンター</title>
+  <title>ABダイエット</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="shortcut icon" href="/static/favicon.png">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Bカウンター">
+  <meta name="apple-mobile-web-app-title" content="ABダイエット">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <meta name="theme-color" content="#FF6B35">
   <style>
@@ -95,6 +95,8 @@
     .meal-b-count { background:#FFF5F0; border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .meal-protein-row { background:#F0F7FF; border-radius:12px; padding:11px 16px; margin-bottom:12px; font-size:14px; font-weight:700; color:#1D4ED8; }
     .meal-protein-row b { font-size:17px; font-weight:900; }
+    .meal-veg-row { background:#F0FBF2; border-radius:12px; padding:11px 16px; margin-bottom:12px; font-size:14px; font-weight:700; color:#15803D; }
+    .meal-veg-row b { font-size:17px; font-weight:900; }
     .meal-b-count .label { font-size:17px; font-weight:700; color:var(--text-muted); }
     .meal-b-count .count { font-size:42px; font-weight:900; color:var(--primary); line-height:1; }
     .meal-b-count .unit  { font-size:17px; font-weight:600; color:var(--primary); }
@@ -311,6 +313,9 @@
   </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 9px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.95)">
     🥩 推定タンパク質 <span id="protein-total" style="font-size:18px;font-weight:900">0</span><span id="protein-target-text"></span>
+  </div>
+  <div id="veg-bar" style="display:none;text-align:center;padding:6px 20px 9px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.95)">
+    🥗 推定野菜 <span id="veg-total" style="font-size:18px;font-weight:900">0</span><span id="veg-target-text"></span>
   </div>
 </header>
 
@@ -742,7 +747,7 @@ function buildPanel(m) {
     <div class="container">
       <div id="strip-${m.id}" class="meal-strip"></div>
       <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
-        <div class="meal-add-icon">${m.emoji}</div>
+        <div class="meal-add-icon">📷</div>
         <h3>写真を追加</h3>
       </div>
       <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 文章で入力</button>
@@ -787,10 +792,12 @@ function buildPanel(m) {
 function updateDailyTotal() {
   let foodTotal = 0;
   let proteinTotal = 0;
+  let vegTotal = 0;
   MEALS.forEach(m => {
     const done = state[m.id].items.filter(i => i.result);
     foodTotal += done.reduce((s, i) => s + i.result.total_b_count, 0);
     proteinTotal += done.reduce((s, i) => s + mealProtein(i.result), 0);
+    vegTotal += done.reduce((s, i) => s + mealVeg(i.result), 0);
     const dot = document.getElementById(`dot-${m.id}`);
     if (dot) dot.classList.toggle('visible', done.length > 0);
   });
@@ -825,7 +832,7 @@ function updateDailyTotal() {
     }
   }
 
-  // 推定タンパク質 と 目標(g)を表示（目標＝体重×1.5g/日。体重未設定なら目標は非表示）
+  // 推定タンパク質 と 目標(g)を表示（目標＝体重×1.2〜1.6g/日。体重未設定なら目標は非表示）
   const pbar   = document.getElementById('protein-bar');
   const pTotal = document.getElementById('protein-total');
   const pTgtEl = document.getElementById('protein-target-text');
@@ -839,6 +846,30 @@ function updateDailyTotal() {
       pbar.style.display = 'none';
     }
   }
+
+  // 推定野菜 と 目標(g)を表示（目標＝1日350g固定）
+  const vbar   = document.getElementById('veg-bar');
+  const vTotal = document.getElementById('veg-total');
+  const vTgtEl = document.getElementById('veg-target-text');
+  if (vbar && vTotal && vTgtEl) {
+    if (vegTotal > 0) {
+      vTotal.textContent = `${Math.round(vegTotal)}g`;
+      vTgtEl.textContent = ` / 目標 ${VEG_TARGET_G}g`;
+      vbar.style.display = '';
+    } else {
+      vbar.style.display = 'none';
+    }
+  }
+}
+
+// 1日の野菜目標(g)。厚労省の推奨目安に合わせて350g固定。
+const VEG_TARGET_G = 350;
+
+// 1食の推定野菜量(g)。total_veg_gがあればそれ、無ければ食材ごとの合計。
+function mealVeg(r) {
+  if (!r) return 0;
+  if (typeof r.total_veg_g === 'number') return r.total_veg_g;
+  return (r.foods || []).reduce((s, f) => s + (f.veg_g || 0), 0);
 }
 
 // 1食の推定タンパク質(g)。total_protein_gがあればそれ、無ければ食材ごとの合計。
@@ -1197,6 +1228,7 @@ function renderResults(mealId) {
   const m = MEALS.find(x => x.id === mealId);
   const totalB = done.reduce((s,i) => s + i.result.total_b_count, 0);
   const totalProtein = done.reduce((s,i) => s + mealProtein(i.result), 0);
+  const totalVeg = done.reduce((s,i) => s + mealVeg(i.result), 0);
   const multiLabel = done.length > 1 ? `${done.length}枚分` : '';
 
   const cards = done.map((item, idx) => `
@@ -1241,6 +1273,7 @@ function renderResults(mealId) {
       </div>
     </div>
     ${totalProtein > 0 ? `<div class="meal-protein-row">🥩 推定タンパク質 <b>約${Math.round(totalProtein)}g</b></div>` : ''}
+    ${totalVeg > 0 ? `<div class="meal-veg-row">🥗 推定野菜 <b>約${Math.round(totalVeg)}g</b></div>` : ''}
     ${cards}
     <button class="re-analyze" onclick="resetMeal('${mealId}')">↩ ${m.label}をリセット</button>
   `;
@@ -1409,7 +1442,7 @@ function buildFoodRows(foods) {
           <div class="food-name">${esc(food.name)}</div>
           <div class="food-meta">
             <span class="food-badge ${badgeClass}">${badgeLabel}</span>
-            ${kcalLabel}${food.amount ? ` ・ ${esc(food.amount)}` : ''}${(food.protein_g && food.protein_g > 0) ? ` ・ 🥩${Math.round(food.protein_g)}g` : ''}
+            ${kcalLabel}${food.amount ? ` ・ ${esc(food.amount)}` : ''}${(food.protein_g && food.protein_g > 0) ? ` ・ 🥩${Math.round(food.protein_g)}g` : ''}${(food.veg_g && food.veg_g > 0) ? ` ・ 🥗${Math.round(food.veg_g)}g` : ''}
           </div>
           ${food.reason ? `<div class="food-meta">${esc(food.reason)}</div>` : ''}
         </div>

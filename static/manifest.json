@@ -1,6 +1,6 @@
 {
-  "name": "ABダイエット Bカウンター",
-  "short_name": "Bカウンター",
+  "name": "ABダイエット",
+  "short_name": "ABダイエット",
   "description": "食事写真を撮ってBカウントを記録するABダイエットアプリ",
   "start_url": "/",
   "display": "standalone",

@@ -70,6 +70,10 @@ def repair_json(text: str) -> str:
             parsed["total_protein_g"] = sum(
                 f.get("protein_g", 0) or 0 for f in parsed.get("foods", [])
             )
+        if "total_veg_g" not in parsed:
+            parsed["total_veg_g"] = sum(
+                f.get("veg_g", 0) or 0 for f in parsed.get("foods", [])
+            )
         if "advice" not in parsed:
             parsed["advice"] = "（分析データが多いため一部省略されました）"
         return json.dumps(parsed, ensure_ascii=False)
@@ -727,6 +731,16 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 - 野菜・果物・油・砂糖・調味料 ≒ 0〜1g（ほぼ0）
 写真の量から実摂取量を見積もって計算する。全食材の合計を total_protein_g に整数で入れる。
 
+━━━━━━━━━━━━━━━━━━━━━━━
+■ 野菜(g)の推定ルール
+━━━━━━━━━━━━━━━━━━━━━━━
+各食材について、実際に食べた野菜の重量(g)を veg_g に整数で入れる（野菜・きのこ・海藻のみ）。
+- 対象：葉物・根菜・果菜・きのこ・海藻など一般的な野菜（生・加熱問わず実重量）
+- 対象外（veg_g=0）：いも類（じゃがいも・さつまいも等）・豆類・果物・米麦などの穀物・肉魚卵・乳製品・油
+分量の目安：小鉢のサラダ≒40〜60g、サラダ1皿≒100g、野菜炒め1人前≒120〜150g、
+具だくさん味噌汁の野菜≒40〜60g、ラーメンの野菜トッピング≒30〜80g、トマト1個≒150g。
+全食材の合計を total_veg_g に整数で入れる。
+
 必ず以下のJSON形式のみで回答してください。JSONの前後に説明文やコードブロックは不要です：
 【重要】categoryフィールドは "A" または "B" のみ使用すること。"Good B"・"グッドB" は使用禁止。
 {
@@ -736,6 +750,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "category": "A",
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
+      "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "amount": "写真での量（例：たっぷり、1人前、少量など）",
       "b_count": 0,
       "reason": "A食材のため（1人前約○kcal、120kcal未満）Bカウント0"
@@ -745,6 +760,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "category": "B",
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
+      "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "amount": "写真での量と推定kcal（例：1人前・約250kcal）",
       "b_count": 1,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが200kcal超のためB1"
@@ -754,6 +770,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "category": "B",
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
+      "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "amount": "写真での量と推定kcal（例：約150kcal相当）",
       "b_count": 0.5,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが120〜200kcalのためB0.5"
@@ -763,6 +780,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "category": "B",
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
+      "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "amount": "写真での量と推定kcal（例：少量・約70kcal）",
       "b_count": 0,
       "reason": "B食材だが実際の摂取量約○kcalが120kcal未満のためノーカウント"
@@ -770,6 +788,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
   ],
   "total_b_count": 合計Bカウント（数値）,
   "total_protein_g": 全食材の推定タンパク質の合計（g・整数）,
+  "total_veg_g": 全食材の野菜の合計（g・整数）,
   "advice": "このメニューをABダイエット観点でのワンポイントアドバイス（1〜2文）"
 }"""
 
@@ -1529,7 +1548,7 @@ def _build_report_html(target_date: str) -> str:
 <body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif">
 <div style="max-width:620px;margin:0 auto;padding:20px">
   <div style="background:linear-gradient(135deg,#FF6B35,#e55a25);color:#fff;border-radius:14px 14px 0 0;padding:22px 24px">
-    <div style="font-size:20px;font-weight:900">🏋️ AB Diet Bカウンター デイリーレポート</div>
+    <div style="font-size:20px;font-weight:900">🏋️ ABダイエット デイリーレポート</div>
     <div style="font-size:13px;margin-top:6px;opacity:.88">対象日: {target_date}</div>
   </div>
   <div style="background:#fff;padding:24px;border-radius:0 0 14px 14px">
@@ -1616,7 +1635,7 @@ def _build_report_html(target_date: str) -> str:
 
   </div>
   <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:16px">
-    ABダイエット Bカウンター 自動レポート | 毎朝8:00 JST 配信<br>Generated: {sent_at}
+    ABダイエット 自動レポート | 毎朝8:00 JST 配信<br>Generated: {sent_at}
   </div>
 </div>
 </body></html>"""
@@ -1814,7 +1833,7 @@ def _send_daily_report():
     msg["Subject"] = Header(f"[ABダイエット] デイリーレポート {target_date}", "utf-8")
     msg["From"]    = gmail_user
     msg["To"]      = report_to
-    msg.attach(MIMEText("ABダイエット Bカウンター デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
+    msg.attach(MIMEText("ABダイエット デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
         smtp.login(gmail_user, gmail_pass)
@@ -2474,7 +2493,8 @@ def analyze_text():
 {text}
 
 写真がないため推定が大まかになる旨を、advice欄の最後に一言添えてください。
-出力は通常のJSON（foods / total_b_count / advice）のみで構いません。
+出力はシステムプロンプト指定の通常のJSON（各foodにprotein_g・veg_gを含め、
+total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答してください。
 ━━━━━━━━━━━━━━━━━━━━━━━"""
 
     text_content = [{"type": "text", "text": text_prompt}]
