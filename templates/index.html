@@ -1009,6 +1009,33 @@ function saveOil(mealId) {
   renderResults(mealId);
   updateDailyTotal();
   saveState();
+  // 内訳メモがあれば、その文章から推定タンパク質・野菜を裏で見積もって付与する
+  // （Bカウントはユーザーが選んだ値のまま維持する）
+  if (note) _estimateMacrosForManual(mealId, item, note);
+}
+
+// 手動追加の内訳メモから推定タンパク質(g)・野菜(g)を見積もり、その項目に付与する。
+// Bカウントは変更しない。失敗しても無視（手動追加はそのまま残る）。
+async function _estimateMacrosForManual(mealId, item, note) {
+  try {
+    const fd = new FormData();
+    fd.append('text', note);
+    fd.append('user_id', USER_ID);
+    const p = getProfile();
+    if (p) { if (p.gender) fd.append('gender', p.gender); if (p.goal) fd.append('goal', p.goal); }
+    const res = await fetch('/analyze-text', { method:'POST', body:fd });
+    const data = await res.json();
+    if (!data || data.error || !item.result) return;
+    const pr = (typeof data.total_protein_g === 'number')
+      ? data.total_protein_g : (data.foods||[]).reduce((s,f)=>s+(f.protein_g||0),0);
+    const vg = (typeof data.total_veg_g === 'number')
+      ? data.total_veg_g : (data.foods||[]).reduce((s,f)=>s+(f.veg_g||0),0);
+    item.result.total_protein_g = pr;
+    item.result.total_veg_g = vg;
+    renderResults(mealId);
+    updateDailyTotal();
+    saveState();
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════════════
