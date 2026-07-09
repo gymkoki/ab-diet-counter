@@ -122,6 +122,9 @@
     .item-result-card { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:12px; }
     .item-result-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg); border-bottom:1px solid var(--border); font-size:17px; font-weight:700; }
     .item-result-header .ic-cnt { color:var(--primary); font-size:18px; font-weight:900; }
+    .item-result-header .ic-macro { font-size:13px; font-weight:800; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+    .item-result-header .ic-pro { color:#1D4ED8; background:#EAF1FF; }
+    .item-result-header .ic-veg { color:#15803D; background:#E9F9EE; }
 
     .re-analyze { width:100%; margin-top:10px; padding:12px; border-radius:10px; background:none; border:1.5px solid var(--border); font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .re-analyze:hover { border-color:var(--primary); color:var(--primary); }
@@ -1220,12 +1223,17 @@ function renderResults(mealId) {
 
   const m = MEALS.find(x => x.id === mealId);
 
-  const cards = done.map((item, idx) => `
+  const cards = done.map((item, idx) => {
+    const pr = Math.round(mealProtein(item.result));
+    const vg = Math.round(mealVeg(item.result));
+    return `
     <div class="item-result-card">
       <div class="item-result-header">
         <span>${m.emoji} ${m.label}${done.length > 1 ? ` ${idx+1}` : ''}</span>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <span class="ic-cnt">B ${fmtCount(item.result.total_b_count)}</span>
+          ${pr > 0 ? `<span class="ic-macro ic-pro">🥩${pr}g</span>` : ''}
+          ${vg > 0 ? `<span class="ic-macro ic-veg">🥗${vg}g</span>` : ''}
           <button class="result-delete-btn" onclick="removeItem('${mealId}',${item.id})" title="この写真と計算を削除">🗑</button>
         </div>
       </div>
@@ -1248,7 +1256,8 @@ function renderResults(mealId) {
           <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   resEl.innerHTML = `
     ${cards}
