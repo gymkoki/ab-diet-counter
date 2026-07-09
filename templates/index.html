@@ -1219,10 +1219,6 @@ function renderResults(mealId) {
   if (!done.length) { resEl.style.display='none'; resEl.innerHTML=''; updateDailyTotal(); return; }
 
   const m = MEALS.find(x => x.id === mealId);
-  const totalB = done.reduce((s,i) => s + i.result.total_b_count, 0);
-  const totalProtein = done.reduce((s,i) => s + mealProtein(i.result), 0);
-  const totalVeg = done.reduce((s,i) => s + mealVeg(i.result), 0);
-  const multiLabel = done.length > 1 ? `${done.length}枚分` : '';
 
   const cards = done.map((item, idx) => `
     <div class="item-result-card">
@@ -1255,18 +1251,6 @@ function renderResults(mealId) {
     </div>`).join('');
 
   resEl.innerHTML = `
-    <div class="meal-b-count">
-      <div>
-        <div class="label">${m.label}の Bカウント</div>
-        ${multiLabel ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${multiLabel}</div>` : ''}
-      </div>
-      <div style="text-align:right">
-        <div class="count">${fmtCount(totalB)}</div>
-        <div class="unit">カウント</div>
-      </div>
-    </div>
-    ${totalProtein > 0 ? `<div class="meal-protein-row">🥩 推定タンパク質 <b>約${Math.round(totalProtein)}g</b></div>` : ''}
-    ${totalVeg > 0 ? `<div class="meal-veg-row">🥗 推定野菜 <b>約${Math.round(totalVeg)}g</b></div>` : ''}
     ${cards}
     <button class="re-analyze" onclick="resetMeal('${mealId}')">↩ ${m.label}をリセット</button>
   `;
