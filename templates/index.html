@@ -1543,8 +1543,8 @@ function renderWeightInline() {
   if (!inp) return;
   const date = currentDate();
   const rec = getWeightLog()[date];
-  const p = getProfile();
-  inp.value = (rec != null) ? rec : ((p && p.weight) ? p.weight : '');
+  // 今日の入力は毎回空欄（0から）にする。過去日を編集するときだけその日の記録を表示。
+  inp.value = _editingDate ? (rec != null ? rec : '') : '';
   if (title) title.textContent = _editingDate ? `⚖️ ${_fmtMD(date)} の体重を記録` : '⚖️ 今日の体重を記録';
   if (note) note.textContent = (rec != null) ? `${_editingDate ? _fmtMD(date) : '今日'}は ${rec} kg で記録済み（上書きできます）` : '';
 }
