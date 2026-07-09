@@ -31,9 +31,10 @@
     .daily-total-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.18); border-radius: 14px 14px 0 0; padding: 10px 20px; margin-top: 2px; }
     .daily-total-left { display: flex; align-items: center; gap: 8px; }
     .daily-total-icon { font-size: 20px; }
-    .daily-total-label { font-size: 18px; font-weight: 700; }
-    .daily-total-right { display: flex; align-items: baseline; gap: 4px; }
-    .daily-total-num { font-size: 40px; font-weight: 900; line-height: 1; }
+    .daily-total-label { font-size: 20px; font-weight: 800; }
+    .daily-total-right { display: flex; align-items: baseline; gap: 6px; }
+    .daily-total-num { font-size: 44px; font-weight: 900; line-height: 1; }
+    .daily-total-goal { font-size: 17px; font-weight: 800; white-space: nowrap; }
     .daily-total-unit { font-size: 18px; font-weight: 700; }
 
     /* ── タブバー ── */
@@ -303,13 +304,11 @@
     </div>
     <div class="daily-total-right">
       <span class="daily-total-num" id="daily-total-count">0</span>
+      <span class="daily-total-goal" id="daily-total-goal"></span>
     </div>
   </div>
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.13);padding:6px 20px 8px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.92)">
     🏃 運動でマイナス <span id="ex-deduct-num" style="font-size:18px;font-weight:900">0</span> カウント
-  </div>
-  <div id="goal-target-bar" style="display:none;text-align:center;padding:4px 20px 9px;font-size:15px;font-weight:700;color:rgba(255,255,255,0.95)">
-    🎯 目標 <span id="goal-target-text" style="font-size:17px;font-weight:900"></span>
   </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 9px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.95)">
     🥩 推定タンパク質 <span id="protein-total" style="font-size:18px;font-weight:900">0</span><span id="protein-target-text"></span>
@@ -819,17 +818,11 @@ function updateDailyTotal() {
     }
   }
 
-  // 目標Bカウントを小さく表示（回数のみ・達成判定はしない）
-  const gbar  = document.getElementById('goal-target-bar');
-  const gtext = document.getElementById('goal-target-text');
-  const tgt   = getGoalTarget(getProfile());
-  if (gbar && gtext) {
-    if (tgt) {
-      gtext.textContent = `B${tgt.label}`;
-      gbar.style.display = '';
-    } else {
-      gbar.style.display = 'none';
-    }
+  // 目標Bカウントを「今日のB合計」と同じ行に表示（回数のみ・達成判定はしない）
+  const gInline = document.getElementById('daily-total-goal');
+  const tgt     = getGoalTarget(getProfile());
+  if (gInline) {
+    gInline.textContent = tgt ? `/ 目標 B${tgt.label}` : '';
   }
 
   // 推定タンパク質 と 目標(g)を表示（目標＝体重×1.2〜1.6g/日。体重未設定なら目標は非表示）
