@@ -267,9 +267,9 @@
           <tr>
             <th>表示名</th>
             <th>ユーザーID（先頭8文字）</th>
-            <th>B記録日数</th>
+            <th style="cursor:pointer;user-select:none" onclick="toggleSort('days_recorded')">B記録日数 <span class="sort-arrow" data-col="days_recorded"></span></th>
             <th>平均Bカウント / 日</th>
-            <th>食事分析回数</th>
+            <th style="cursor:pointer;user-select:none" onclick="toggleSort('analyses_count')">食事分析回数 <span class="sort-arrow" data-col="analyses_count"></span></th>
             <th>最終利用日</th>
             <th>VIP</th>
             <th></th>
@@ -298,6 +298,9 @@
 
 <script>
   let chartUsers = null, chartB = null, chartAnalyses = null;
+  let usersData = [];
+  let sortCol = null;         // ソート対象の列キー
+  let sortDir = null;         // 'asc'=昇順, 'desc'=降順
 
   function fmtLabel(dateStr) {
     const [, m, d] = dateStr.split('-');
@@ -412,14 +415,42 @@
     const r = await fetch('/api/admin/users');
     if (!r.ok) throw new Error('users');
     const d = await r.json();
-    const tbody = document.getElementById('users-tbody');
+    usersData = d.users || [];
+    renderUsers();
+  }
 
-    if (!d.users || d.users.length === 0) {
+  function toggleSort(col) {
+    if (sortCol === col) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortCol = col;
+      sortDir = 'asc';
+    }
+    renderUsers();
+  }
+
+  function renderUsers() {
+    const tbody = document.getElementById('users-tbody');
+    document.querySelectorAll('.sort-arrow').forEach(el => {
+      el.textContent = el.dataset.col === sortCol
+        ? (sortDir === 'asc' ? '▲' : '▼')
+        : '';
+    });
+
+    if (!usersData || usersData.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="no-data">データがまだありません</td></tr>';
       return;
     }
 
-    tbody.innerHTML = d.users.map(u => `
+    let rows = usersData;
+    if (sortCol) {
+      rows = [...usersData].sort((a, b) => {
+        const diff = (a[sortCol] || 0) - (b[sortCol] || 0);
+        return sortDir === 'asc' ? diff : -diff;
+      });
+    }
+
+    tbody.innerHTML = rows.map(u => `
       <tr>
         <td>${u.display_name ? escapeHtml(u.display_name) : '<span style="color:#9CA3AF">-</span>'}</td>
         <td class="uid">${u.user_id_short}</td>
