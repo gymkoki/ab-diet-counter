@@ -81,6 +81,33 @@ def repair_json(text: str) -> str:
         return text
 
 
+class EmptyAIResponse(Exception):
+    """AIの応答本文が空だったことを表す。"""
+
+
+def parse_ai_result(response):
+    """Claudeの応答から本文テキストを取り出してJSON(dict)にする。
+    ・複数のテキストブロックを連結（先頭が空ブロックでも取りこぼさない）
+    ・コードフェンス(```～)を除去
+    ・本文が空なら EmptyAIResponse を送出
+    ・JSONが途中で切れている等はrepair_jsonで補修してから読む"""
+    text = "".join(
+        getattr(b, "text", "") for b in getattr(response, "content", [])
+        if getattr(b, "type", None) == "text"
+    ).strip()
+    if text.startswith("```"):
+        lines = text.split("\n")[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    if not text:
+        raise EmptyAIResponse()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return json.loads(repair_json(text))
+
+
 def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
     """画像を縮小・圧縮し、(base64文字列, media_type) を返す。"""
     if Image is None:
@@ -2365,21 +2392,11 @@ def analyze():
             ],
         )
 
-        result_text = response.content[0].text.strip()
-
-        if result_text.startswith("```"):
-            lines = result_text.split("\n")
-            lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            result_text = "\n".join(lines)
-
-        try:
-            result = json.loads(result_text)
-        except json.JSONDecodeError:
-            result = json.loads(repair_json(result_text))
+        result = parse_ai_result(response)
         return jsonify(result)
 
+    except EmptyAIResponse:
+        return jsonify({"error": "解析結果を取得できませんでした。もう一度お試しください。"}), 502
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。写真をもう一度撮り直してお試しください。({e})"}), 500
     except anthropic.AuthenticationError:
@@ -2453,16 +2470,11 @@ def reanalyze():
             ],
         )
 
-        result_text = response.content[0].text.strip()
-        if result_text.startswith("```"):
-            lines = result_text.split("\n")[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            result_text = "\n".join(lines)
-
-        result = json.loads(result_text)
+        result = parse_ai_result(response)
         return jsonify(result)
 
+    except EmptyAIResponse:
+        return jsonify({"error": "再計算の結果を取得できませんでした。もう一度「再計算する」を押してお試しください。"}), 502
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。({e})"}), 500
     except anthropic.AuthenticationError:
@@ -2531,19 +2543,11 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
             messages=[{"role": "user", "content": text_content}],
         )
 
-        result_text = response.content[0].text.strip()
-        if result_text.startswith("```"):
-            lines = result_text.split("\n")[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            result_text = "\n".join(lines)
-
-        try:
-            result = json.loads(result_text)
-        except json.JSONDecodeError:
-            result = json.loads(repair_json(result_text))
+        result = parse_ai_result(response)
         return jsonify(result)
 
+    except EmptyAIResponse:
+        return jsonify({"error": "解析結果を取得できませんでした。もう一度お試しください。"}), 502
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
     except anthropic.AuthenticationError:
