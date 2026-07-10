@@ -151,6 +151,7 @@ def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
 # ── 利用ログDB（PostgreSQL 優先、なければ SQLite）──────────
 _db_lock = threading.Lock()
 JST = datetime.timezone(datetime.timedelta(hours=9))
+BUILD_ID = "2026-07-10-reanalyze-retry-2"
 
 import sqlite3   # SQLite は常にフォールバック用に読み込む
 _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
@@ -1469,6 +1470,12 @@ def ping():
         _backup_check["date"] = now.date()
         threading.Thread(target=_maybe_send_backup, daemon=True).start()
     return "ok", 200
+
+
+@app.route("/version")
+def version():
+    """デプロイ反映確認用。稼働中コードのビルド識別子を返す。"""
+    return jsonify({"build": BUILD_ID, "has_retry": "create_and_parse" in globals()})
 
 
 # ── デイリーレポートメール ──────────────────────────────────────

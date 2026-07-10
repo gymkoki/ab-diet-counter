@@ -1,0 +1,24 @@
+name: DB Status Check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/db-check.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployed build version
+        run: |
+          for i in $(seq 1 40); do
+            body=$(curl -s --max-time 60 https://ab-diet-counter.onrender.com/version || echo "")
+            echo "attempt $i: $body"
+            if echo "$body" | grep -q '2026-07-10-reanalyze-retry-2'; then
+              echo ">>> NEW BUILD LIVE"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo ">>> new build not observed within wait window"
