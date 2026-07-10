@@ -82,7 +82,10 @@ def repair_json(text: str) -> str:
 
 
 class EmptyAIResponse(Exception):
-    """AIの応答本文が空だったことを表す。"""
+    """AIの応答本文が空だったことを表す。detailに切り分け用の情報を持つ。"""
+    def __init__(self, detail=""):
+        super().__init__(detail)
+        self.detail = detail
 
 
 def parse_ai_result(response):
@@ -91,8 +94,9 @@ def parse_ai_result(response):
     ・コードフェンス(```～)を除去
     ・本文が空なら EmptyAIResponse を送出
     ・JSONが途中で切れている等はrepair_jsonで補修してから読む"""
+    blocks = getattr(response, "content", []) or []
     text = "".join(
-        getattr(b, "text", "") for b in getattr(response, "content", [])
+        getattr(b, "text", "") for b in blocks
         if getattr(b, "type", None) == "text"
     ).strip()
     if text.startswith("```"):
@@ -101,11 +105,25 @@ def parse_ai_result(response):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
     if not text:
-        raise EmptyAIResponse()
+        stop = getattr(response, "stop_reason", "?")
+        types = ",".join(getattr(b, "type", "?") for b in blocks) or "none"
+        raise EmptyAIResponse(f"stop={stop};blocks={types}")
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         return json.loads(repair_json(text))
+
+
+def create_and_parse(client, **kwargs):
+    """messages.create を呼び、空応答なら一度だけ再試行してからJSONを返す。"""
+    detail = ""
+    for _attempt in range(2):
+        response = client.messages.create(**kwargs)
+        try:
+            return parse_ai_result(response)
+        except EmptyAIResponse as e:
+            detail = e.detail
+    raise EmptyAIResponse(detail)
 
 
 def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
@@ -2374,7 +2392,8 @@ def analyze():
         user_content.append({"type": "text", "text": adv})
 
     try:
-        response = client.messages.create(
+        result = create_and_parse(
+            client,
             model="claude-sonnet-4-6",   # 通常解析は精度重視でSonnet
             max_tokens=8000,
             system=[
@@ -2391,12 +2410,10 @@ def analyze():
                 }
             ],
         )
-
-        result = parse_ai_result(response)
         return jsonify(result)
 
-    except EmptyAIResponse:
-        return jsonify({"error": "解析結果を取得できませんでした。もう一度お試しください。"}), 502
+    except EmptyAIResponse as e:
+        return jsonify({"error": f"解析結果を取得できませんでした（{e.detail}）。もう一度お試しください。"}), 502
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。写真をもう一度撮り直してお試しください。({e})"}), 500
     except anthropic.AuthenticationError:
@@ -2452,7 +2469,8 @@ def reanalyze():
         reanalyze_content.append({"type": "text", "text": adv})
 
     try:
-        response = client.messages.create(
+        result = create_and_parse(
+            client,
             model="claude-sonnet-4-6",   # 再計算（修正時）は精度重視でSonnet
             max_tokens=8000,
             system=[
@@ -2469,12 +2487,10 @@ def reanalyze():
                 }
             ],
         )
-
-        result = parse_ai_result(response)
         return jsonify(result)
 
-    except EmptyAIResponse:
-        return jsonify({"error": "再計算の結果を取得できませんでした。もう一度「再計算する」を押してお試しください。"}), 502
+    except EmptyAIResponse as e:
+        return jsonify({"error": f"再計算の結果を取得できませんでした（{e.detail}）。もう一度お試しください。"}), 502
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。({e})"}), 500
     except anthropic.AuthenticationError:
@@ -2530,7 +2546,8 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         text_content.append({"type": "text", "text": adv})
 
     try:
-        response = client.messages.create(
+        result = create_and_parse(
+            client,
             model="claude-sonnet-4-6",   # 文章入力も精度重視でSonnet
             max_tokens=8000,
             system=[
@@ -2542,12 +2559,10 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
             ],
             messages=[{"role": "user", "content": text_content}],
         )
-
-        result = parse_ai_result(response)
         return jsonify(result)
 
-    except EmptyAIResponse:
-        return jsonify({"error": "解析結果を取得できませんでした。もう一度お試しください。"}), 502
+    except EmptyAIResponse as e:
+        return jsonify({"error": f"解析結果を取得できませんでした（{e.detail}）。もう一度お試しください。"}), 502
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
     except anthropic.AuthenticationError:
