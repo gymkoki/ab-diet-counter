@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import gzip
 import base64
 import json
@@ -99,15 +100,22 @@ def parse_ai_result(response):
         getattr(b, "text", "") for b in blocks
         if getattr(b, "type", None) == "text"
     ).strip()
-    if text.startswith("```"):
-        lines = text.split("\n")[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
     if not text:
         stop = getattr(response, "stop_reason", "?")
         types = ",".join(getattr(b, "type", "?") for b in blocks) or "none"
         raise EmptyAIResponse(f"stop={stop};blocks={types}")
+
+    # AIが前置き文やコードフェンス(```json ～ ```)を付けてくることがあるため、
+    # 本文のどこにあってもJSON本体だけを取り出す（先頭が{で始まらなくてもOK）。
+    m = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
+    if m:
+        text = m.group(1).strip()
+    if not text.startswith("{"):
+        s = text.find("{")
+        e = text.rfind("}")
+        if s != -1 and e != -1 and e > s:
+            text = text[s:e + 1]
+
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -151,7 +159,7 @@ def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
 # ── 利用ログDB（PostgreSQL 優先、なければ SQLite）──────────
 _db_lock = threading.Lock()
 JST = datetime.timezone(datetime.timedelta(hours=9))
-BUILD_ID = "2026-07-10-reanalyze-retry-2"
+BUILD_ID = "2026-07-10-json-extract-3"
 
 import sqlite3   # SQLite は常にフォールバック用に読み込む
 _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
@@ -2455,6 +2463,7 @@ def reanalyze():
 {correction}
 
 この補足情報を最優先して、ABダイエットルールに基づき再計算してください。
+【重要】前置きや説明文は一切書かず、システムプロンプト指定のJSONだけを出力すること。
 ━━━━━━━━━━━━━━━━━━━━━━━"""
 
     reanalyze_content = [
