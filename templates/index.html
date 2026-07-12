@@ -949,17 +949,10 @@ function updateDailyTotal() {
 const KIERAN_CELEBRATE_KEY = 'kieran-celebrated-date';   // 「YYYY-MM-DD」＝その日は表示済み
 let _gcTimer = null;
 
-// ── テスト用モード（一時的）──────────────────────────────
-// アプリを最初に開いてから20分間は、目標未達成でも毎回ダンスを表示する。
-// 期限を過ぎると自動的に通常動作へ戻る。テストが終わったら丸ごと削除してよい。
-const KIERAN_TEST_KEY = 'kieran-test-start';
-const KIERAN_TEST_MS  = 20 * 60 * 1000;   // 20分
-function kieranTestActive() {
-  let start = parseInt(localStorage.getItem(KIERAN_TEST_KEY) || '0', 10);
-  if (!start) { start = Date.now(); localStorage.setItem(KIERAN_TEST_KEY, String(start)); }
-  return (Date.now() - start) < KIERAN_TEST_MS;
+// 栄養計算中の食事が1つでもあるか（計算中はダンスを出さないための判定）。
+function anyItemLoading() {
+  return MEALS.some(m => (state[m.id] && state[m.id].items || []).some(i => i.loading));
 }
-// ────────────────────────────────────────────────────────
 
 // 今日のBカウント・タンパク質・野菜が、それぞれの目標を満たしているか。
 // 3つの目標がすべて設定されている場合のみ判定する（未設定なら達成扱いにしない）。
@@ -975,7 +968,7 @@ function checkGoalsAchieved(net, proteinTotal, vegTotal) {
 
 // 達成していれば、その日の初回だけキーラン君のダンスを出す。
 function maybeCelebrateGoals(net, proteinTotal, vegTotal) {
-  if (kieranTestActive()) { playKieranDance(); return; }   // テスト期間中は無条件で表示
+  if (anyItemLoading()) return;   // 栄養計算中は出さない（計算完了後の再判定で出す）
   if (!checkGoalsAchieved(net, proteinTotal, vegTotal)) return;
   const today = getTodayJST();
   if (localStorage.getItem(KIERAN_CELEBRATE_KEY) === today) return;   // 今日は表示済み
@@ -1343,7 +1336,7 @@ async function onCopyFileChange(input) {
     formData.append('image', compressed);
     formData.append('user_id', USER_ID);
     { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
-    const res = await fetch('/analyze', { method:'POST', body:formData });
+    const res = await fetchAnalyze('/analyze', formData);
     const data = await res.json();
     if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
     let name = prompt('この食事の名前を入力してください（例：いつもの朝食）');
@@ -1394,7 +1387,7 @@ async function submitTextEntry(mealId) {
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
 
   try {
-    const res  = await fetch('/analyze-text', { method:'POST', body:formData });
+    const res  = await fetchAnalyze('/analyze-text', formData);
     const data = await res.json();
     _stopProgress(mealId, id);
     renderStrip(mealId);
@@ -1528,6 +1521,45 @@ function _stopProgress(mealId, itemId) {
   if (item) item.loadingPct = 100;
 }
 
+// ═══════════════════════════════════════════
+//  栄養計算の通信（他アプリ閲覧＝バックグラウンド対策）
+// ═══════════════════════════════════════════
+// スマホで栄養計算中に他のアプリを見る（＝ページが非表示になる）と、
+// 実行中の通信がOSに中断されて失敗することがある。その場合はすぐ
+// エラーにせず、画面に戻ってくるまで待ってから自動的に再送する。
+function _waitUntilVisible() {
+  if (!document.hidden) return Promise.resolve();
+  return new Promise(resolve => {
+    const h = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', h); resolve(); } };
+    document.addEventListener('visibilitychange', h);
+  });
+}
+
+async function fetchAnalyze(url, formData, maxRetries = 2) {
+  let sawHidden = document.hidden;
+  const onVis = () => { if (document.hidden) sawHidden = true; };
+  document.addEventListener('visibilitychange', onVis);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fetch(url, { method: 'POST', body: formData });
+      } catch (e) {
+        // バックグラウンドが絡む失敗で再試行の余地があれば、
+        // 画面に戻ってから少し待って再送する（それ以外は従来どおりエラー）。
+        if ((sawHidden || document.hidden) && attempt < maxRetries) {
+          await _waitUntilVisible();
+          await new Promise(r => setTimeout(r, 600));
+          sawHidden = false;
+          continue;
+        }
+        throw e;
+      }
+    }
+  } finally {
+    document.removeEventListener('visibilitychange', onVis);
+  }
+}
+
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item || !item.file) return;
@@ -1540,7 +1572,7 @@ async function analyzeItem(mealId, itemId) {
   formData.append('user_id', USER_ID);
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
-    const res  = await fetch('/analyze', { method:'POST', body:formData });
+    const res  = await fetchAnalyze('/analyze', formData);
     const data = await res.json();
     _stopProgress(mealId, itemId);
     renderStrip(mealId);
@@ -1605,7 +1637,7 @@ async function reanalyzeItem(mealId, itemId) {
   formData.append('user_id', USER_ID);
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
-    const res = await fetch('/reanalyze', { method: 'POST', body: formData });
+    const res = await fetchAnalyze('/reanalyze', formData);
     const data = await res.json();
     clearInterval(timer);
     item.loadingPct = 100;
