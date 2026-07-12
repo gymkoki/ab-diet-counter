@@ -159,7 +159,7 @@ def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
 # ── 利用ログDB（PostgreSQL 優先、なければ SQLite）──────────
 _db_lock = threading.Lock()
 JST = datetime.timezone(datetime.timedelta(hours=9))
-BUILD_ID = "2026-07-11-oil-20pct"
+BUILD_ID = "2026-07-11-ramen-min-b2"
 
 import sqlite3   # SQLite は常にフォールバック用に読み込む
 _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usage.db")
@@ -688,11 +688,12 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 ④ 野菜の付け合わせ → A食材 → 0カウント
 → 合計 B2
 
-【ラーメン】
-① 麺1人前（約270〜300kcal）→ 200kcal超 → 1カウント
-② チャーシュー2枚（約50g≒110kcal）→ 120kcal未満 → 0カウント
-③ スープの油（少量、約50kcal）→ 120kcal未満 → 0カウント
-→ 合計 B1
+【ラーメン】※1人前を食べていれば最低でも合計B2として計算する
+① 麺1人前（約270〜300kcal）→ 200kcal超 → B1
+② スープの油（1人前のスープには油が多く、大さじ2杯＝約30g≒270kcalが入っている前提）→ 200kcal超 → B1
+   ※油が少なめのあっさり系でも、スープの油は最低でも大さじ2杯分として必ず計上する
+③ チャーシューは量に応じて適宜Bを加算する（例：標準2〜3枚は0〜B0.5、脂身の多い厚切り・多め＝100g前後で約210kcal→B1）
+→ 合計 最低 B2（＋チャーシューの量に応じて加算）
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 ■ 揚げ物のルール（主食材の実kcal ＋ 吸収油は"合算"して判定）
