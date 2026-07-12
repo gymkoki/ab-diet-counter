@@ -521,7 +521,7 @@
         <div class="drum-fade-bot"></div>
         <div class="drum-roll" id="drum-copyb"></div>
       </div>
-      <div id="drum-copyb-label" class="drum-speed-label" style="margin-bottom:12px"></div>
+      <div style="margin-bottom:12px"></div>
       <button class="btn-save" onclick="saveCopyMealText()">この内容で登録する</button>
     </div>
   </div>
@@ -2001,7 +2001,6 @@ function _onCopyBScroll() {
   const idx = _getCopyBDrumIdx();
   _copyBCount = COPYB_LIST[idx] ?? 1;
   _highlightCopyBDrum(idx);
-  document.getElementById('drum-copyb-label').textContent = `選択中: B${fmtCount(_copyBCount)}`;
 }
 function _initCopyBDrum(target) {
   _buildCopyBDrum();
@@ -2015,7 +2014,6 @@ function _initCopyBDrum(target) {
     document.getElementById('drum-copyb').scrollTop = defIdx * DRUM_H;
     _copyBCount = COPYB_LIST[defIdx];
     _highlightCopyBDrum(defIdx);
-    document.getElementById('drum-copyb-label').textContent = `選択中: B${fmtCount(_copyBCount)}`;
   });
 }
 
