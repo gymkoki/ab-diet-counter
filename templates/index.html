@@ -713,13 +713,16 @@ let _editingDate = null;
 function currentDate() { return _editingDate || getTodayJST(); }
 
 // state を保存用ペイロードに変換（食材明細＋写真サムネ）
-function buildMealsPayload() {
+// includePending=true のときは、まだ解析中／解析待ちの項目（写真サムネや文章はあるが
+// 結果がまだ無いもの）も含める。これで栄養計算の途中でページが再読み込みされても
+// 写真が消えず、復帰後に自動で計算を再開できる（ローカル保存用。サーバー同期には含めない）。
+function buildMealsPayload(includePending) {
   const data = {};
   MEALS.forEach(m => {
     data[m.id] = {
       items: state[m.id].items
-        .filter(i => i.result)
-        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, isOil:i.isOil, oilLabel:i.oilLabel }))
+        .filter(i => i.result || (includePending && (i.previewSrc || (i.isText && i.text))))
+        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, isOil:i.isOil, oilLabel:i.oilLabel, pending: i.result ? undefined : true }))
     };
   });
   return data;
@@ -750,11 +753,12 @@ function saveState() {
     return;
   }
   // 今日：従来通りローカルへ保存し、サーバーにも同期（翌日以降の編集用）
+  // ローカルには解析中の項目も含めて保存（再読み込みで写真が消えないように）。
   try {
-    const data = { savedAt: Date.now(), stateDate: getTodayJST(), ...payload };
+    const data = { savedAt: Date.now(), stateDate: getTodayJST(), ...buildMealsPayload(true) };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch(e) { console.warn('save failed', e); }
-  scheduleMealSync(getTodayJST(), payload);
+  scheduleMealSync(getTodayJST(), payload);   // サーバーへは結果ありの項目のみ
 }
 
 // ペイロード（サーバー or localStorage）から state を復元。
@@ -1064,6 +1068,7 @@ async function addFiles(mealId, files) {
     item.file = compressed;
     item.previewSrc = thumb;
     renderStrip(mealId);
+    saveState();   // 解析前にサムネを保存（計算中に再読み込みされても写真が消えないように）
     analyzeItem(mealId, id);
   }
 }
@@ -1380,6 +1385,7 @@ async function submitTextEntry(mealId) {
   item.loadingPct = 0;
   _startProgress(mealId, id);
   renderStrip(mealId);
+  saveState();   // 解析前に文章を保存（計算中に再読み込みされても消えないように）
 
   const formData = new FormData();
   formData.append('text', text);
@@ -1562,13 +1568,18 @@ async function fetchAnalyze(url, formData, maxRetries = 2) {
 
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
-  if (!item || !item.file) return;
+  if (!item) return;
+  // 通常は撮影直後の item.file を使う。再読み込み後の再開時は file が失われているため、
+  // 保存済みサムネ(previewSrc)から画像を復元して解析する。
+  let imageBlob = item.file;
+  if (!imageBlob && item.previewSrc) { try { imageBlob = dataURLtoBlob(item.previewSrc); } catch(e) {} }
+  if (!imageBlob) return;
   item.loading = true;
   item.loadingPct = 0;
   _startProgress(mealId, itemId);
   renderStrip(mealId);
   const formData = new FormData();
-  formData.append('image', item.file);
+  formData.append('image', imageBlob, 'image.jpg');
   formData.append('user_id', USER_ID);
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
@@ -1589,6 +1600,48 @@ async function analyzeItem(mealId, itemId) {
   renderResults(mealId);
   saveState();
   loadStats();
+}
+
+// 文章入力（写真なし）の解析を再開する。リロードで中断された文章項目の復帰に使う。
+async function resumeTextItem(mealId, item) {
+  item.loading = true;
+  item.loadingPct = 0;
+  _startProgress(mealId, item.id);
+  renderStrip(mealId);
+  const fd = new FormData();
+  fd.append('text', item.text);
+  fd.append('user_id', USER_ID);
+  { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
+  try {
+    const res = await fetchAnalyze('/analyze-text', fd);
+    const data = await res.json();
+    _stopProgress(mealId, item.id);
+    item.loading = false;
+    if (data.error) {
+      state[mealId].items = state[mealId].items.filter(i => i.id !== item.id);
+      showError(mealId, data.error);
+    } else { item.result = data; }
+  } catch(e) {
+    _stopProgress(mealId, item.id);
+    item.loading = false;
+    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+  }
+  renderStrip(mealId);
+  renderResults(mealId);
+  saveState();
+  loadStats();
+}
+
+// 再読み込み等で中断された「解析中の項目」を、復帰時に自動で計算しなおす。
+// 写真は保存済みサムネから、文章は保存済みテキストから解析を再開する。
+function resumePendingAnalyses() {
+  MEALS.forEach(m => {
+    (state[m.id].items || []).forEach(item => {
+      if (item.result || item.loading) return;      // 完了済み・処理中は対象外
+      if (item.isText && item.text) resumeTextItem(m.id, item);
+      else if (item.previewSrc)     analyzeItem(m.id, item.id);
+    });
+  });
 }
 
 function toggleRecalcForm(mealId, itemId) {
@@ -2817,6 +2870,7 @@ MEALS.forEach(m => buildPanel(m));
 showRecordSub('food');
 updateDailyTotal();
 loadStats();
+resumePendingAnalyses();   // 中断された解析（写真・文章）を復帰時に再開
 if (!localStorage.getItem(NOTICE_KEY)) {
   document.getElementById('update-notice-overlay').style.display = 'flex';
 }
