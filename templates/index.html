@@ -507,7 +507,15 @@
     <p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">よく食べる食事を登録しておくと、記録画面の「コピーご飯を追加」から写真なしでワンタップ登録できます。</p>
     <div id="copymeals-list"></div>
     <div id="copy-add-status" style="display:none;text-align:center;padding:10px;color:var(--text-muted);font-size:14px"></div>
-    <button class="btn-save" onclick="startAddCopyMeal()">➕ コピーご飯を追加</button>
+    <button class="btn-save" onclick="startAddCopyMeal()">📷 写真から登録</button>
+    <button class="btn-save" style="margin-top:8px;background:#6366F1" onclick="toggleCopyTextForm()">✏️ 文章で登録する</button>
+    <div id="copy-text-form" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg)">
+      <label style="display:block;font-size:13px;font-weight:700;margin-bottom:4px">食事の名前・内容</label>
+      <input type="text" id="copy-text-name" maxlength="40" placeholder="例：コンビニのおにぎり2個" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px;box-sizing:border-box;margin-bottom:10px">
+      <label style="display:block;font-size:13px;font-weight:700;margin-bottom:4px">Bカウント（回）<span style="color:#EF4444">※必須</span></label>
+      <input type="number" id="copy-text-b" step="0.5" min="0" max="30" inputmode="decimal" placeholder="例：1（0.5刻みで入力）" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px;box-sizing:border-box;margin-bottom:12px">
+      <button class="btn-save" onclick="saveCopyMealText()">この内容で登録する</button>
+    </div>
   </div>
 </div>
 
@@ -1132,6 +1140,42 @@ function deleteCopyMeal(copyId) {
 // 設定画面：コピーご飯を追加（写真を選ぶ→AI解析→名前をつけて保存）
 function startAddCopyMeal() {
   document.getElementById('copy-file-input').click();
+}
+
+// 設定画面：文章で登録するフォームの開閉
+function toggleCopyTextForm() {
+  const f = document.getElementById('copy-text-form');
+  if (!f) return;
+  const hidden = (getComputedStyle(f).display === 'none');
+  f.style.display = hidden ? 'block' : 'none';
+  if (hidden) document.getElementById('copy-text-name')?.focus();
+}
+
+// 設定画面：文章＋Bカウント（必須）でコピーご飯を登録（写真・AI解析なし）
+function saveCopyMealText() {
+  const nameEl = document.getElementById('copy-text-name');
+  const bEl = document.getElementById('copy-text-b');
+  let name = (nameEl.value || '').trim();
+  const bRaw = (bEl.value || '').trim();
+  // Bカウントは必須
+  if (bRaw === '') { alert('Bカウント（回）を入力してください（必須）'); bEl.focus(); return; }
+  const b = parseFloat(bRaw);
+  if (isNaN(b) || b < 0 || b > 30) { alert('Bカウントは0〜30の数値で入力してください'); bEl.focus(); return; }
+  if (!name) name = 'コピーご飯';
+  const meals = getCopyMeals();
+  meals.push({
+    id: 'cm-' + Date.now().toString(36),
+    name,
+    previewSrc: null,
+    result: { foods: [{ name, category: 'B', kcal_per_serving: 0, amount: '', b_count: b, reason: '文章で手動登録' }], total_b_count: b, advice: '' }
+  });
+  saveCopyMeals(meals);
+  renderCopyMealsList();
+  nameEl.value = '';
+  bEl.value = '';
+  document.getElementById('copy-text-form').style.display = 'none';
+  const status = document.getElementById('copy-add-status');
+  if (status) { status.style.display = 'block'; status.textContent = `✅ 「${name}」を登録しました`; setTimeout(() => { status.style.display = 'none'; }, 2500); }
 }
 
 async function onCopyFileChange(input) {
