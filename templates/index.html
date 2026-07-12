@@ -411,6 +411,7 @@
       <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
       <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
       <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジム<br>オンラインレッスン</button>
+      <button class="chip" onclick="selectExType('リオールジム対面トレーニング')">🤝 リオールジム<br>対面トレーニング</button>
       <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
     </div>
   </div>
@@ -1850,6 +1851,8 @@ function getProfile() {
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
 const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'リオールジムオンラインレッスン': 5.0 };
+// 時間・体重に関係なく固定のBカウントを消費する種目（対面トレーニングは一律B1消費）
+const FIXED_EX_BCOUNT = { 'リオールジム対面トレーニング': 1 };
 let _exType = null, _exDuration = 30, _exFloors = 5;
 
 // 階段：1階のぼるのに約15秒、MET8として消費kcalを算出（体重×階数×0.0333）
@@ -2049,10 +2052,13 @@ function selectExType(type) {
     b.classList.toggle('sel', b.textContent.trim().includes(type));
   });
   const isStair = (type === '階段');
-  // 階段は「時間」ではなく「階数」で入力
-  document.getElementById('duration-section').style.display = isStair ? 'none' : '';
+  const isFixed = (FIXED_EX_BCOUNT[type] != null);   // 固定B消費の種目（対面トレーニング等）
+  // 階段は「階数」、固定B種目は入力不要、それ以外は「時間」
+  document.getElementById('duration-section').style.display = (isStair || isFixed) ? 'none' : '';
   document.getElementById('floor-section').style.display = isStair ? '' : 'none';
-  if (isStair) {
+  if (isFixed) {
+    document.getElementById('speed-section').style.display = 'none';
+  } else if (isStair) {
     _initFloorDrum();
   } else if (type === 'ランニング') {
     _initSpeedSection();
@@ -2090,8 +2096,19 @@ function kcalToExBCount(kcal) {
 function _updateExResult() {
   const card   = document.getElementById('ex-result-card');
   const notice = document.getElementById('ex-profile-notice');
-  const ready = _exType && (_exType === '階段' ? _exFloors > 0 : _exDuration);
+  const isFixed = (FIXED_EX_BCOUNT[_exType] != null);
+  const ready = _exType && (isFixed ? true : (_exType === '階段' ? _exFloors > 0 : _exDuration));
   if (!ready) { card.style.display = 'none'; notice.style.display = 'none'; return; }
+  if (isFixed) {
+    notice.style.display = 'none';   // 体重・時間に依存しない
+    const bcf = FIXED_EX_BCOUNT[_exType];
+    document.getElementById('ex-result-inner').innerHTML = `
+      <div class="ex-result-row"><span class="ex-result-label">種目</span><span class="ex-result-val">${_exType}</span></div>
+      <div class="ex-result-row"><span class="ex-result-label">Bカウント消費</span><span class="ex-result-val" style="color:var(--a-color)">−${fmtCount(bcf)} B</span></div>
+    `;
+    card.style.display = '';
+    return;
+  }
   const hasProfile = !!getProfile();
   notice.style.display = hasProfile ? 'none' : '';
   const kcal = calcExKcal(_exType, _exDuration);
@@ -2118,7 +2135,8 @@ function editExercise(ts) {
     b.classList.toggle('sel', b.textContent.trim().includes(log.type));
   });
   const isStair = (log.type === '階段');
-  document.getElementById('duration-section').style.display = isStair ? 'none' : '';
+  const isFixed = (FIXED_EX_BCOUNT[log.type] != null);
+  document.getElementById('duration-section').style.display = (isStair || isFixed) ? 'none' : '';
   document.getElementById('floor-section').style.display = isStair ? '' : 'none';
   if (log.type === 'ランニング') {
     _initSpeedSection(log.speedKmh || null);
@@ -2126,7 +2144,9 @@ function editExercise(ts) {
     document.getElementById('speed-section').style.display = 'none';
   }
 
-  if (isStair) {
+  if (isFixed) {
+    _updateExResult();
+  } else if (isStair) {
     _initFloorDrum(log.floors || 5);
   } else {
     const dIdx = DURATION_LIST.indexOf(log.min);
@@ -2147,12 +2167,13 @@ function editExercise(ts) {
 
 function recordExercise() {
   const isStair = (_exType === '階段');
-  if (!_exType || (isStair ? !_exFloors : !_exDuration)) return;
+  const isFixed = (FIXED_EX_BCOUNT[_exType] != null);
+  if (!_exType || (!isFixed && (isStair ? !_exFloors : !_exDuration))) return;
   const p      = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
-  const met    = isStair ? null : ((_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4));
-  const kcal   = calcExKcal(_exType, _exDuration);
-  const bc     = kcalToExBCount(kcal);
+  const met    = (isStair || isFixed) ? null : ((_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4));
+  const kcal   = isFixed ? 0 : calcExKcal(_exType, _exDuration);
+  const bc     = isFixed ? FIXED_EX_BCOUNT[_exType] : kcalToExBCount(kcal);
   const today  = currentDate();   // 過去日編集中はその日付に記録
   const speedLabel = (_exType === 'ランニング')
     ? (_speedMode === 'kmh'
@@ -2161,7 +2182,7 @@ function recordExercise() {
     : null;
   const speedKmh = (_exType === 'ランニング') ? _runSpeedKmh : null;
   const floors = isStair ? _exFloors : null;
-  const minVal = isStair ? null : _exDuration;
+  const minVal = (isStair || isFixed) ? null : _exDuration;
   const metVal = met != null ? Math.round(met * 10) / 10 : null;
 
   let logs = [];
@@ -2221,13 +2242,16 @@ function renderExLog() {
   if (todayLogs.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
   list.innerHTML = todayLogs.map(l => {
+    const isFixedLog = (FIXED_EX_BCOUNT[l.type] != null);
     const detail = (l.type === '階段')
       ? `${l.type} ${l.floors}階`
-      : (l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`);
+      : isFixedLog
+        ? `${l.type}`
+        : (l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`);
     return `<div class="ex-log-row">
       <div>
         <div style="font-weight:800;font-size:15px">${detail}</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${l.kcal} kcal ／ −${fmtCount(l.bc)} B${l.met ? ` ／ ${l.met} メッツ` : ''}</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:3px">${isFixedLog ? '' : `${l.kcal} kcal ／ `}−${fmtCount(l.bc)} B${l.met ? ` ／ ${l.met} メッツ` : ''}</div>
       </div>
       <button class="ex-edit-btn" onclick="editExercise(${l.ts})">✏️</button>
     </div>`;
