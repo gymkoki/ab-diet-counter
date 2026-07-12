@@ -1487,6 +1487,64 @@ def version():
     return jsonify({"build": BUILD_ID, "has_retry": "create_and_parse" in globals()})
 
 
+# 修正希望・ご要望の転送先（運営メール）
+FEEDBACK_TO = "reallgym.tokyo@gmail.com"
+
+
+@app.route("/api/feedback", methods=["POST"])
+def submit_feedback():
+    """利用者からの修正希望・ご要望をメールで運営へ転送する。"""
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    uid = (data.get("user_id") or "").strip()
+    if not text:
+        return jsonify({"error": "内容を入力してください"}), 400
+    if len(text) > 5000:
+        text = text[:5000]
+
+    gmail_user = _get_setting("GMAIL_USER")
+    gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
+    if not gmail_user or not gmail_pass:
+        return jsonify({"error": "メール送信の設定が未登録のため送信できません。運営にお問い合わせください。"}), 500
+
+    # 表示名を取得（分かれば件名・本文に添える）
+    name = ""
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT display_name FROM user_profile WHERE user_id={PH}", (uid,))
+            row = cur.fetchone()
+            name = (row[0] if row else "") or ""
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    now = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    body = (
+        "ABダイエットアプリに修正希望・ご要望が届きました。\n\n"
+        f"日時: {now}\n"
+        f"利用者: {name or '(名前未設定)'}\n"
+        f"user_id: {uid or '(不明)'}\n\n"
+        "──────────────\n"
+        f"{text}\n"
+        "──────────────\n"
+    )
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(f"[ABダイエット] 修正希望 - {name or (uid[:8] if uid else '匿名')}", "utf-8")
+    msg["From"] = gmail_user
+    msg["To"] = FEEDBACK_TO
+    msg["Reply-To"] = FEEDBACK_TO
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+            smtp.login(gmail_user, gmail_pass)
+            smtp.sendmail(gmail_user, [FEEDBACK_TO], msg.as_bytes())
+    except Exception as e:
+        return jsonify({"error": f"送信に失敗しました。時間をおいて再度お試しください。({e})"}), 500
+    return jsonify({"ok": True})
+
+
 # ── デイリーレポートメール ──────────────────────────────────────
 _last_report_sent: dict = {}
 _backup_check: dict = {}

@@ -525,6 +525,13 @@
       <button class="btn-save" onclick="saveCopyMealText()">この内容で登録する</button>
     </div>
   </div>
+  <div class="setting-card">
+    <h2>✉️ 修正希望・ご要望</h2>
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">アプリへのご要望・不具合・「この食材のB判定を直してほしい」などの修正希望をお送りください。運営に届きます。</p>
+    <textarea id="feedback-text" maxlength="5000" placeholder="例：〇〇がA判定になりますが、Bにしてほしいです" style="width:100%;min-height:100px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
+    <div id="feedback-status" style="display:none;text-align:center;padding:8px;font-size:14px;color:var(--text-muted)"></div>
+    <button class="btn-save" style="margin-top:10px" onclick="sendFeedback()">送信する</button>
+  </div>
 </div>
 
 <!-- ボトムナビ（3タブ） -->
@@ -1148,6 +1155,33 @@ function deleteCopyMeal(copyId) {
 // 設定画面：コピーご飯を追加（写真を選ぶ→AI解析→名前をつけて保存）
 function startAddCopyMeal() {
   document.getElementById('copy-file-input').click();
+}
+
+// 設定画面：修正希望・ご要望を運営メールへ送信
+async function sendFeedback() {
+  const ta = document.getElementById('feedback-text');
+  const status = document.getElementById('feedback-status');
+  const text = (ta.value || '').trim();
+  if (!text) { alert('修正希望・ご要望の内容を入力してください'); ta.focus(); return; }
+  status.style.display = 'block';
+  status.textContent = '送信中…';
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, text })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      ta.value = '';
+      status.textContent = '✅ 送信しました。ご意見ありがとうございます！';
+    } else {
+      status.textContent = '⚠️ ' + (data.error || '送信に失敗しました');
+    }
+  } catch (e) {
+    status.textContent = '⚠️ 通信エラーが発生しました。時間をおいてお試しください。';
+  }
+  setTimeout(() => { status.style.display = 'none'; }, 5000);
 }
 
 // 設定画面：文章で登録するフォームの開閉
