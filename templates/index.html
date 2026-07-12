@@ -553,11 +553,11 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
     <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.13</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.14</div>
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🍤</span>
-        <span>揚げ物の吸油率（吸った油の割合）を15%から20〜30%に見直し、揚げ物のBカウントをより正確に計算するようにしました。</span>
+        <span style="font-size:20px;flex-shrink:0">🍜</span>
+        <span>ラーメンの計算を見直しました。1人前は麺でB1＋スープの油（大さじ2杯）でB1の、最低B2として計算します。チャーシューは量に応じてBを追加します。</span>
       </div>
     </div>
     <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -2515,7 +2515,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v15';
+const NOTICE_KEY = 'ab-diet-notice-v16';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
