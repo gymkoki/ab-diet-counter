@@ -73,6 +73,18 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .no-data { text-align: center; color: #9CA3AF; padding: 28px 0; font-size: 14px; }
 
+    /* ── 日ごとのBカウント合計 ── */
+    .bcount-summary { display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px; }
+    .bcount-summary .stat { background:#FFF5F0; border-radius:10px; padding:10px 16px; }
+    .bcount-summary .stat .label { font-size:11px; color:#9CA3AF; font-weight:700; }
+    .bcount-summary .stat .value { font-size:20px; font-weight:900; color:#FF6B35; }
+    .bcount-table { width:100%; border-collapse:collapse; font-size:14px; }
+    .bcount-table th { text-align:left; font-size:12px; color:#9CA3AF; font-weight:700; padding:6px 8px; border-bottom:2px solid #F3F4F6; }
+    .bcount-table td { padding:8px; border-bottom:1px solid #F3F4F6; }
+    .bcount-table td.num { text-align:right; font-weight:800; color:#FF6B35; font-variant-numeric:tabular-nums; }
+    .bcount-table tr:hover td { background:#FFFAF7; }
+    .bcount-scroll { max-height:340px; overflow-y:auto; }
+
     /* ── 食事写真ギャラリー ── */
     .meal-day { margin-bottom: 18px; }
     .meal-day-title { font-size: 13px; font-weight: 800; color: #6B7280; margin-bottom: 8px; }
@@ -143,6 +155,12 @@
       <h2>🏃 運動によるBカウント消費推移</h2>
       <canvas id="chart-exercise" height="160"></canvas>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>📊 日ごとのBカウント合計</h2>
+    <div id="bcount-summary"></div>
+    <div id="bcount-list"><div class="spinner"></div></div>
   </div>
 
   <div class="card">
@@ -292,6 +310,38 @@
     load();
   }
 
+  // 日ごとのBカウント合計を一覧表示（合計・記録日数・1日平均も上部に）
+  function renderBCountList(arr) {
+    const listWrap = document.getElementById('bcount-list');
+    const sumWrap = document.getElementById('bcount-summary');
+    if (!arr || arr.length === 0) {
+      sumWrap.innerHTML = '';
+      listWrap.innerHTML = '<div class="no-data">Bカウントの記録がありません</div>';
+      return;
+    }
+    const fmt = n => (Math.round((Number(n) || 0) * 100) / 100).toString();
+    const rows = arr.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const total = rows.reduce((s, x) => s + (Number(x.b_count) || 0), 0);
+    const days = rows.length;
+    sumWrap.innerHTML = `
+      <div class="bcount-summary">
+        <div class="stat"><div class="label">合計Bカウント</div><div class="value">${fmt(total)} 回</div></div>
+        <div class="stat"><div class="label">記録日数</div><div class="value">${days} 日</div></div>
+        <div class="stat"><div class="label">1日平均</div><div class="value">${fmt(total / days)} 回</div></div>
+      </div>`;
+    const dow = ['日', '月', '火', '水', '木', '金', '土'];
+    const fmtDate = s => { const dt = new Date(s + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}（${dow[dt.getDay()]}）`; };
+    listWrap.innerHTML = `
+      <div class="bcount-scroll">
+        <table class="bcount-table">
+          <thead><tr><th>日付</th><th style="text-align:right">Bカウント合計</th></tr></thead>
+          <tbody>
+            ${rows.map(x => `<tr><td>${fmtDate(x.date)}</td><td class="num">${fmt(x.b_count)} 回</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   async function load() {
     const r = await fetch(`/api/admin/user/${encodeURIComponent(USER_ID)}/detail`);
     const d = await r.json();
@@ -305,6 +355,7 @@
 
     if (chartB) chartB.destroy();
     chartB = buildLineChart('chart-b', d.b_count.map(x => x.date), d.b_count.map(x => x.b_count), 'Bカウント', 'rgb(255,107,53)');
+    renderBCountList(d.b_count);
 
     if (chartExercise) chartExercise.destroy();
     chartExercise = buildLineChart('chart-exercise', d.exercise.map(x => x.date), d.exercise.map(x => x.ex_b_count), '運動Bカウント消費', 'rgb(5,150,105)');
