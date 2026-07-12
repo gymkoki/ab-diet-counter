@@ -513,8 +513,15 @@
     <div id="copy-text-form" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg)">
       <label style="display:block;font-size:13px;font-weight:700;margin-bottom:4px">食事の名前・内容</label>
       <input type="text" id="copy-text-name" maxlength="40" placeholder="例：コンビニのおにぎり2個" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px;box-sizing:border-box;margin-bottom:10px">
-      <label style="display:block;font-size:13px;font-weight:700;margin-bottom:4px">Bカウント（回）<span style="color:#EF4444">※必須</span></label>
-      <input type="number" id="copy-text-b" step="0.5" min="0" max="30" inputmode="decimal" placeholder="例：1（0.5刻みで入力）" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px;box-sizing:border-box;margin-bottom:12px">
+      <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">Bカウント（回）<span style="font-weight:400;color:var(--text-muted)">ダイヤルで選択（B0〜4・0.5刻み）</span></label>
+      <div class="drum-wrap">
+        <div class="drum-fade-top"></div>
+        <div class="drum-line-top"></div>
+        <div class="drum-line-bot"></div>
+        <div class="drum-fade-bot"></div>
+        <div class="drum-roll" id="drum-copyb"></div>
+      </div>
+      <div id="drum-copyb-label" class="drum-speed-label" style="margin-bottom:12px"></div>
       <button class="btn-save" onclick="saveCopyMealText()">この内容で登録する</button>
     </div>
   </div>
@@ -1149,19 +1156,14 @@ function toggleCopyTextForm() {
   if (!f) return;
   const hidden = (getComputedStyle(f).display === 'none');
   f.style.display = hidden ? 'block' : 'none';
-  if (hidden) document.getElementById('copy-text-name')?.focus();
+  if (hidden) _initCopyBDrum(1);   // Bカウントのダイヤルを初期化（既定B1）
 }
 
-// 設定画面：文章＋Bカウント（必須）でコピーご飯を登録（写真・AI解析なし）
+// 設定画面：文章＋Bカウント（ダイヤル選択）でコピーご飯を登録（写真・AI解析なし）
 function saveCopyMealText() {
   const nameEl = document.getElementById('copy-text-name');
-  const bEl = document.getElementById('copy-text-b');
   let name = (nameEl.value || '').trim();
-  const bRaw = (bEl.value || '').trim();
-  // Bカウントは必須
-  if (bRaw === '') { alert('Bカウント（回）を入力してください（必須）'); bEl.focus(); return; }
-  const b = parseFloat(bRaw);
-  if (isNaN(b) || b < 0 || b > 30) { alert('Bカウントは0〜30の数値で入力してください'); bEl.focus(); return; }
+  const b = _copyBCount;   // ダイヤルで選択済み（B0〜4）
   if (!name) name = 'コピーご飯';
   const meals = getCopyMeals();
   meals.push({
@@ -1173,10 +1175,9 @@ function saveCopyMealText() {
   saveCopyMeals(meals);
   renderCopyMealsList();
   nameEl.value = '';
-  bEl.value = '';
   document.getElementById('copy-text-form').style.display = 'none';
   const status = document.getElementById('copy-add-status');
-  if (status) { status.style.display = 'block'; status.textContent = `✅ 「${name}」を登録しました`; setTimeout(() => { status.style.display = 'none'; }, 2500); }
+  if (status) { status.style.display = 'block'; status.textContent = `✅ 「${name}」を B${fmtCount(b)} で登録しました`; setTimeout(() => { status.style.display = 'none'; }, 2500); }
 }
 
 async function onCopyFileChange(input) {
@@ -1943,6 +1944,44 @@ function _initFloorDrum(targetFloor) {
     _highlightFloorDrum(defIdx);
     document.getElementById('drum-floor-label').textContent = `選択中: ${_exFloors}階`;
     _updateExResult();
+  });
+}
+
+// ── コピーご飯（文章登録）のBカウント・ダイヤル（B0〜4・0.5刻み）──
+const COPYB_LIST = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
+let _copyBCount = 1, _drumCopyBInited = false;
+function _buildCopyBDrum() {
+  const el = document.getElementById('drum-copyb');
+  const pad = '<div class="drum-item drum-pad"></div>';
+  el.innerHTML = pad.repeat(DRUM_PAD) + COPYB_LIST.map(v => `<div class="drum-item">B${fmtCount(v)}</div>`).join('') + pad.repeat(DRUM_PAD);
+}
+function _getCopyBDrumIdx() {
+  return Math.round(document.getElementById('drum-copyb').scrollTop / DRUM_H);
+}
+function _highlightCopyBDrum(dataIdx) {
+  document.querySelectorAll('#drum-copyb .drum-item').forEach((el, i) => {
+    el.classList.toggle('drum-sel', i === dataIdx + DRUM_PAD);
+  });
+}
+function _onCopyBScroll() {
+  const idx = _getCopyBDrumIdx();
+  _copyBCount = COPYB_LIST[idx] ?? 1;
+  _highlightCopyBDrum(idx);
+  document.getElementById('drum-copyb-label').textContent = `選択中: B${fmtCount(_copyBCount)}`;
+}
+function _initCopyBDrum(target) {
+  _buildCopyBDrum();
+  if (!_drumCopyBInited) {
+    document.getElementById('drum-copyb').addEventListener('scroll', _onCopyBScroll, { passive: true });
+    _drumCopyBInited = true;
+  }
+  let defIdx = COPYB_LIST.indexOf(target != null ? target : 1);
+  if (defIdx < 0) defIdx = COPYB_LIST.indexOf(1);
+  requestAnimationFrame(() => {
+    document.getElementById('drum-copyb').scrollTop = defIdx * DRUM_H;
+    _copyBCount = COPYB_LIST[defIdx];
+    _highlightCopyBDrum(defIdx);
+    document.getElementById('drum-copyb-label').textContent = `選択中: B${fmtCount(_copyBCount)}`;
   });
 }
 
