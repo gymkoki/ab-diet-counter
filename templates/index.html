@@ -189,6 +189,32 @@
     .btn-cancel { flex:1; padding:13px; border-radius:12px; border:1.5px solid var(--border); background:none; font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; }
     .btn-reset-ok { flex:1; padding:13px; border-radius:12px; border:none; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; font-size:17px; font-weight:800; cursor:pointer; }
 
+    /* ── 目標達成！マスコット猫「キーラン君」のダンス演出 ── */
+    #goal-celebrate { display:none; position:fixed; inset:0; z-index:600; align-items:center; justify-content:center; background:rgba(24,12,4,0.55); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); cursor:pointer; }
+    #goal-celebrate.show { display:flex; animation:gc-fade-in 0.25s ease-out; }
+    #goal-celebrate.hide { animation:gc-fade-out 0.4s ease-in forwards; }
+    @keyframes gc-fade-in  { from{opacity:0} to{opacity:1} }
+    @keyframes gc-fade-out { from{opacity:1} to{opacity:0} }
+    .gc-stage { position:relative; display:flex; flex-direction:column; align-items:center; padding:10px 30px; }
+    .gc-cat { width:150px; height:150px; image-rendering:pixelated; image-rendering:crisp-edges; filter:drop-shadow(0 8px 10px rgba(0,0,0,0.35)); transform-origin:50% 100%; animation:gc-dance 0.5s ease-in-out infinite; }
+    @keyframes gc-dance {
+      0%   { transform:translateY(0)     rotate(-8deg) scale(1,1); }
+      25%  { transform:translateY(-16px) rotate(0deg)  scale(0.93,1.09); }
+      50%  { transform:translateY(0)     rotate(8deg)  scale(1.07,0.93); }
+      75%  { transform:translateY(-16px) rotate(0deg)  scale(0.93,1.09); }
+      100% { transform:translateY(0)     rotate(-8deg) scale(1,1); }
+    }
+    .gc-title { margin-top:24px; color:#fff; font-size:27px; font-weight:900; letter-spacing:1px; text-shadow:0 2px 10px rgba(0,0,0,0.45); animation:gc-pop 0.5s ease-out both; }
+    .gc-sub { margin-top:6px; color:#FFE3C9; font-size:15px; font-weight:700; text-shadow:0 1px 5px rgba(0,0,0,0.4); animation:gc-pop 0.5s 0.08s ease-out both; }
+    @keyframes gc-pop { 0%{opacity:0; transform:translateY(12px) scale(0.7)} 60%{transform:translateY(0) scale(1.08)} 100%{opacity:1; transform:scale(1)} }
+    .gc-spark { position:absolute; font-size:22px; opacity:0; pointer-events:none; animation:gc-spark 1.4s ease-out infinite; }
+    @keyframes gc-spark { 0%{opacity:0; transform:translateY(0) scale(0.4)} 25%{opacity:1} 100%{opacity:0; transform:translateY(-72px) scale(1.2)} }
+    @media (prefers-reduced-motion: reduce) {
+      .gc-cat { animation:gc-dance-soft 0.9s ease-in-out infinite; }
+      @keyframes gc-dance-soft { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+      .gc-spark { animation-duration:2s; }
+    }
+
     /* ── 履歴 ── */
     .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; }
     .history-card h2 { font-size:20px; font-weight:800; margin-bottom:4px; }
@@ -589,6 +615,20 @@
 </div>
 
 
+<!-- 目標達成！リオールジムのマスコット猫「キーラン君」が2〜3秒踊る演出 -->
+<div id="goal-celebrate" onclick="hideGoalCelebrate()">
+  <div class="gc-stage">
+    <span class="gc-spark" style="left:-4px;  top:14px;  animation-delay:0s">✨</span>
+    <span class="gc-spark" style="right:-6px; top:2px;   animation-delay:.35s">🎉</span>
+    <span class="gc-spark" style="left:16px;  top:-16px; animation-delay:.7s">🎵</span>
+    <span class="gc-spark" style="right:8px;  top:66px;  animation-delay:.5s">⭐</span>
+    <span class="gc-spark" style="left:-12px; top:74px;  animation-delay:.9s">🎶</span>
+    <img class="gc-cat" src="/static/kieran.svg" alt="キーラン君" draggable="false">
+    <div class="gc-title">🎉 目標達成！</div>
+    <div class="gc-sub">キーラン君も大よろこび！</div>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════
 //  写真選択
@@ -885,6 +925,56 @@ function updateDailyTotal() {
       vbar.style.display = 'none';
     }
   }
+
+  // 今日の3目標（Bカウント・タンパク質・野菜）を達成したら、
+  // マスコット猫「キーラン君」のダンスを出す（今日を表示中のときだけ）。
+  if (!_editingDate) maybeCelebrateGoals(net, proteinTotal, vegTotal);
+}
+
+// ═══════════════════════════════════════════
+//  目標達成！キーラン君ダンス
+// ═══════════════════════════════════════════
+const KIERAN_CELEBRATE_KEY = 'kieran-celebrated-date';   // 「YYYY-MM-DD」＝その日は表示済み
+let _gcTimer = null;
+
+// 今日のBカウント・タンパク質・野菜が、それぞれの目標を満たしているか。
+// 3つの目標がすべて設定されている場合のみ判定する（未設定なら達成扱いにしない）。
+function checkGoalsAchieved(net, proteinTotal, vegTotal) {
+  const bt = getGoalTarget(getProfile());   // 性別・目標が必要
+  const pt = getProteinTarget();            // 体重が必要
+  if (!bt || !pt) return false;
+  const bOK = net >= bt.min && net <= bt.max;   // Bカウントが目標範囲内
+  const pOK = proteinTotal >= pt.min;           // タンパク質が目標の下限以上
+  const vOK = vegTotal >= VEG_TARGET_G;         // 野菜が350g以上
+  return bOK && pOK && vOK;
+}
+
+// 達成していれば、その日の初回だけキーラン君のダンスを出す。
+function maybeCelebrateGoals(net, proteinTotal, vegTotal) {
+  if (!checkGoalsAchieved(net, proteinTotal, vegTotal)) return;
+  const today = getTodayJST();
+  if (localStorage.getItem(KIERAN_CELEBRATE_KEY) === today) return;   // 今日は表示済み
+  localStorage.setItem(KIERAN_CELEBRATE_KEY, today);
+  playKieranDance();
+}
+
+// キーラン君（リオールジムのマスコット猫）が2〜3秒踊る演出を再生する。
+function playKieranDance() {
+  const ov = document.getElementById('goal-celebrate');
+  if (!ov) return;
+  if (_gcTimer) { clearTimeout(_gcTimer); _gcTimer = null; }
+  ov.classList.remove('hide');
+  ov.classList.add('show');
+  _gcTimer = setTimeout(hideGoalCelebrate, 2600);   // 約2.6秒で自動的に閉じる
+}
+
+// ダンス演出を閉じる（自動・タップの両方から呼ばれる）。
+function hideGoalCelebrate() {
+  const ov = document.getElementById('goal-celebrate');
+  if (!ov || !ov.classList.contains('show')) return;
+  if (_gcTimer) { clearTimeout(_gcTimer); _gcTimer = null; }
+  ov.classList.add('hide');
+  setTimeout(() => { ov.classList.remove('show', 'hide'); }, 400);
 }
 
 // 1日の野菜目標(g)。厚労省の推奨目安に合わせて350g固定。
