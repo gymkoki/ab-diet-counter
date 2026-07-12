@@ -576,11 +576,11 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px">
     <div style="font-size:13px;font-weight:700;color:#FF6B35;letter-spacing:0.5px;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.15</div>
+    <div style="font-size:20px;font-weight:900;margin-bottom:16px">🎉 最新アップデート No.16</div>
     <div style="font-size:14px;line-height:1.9;color:#374151;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🍚</span>
-        <span>コピーご飯を、写真だけでなく「文章＋Bカウント」でも登録できるようになりました。設定→コピーご飯→「文章で登録する」から、名前とBカウント（ダイヤルで選択）を入れて登録できます。</span>
+        <span style="font-size:20px;flex-shrink:0">✉️</span>
+        <span>「修正希望・ご要望」を送れるようになりました。設定の一番下の欄から、アプリへのご要望や「この食材のB判定を直してほしい」などを運営に送信できます。ぜひお聞かせください！</span>
       </div>
     </div>
     <div style="font-size:13px;color:#6B7280;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -2656,7 +2656,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v17';
+const NOTICE_KEY = 'ab-diet-notice-v18';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';

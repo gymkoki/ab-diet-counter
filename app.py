@@ -1502,8 +1502,10 @@ def submit_feedback():
     if len(text) > 5000:
         text = text[:5000]
 
-    gmail_user = _get_setting("GMAIL_USER")
-    gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
+    # 認証情報に混入しがちな空白（半角/全角/ノーブレークスペース\xa0等）を除去する。
+    # 貼り付け時に紛れ込むと smtplib のASCIIエンコードで送信に失敗するため。
+    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
+    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
     if not gmail_user or not gmail_pass:
         return jsonify({"error": "メール送信の設定が未登録のため送信できません。運営にお問い合わせください。"}), 500
 
@@ -1813,7 +1815,7 @@ def _set_setting(key: str, value: str):
 @app.route("/setup-email", methods=["GET"])
 def setup_email_page():
     gmail_user = _get_setting("GMAIL_USER")
-    report_to  = _get_setting("REPORT_TO") or "reallgym.tokyo@gmail.com"
+    report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
     saved = request.args.get("saved", "")
 
     err_msg = request.args.get("msg", "")
@@ -1955,9 +1957,9 @@ def _make_backup_attachment():
 
 
 def _send_daily_report():
-    gmail_user = _get_setting("GMAIL_USER")
-    gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
-    report_to  = _get_setting("REPORT_TO") or "reallgym.tokyo@gmail.com"
+    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
+    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
+    report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
     if not gmail_user or not gmail_pass or not report_to:
         raise ValueError("メール設定が未登録です。/setup-email で設定してください。")
 
@@ -1976,9 +1978,9 @@ def _send_daily_report():
 
 def _send_backup_email():
     """全データのバックアップ(.json.gz)をメール添付で送る。復元用の命綱。"""
-    gmail_user = _get_setting("GMAIL_USER")
-    gmail_pass = _get_setting("GMAIL_APP_PASSWORD")
-    report_to  = _get_setting("REPORT_TO") or "reallgym.tokyo@gmail.com"
+    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
+    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
+    report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
     if not gmail_user or not gmail_pass or not report_to:
         print("[BACKUP][WARN] メール未設定のためバックアップを送れません")
         return
