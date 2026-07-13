@@ -626,11 +626,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.16</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.17</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">✉️</span>
-        <span>「修正希望・ご要望」を送れるようになりました。設定の一番下の欄から、アプリへのご要望や「この食材のB判定を直してほしい」などを運営に送信できます。ぜひお聞かせください！</span>
+        <span style="font-size:20px;flex-shrink:0">🛠️</span>
+        <span><b>ただいまABダイエットアプリの「修正強化キャンペーン」中です！</b><br>設定の一番下にメッセージ欄がありますので、「この食材のB判定を直してほしい」などの修正希望やご要望がありましたら、ご遠慮なくお知らせください。いただいたご意見をもとにアプリをどんどん改善していきます！</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">📝</span>
+        <span>食事写真に手動で文章を入力できるようになりました。写真を撮った後の補足画面で「これは鶏むね肉です」などを入力すると、食材の判定がより正確になります。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -2894,7 +2898,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v18';
+const NOTICE_KEY = 'ab-diet-notice-v19';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
