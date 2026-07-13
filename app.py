@@ -2649,6 +2649,17 @@ def analyze():
             },
         },
     ]
+    # 写真への補足（任意）：食材名・量などユーザーの申告を最優先で反映する
+    note = (request.form.get("note") or "").strip()
+    if note:
+        user_content.append({
+            "type": "text",
+            "text": ("━━━━━━━━━━━━━━━━━━━━━━━\n"
+                     "【ユーザーからの補足情報（写真より最優先で反映すること）】\n"
+                     f"{note[:1000]}\n"
+                     "写真から読み取れない・写真と矛盾する場合も、この補足の食材名・量を正として判定する。\n"
+                     "━━━━━━━━━━━━━━━━━━━━━━━"),
+        })
     adv = _advice_context(request.form.get("gender", ""), request.form.get("goal", ""))
     if adv:
         user_content.append({"type": "text", "text": adv})
