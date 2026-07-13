@@ -545,11 +545,26 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
 # 画像1024px・出力約1000トークンで約$0.025≒¥4。為替やモデルを変えたら調整。
 COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "4"))
 
+def _is_admin_authed():
+    """Basic認証（従来のデスクトップ向け）と X-Admin-Password ヘッダー
+    （スマホ向け・管理画面のログインフォームが付与）の両方を受け付ける。"""
+    auth = request.authorization
+    if auth and auth.password == ADMIN_PASSWORD:
+        return True
+    if request.headers.get("X-Admin-Password") == ADMIN_PASSWORD:
+        return True
+    return False
+
+
 def _admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or auth.password != ADMIN_PASSWORD:
+        if not _is_admin_authed():
+            # APIはJSONの401を返す（fetchで扱うため、ブラウザのBasic認証
+            # ダイアログを出す WWW-Authenticate は付けない）。
+            # ページ表示（/admin/backup 等）は従来通りBasic認証を促す。
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "管理者認証が必要です"}), 401
             return Response(
                 "管理者認証が必要です",
                 401,
@@ -956,9 +971,18 @@ def index():
 
 
 @app.route("/admin")
-@_admin_required
 def admin():
+    # ページ自体は認証なしで表示し、データを返すAPI側で認証する。
+    # （スマホではBasic認証ダイアログが正しく動かないことが多いため、
+    #   ページ内のログインフォームでパスワードを入力してもらう方式）
     return render_template("admin.html")
+
+
+@app.route("/api/admin/auth-check")
+@_admin_required
+def admin_auth_check():
+    """管理画面のログインフォームがパスワードを確認するための軽量API"""
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/overview")
@@ -1585,8 +1609,8 @@ def admin_set_vip(user_id):
 
 
 @app.route("/admin/user/<user_id>")
-@_admin_required
 def admin_user_page(user_id):
+    # /admin と同様、ページは認証なしで表示しデータAPI側で認証する
     return render_template("admin_user.html", user_id=user_id)
 
 
