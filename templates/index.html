@@ -576,6 +576,17 @@
     </div>
   </div>
   <div class="setting-card">
+    <h2>🔗 スマホ・パソコンでデータを共有</h2>
+    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">スマホとパソコンなど、複数の端末で<strong>同じ記録</strong>を見たり編集したりできるようにします。<br><strong>① いつも記録している端末</strong>で連携コードを発行し、<strong>② もう一方の端末</strong>でそのコードを入力してください。</p>
+    <button class="btn-save" onclick="issueLinkCode()">① 連携コードを発行する</button>
+    <div id="link-code-display" style="display:none;text-align:center;margin-top:12px"></div>
+    <div style="border-top:1px solid var(--border);margin:18px 0"></div>
+    <label class="setting-label">② もう一方の端末で発行したコードを入力</label>
+    <input class="setting-input" type="text" id="link-code-input" inputmode="numeric" maxlength="6" placeholder="例：123456" autocomplete="one-time-code">
+    <button class="btn-save" style="background:#6366F1" onclick="redeemLinkCode()">この端末を連携する</button>
+    <div id="link-status" style="display:none;text-align:center;margin-top:10px;font-size:17px;font-weight:700"></div>
+  </div>
+  <div class="setting-card">
     <h2>✉️ 修正希望・ご要望</h2>
     <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">アプリへのご要望・不具合・「この食材のB判定を直してほしい」などの修正希望をお送りください。運営に届きます。</p>
     <textarea id="feedback-text" maxlength="5000" placeholder="例：〇〇がA判定になりますが、Bにしてほしいです" style="width:100%;min-height:100px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
@@ -713,6 +724,14 @@ const ALL_MEAL_KEYS = ['food', 'breakfast', 'lunch', 'dinner', 'snack'];  // 旧
 const state = {};
 MEALS.forEach(m => { state[m.id] = { items:[] }; });
 let itemIdSeq = 0;
+// 項目IDは時刻ベースで採番する。複数の端末（スマホ・パソコン）で同じ日に記録しても
+// IDが衝突せず、サーバー経由で安全にマージできるようにするため。
+function nextItemId() {
+  let id = Date.now() * 100 + (itemIdSeq % 100);
+  if (id <= itemIdSeq) id = itemIdSeq + 1;
+  itemIdSeq = id;
+  return id;
+}
 const STORAGE_KEY = 'ab-diet-state-v3';
 let activeMeal = 'food';
 const _progressTimers = {};
@@ -792,6 +811,196 @@ function loadSavedState() {
     if (!raw) return;
     loadStateFromPayload(JSON.parse(raw));
   } catch(e) { console.warn('load failed', e); }
+}
+
+// ═══════════════════════════════════════════
+//  サーバー同期（デスクトップ⇔スマホの連動）
+//  起動時と画面復帰時にサーバーの記録を取り込み、
+//  どの端末でも同じ内容が見える・編集できるようにする。
+// ═══════════════════════════════════════════
+
+// この端末で今日削除した項目のID（同期で復活しないように覚えておく）
+const DELETED_KEY = 'ab-diet-deleted-v1';   // { date:'YYYY-MM-DD', ids:[...] }
+function getDeletedIdsToday() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DELETED_KEY));
+    if (d && d.date === getTodayJST() && Array.isArray(d.ids)) return d.ids;
+  } catch {}
+  return [];
+}
+function markItemDeleted(itemId) {
+  const ids = getDeletedIdsToday();
+  ids.push(itemId);
+  try { localStorage.setItem(DELETED_KEY, JSON.stringify({ date: getTodayJST(), ids: ids.slice(-200) })); } catch {}
+}
+
+// 他の端末で記録された運動の消費Bカウント（サーバー値・日付別）
+let _serverExByDate = {};
+
+// サーバーに保存された今日の食事を取り込み、この端末の表示とマージする。
+// ・この端末に無い項目（他の端末で追加されたもの）を取り込む
+// ・サーバーの方が新しい場合は、他の端末で削除された項目をこちらでも消す
+async function syncTodayMealsFromServer() {
+  if (_editingDate) return;   // 過去日の編集中は今日の同期をしない
+  let d;
+  try {
+    const r = await fetch(`/api/daily-meals?user_id=${encodeURIComponent(USER_ID)}&date=${encodeURIComponent(getTodayJST())}`);
+    d = await r.json();
+  } catch(e) { return; }
+  if (!d || !d.payload) return;
+
+  const serverItems = [];
+  ALL_MEAL_KEYS.forEach(k => {
+    const sec = d.payload[k];
+    if (sec && Array.isArray(sec.items)) sec.items.forEach(i => serverItems.push(i));
+  });
+  const serverIds  = new Set(serverItems.map(i => i.id));
+  const localIds   = new Set(state.food.items.map(i => i.id));
+  const deletedIds = new Set(getDeletedIdsToday());
+  const serverTime = d.updated_at ? new Date(d.updated_at).getTime() : 0;
+  let localSavedAt = 0;
+  try { localSavedAt = (JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}).savedAt || 0; } catch {}
+
+  let changed = false;
+
+  // 他の端末で追加された項目を取り込む（この端末で削除済みのものは除く）
+  serverItems.forEach(i => {
+    if (!localIds.has(i.id) && !deletedIds.has(i.id)) {
+      state.food.items.push({ ...i, file:null, loading:false, error:null });
+      changed = true;
+    }
+  });
+
+  // サーバーの方が新しい場合、他の端末で削除された項目をこちらでも消す。
+  // 解析中の項目と、サーバー保存の直前以降にこの端末で追加した項目は残す
+  // （IDは時刻ベースなので id/100 ≒ 追加時刻）。
+  if (serverTime > localSavedAt + 2000) {
+    const before = state.food.items.length;
+    state.food.items = state.food.items.filter(i =>
+      serverIds.has(i.id) || !i.result || (i.id / 100) > serverTime - 5000
+    );
+    if (state.food.items.length !== before) changed = true;
+  }
+
+  if (changed) {
+    const allIds = state.food.items.map(i => i.id);
+    if (allIds.length) itemIdSeq = Math.max(itemIdSeq, ...allIds);
+    renderStrip('food');
+    renderResults('food');
+    updateDailyTotal();
+    saveState();   // マージ結果をローカルとサーバーの両方へ保存
+  }
+}
+
+// サーバーの履歴（体重・Bカウント・運動）を取り込み、
+// ローカルに無い日の記録を補完する（他の端末で記録された分が見えるようになる）。
+async function syncHistoryFromServer() {
+  try {
+    const res  = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(USER_ID)}`);
+    const data = await res.json();
+    const wlog = getWeightLog(), blog = getBCountLog();
+    let wch = false, bch = false;
+    (data.daily || []).forEach(dd => {
+      if (dd.ex_b_count != null) _serverExByDate[dd.date] = dd.ex_b_count;
+      if (dd.weight  != null && wlog[dd.date] == null) { wlog[dd.date] = dd.weight;  wch = true; }
+      if (dd.b_count != null && blog[dd.date] == null) { blog[dd.date] = dd.b_count; bch = true; }
+    });
+    if (wch) localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(wlog));
+    if (bch) localStorage.setItem(BCOUNT_LOG_KEY, JSON.stringify(blog));
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════
+//  端末の連携（連携コードの発行・入力）
+// ═══════════════════════════════════════════
+async function issueLinkCode() {
+  const disp = document.getElementById('link-code-display');
+  disp.style.display = '';
+  disp.innerHTML = '<span style="color:var(--text-muted)">発行中…</span>';
+  try {
+    const r = await fetch('/api/link-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.code) throw new Error(d.error || 'コードの発行に失敗しました');
+    disp.innerHTML = `
+      <div style="font-size:42px;font-weight:900;letter-spacing:8px;color:var(--primary-dark);padding:8px 0">${esc(d.code)}</div>
+      <div style="font-size:16px;color:var(--text-muted);line-height:1.6">もう一方の端末の「設定 → スマホ・パソコンでデータを共有」で<br>このコードを入力してください（${d.expires_minutes}分間有効）</div>`;
+  } catch(e) {
+    disp.innerHTML = `<span style="color:#DC2626">❌ ${esc(e.message || '通信エラーが発生しました')}</span>`;
+  }
+}
+
+function _setLinkStatus(msg, isError) {
+  const el = document.getElementById('link-status');
+  el.style.display = '';
+  el.style.color = isError ? '#DC2626' : 'var(--primary-dark)';
+  el.textContent = msg;
+}
+
+async function redeemLinkCode() {
+  const inp = document.getElementById('link-code-input');
+  const code = (inp.value || '').trim();
+  if (!/^\d{6}$/.test(code)) { _setLinkStatus('6桁の数字のコードを入力してください', true); return; }
+  _setLinkStatus('連携中…', false);
+  try {
+    const r = await fetch('/api/link-redeem', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.user_id) throw new Error(d.error || '連携に失敗しました');
+    if (d.user_id === USER_ID) { _setLinkStatus('✅ この端末はすでに連携済みです', false); return; }
+    await adoptLinkedAccount(d.user_id, d.profile || {});
+    _setLinkStatus('✅ 連携しました！画面を再読み込みします…', false);
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) {
+    _setLinkStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+  }
+}
+
+// 連携先アカウント（コード発行元）へこの端末を切り替える。
+// この端末にだけある履歴はサーバーへ送って合流させ、記録が消えないようにする。
+async function adoptLinkedAccount(newUid, prof) {
+  // 1) この端末のローカル履歴のうち、連携先に無い日をサーバーへ移す
+  try {
+    const r = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(newUid)}`);
+    const data = await r.json();
+    const sb = {}, sw = {};
+    (data.daily || []).forEach(dd => {
+      if (dd.b_count != null) sb[dd.date] = 1;
+      if (dd.weight  != null) sw[dd.date] = 1;
+    });
+    const blog = getBCountLog(), wlog = getWeightLog();
+    const posts = [];
+    Object.keys(blog).forEach(date => {
+      if (!sb[date]) posts.push(fetch('/api/daily-b', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: newUid, b_count: blog[date], date })
+      }).catch(() => {}));
+    });
+    Object.keys(wlog).forEach(date => {
+      if (!sw[date]) posts.push(fetch('/api/daily-weight', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: newUid, weight: wlog[date], date })
+      }).catch(() => {}));
+    });
+    await Promise.all(posts);
+  } catch(e) {}
+
+  // 2) プロフィール：この端末で未設定の項目は連携先の内容を取り込む
+  try {
+    const p = getProfile() || {};
+    if (!p.name   && prof.display_name) p.name   = prof.display_name;
+    if (!p.gender && prof.gender)       p.gender = prof.gender;
+    if (!p.goal   && prof.goal)         p.goal   = prof.goal;
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+  } catch(e) {}
+
+  // 3) ユーザーIDを切り替え（以降、この端末の記録は連携先と共有される）
+  localStorage.setItem('ab-diet-uid-prev', USER_ID);
+  localStorage.setItem('ab-diet-uid-v1', newUid);
 }
 
 // 日付が変わっていたら、前日の記録を履歴へ自動保存してリセットする。
@@ -1091,7 +1300,7 @@ function confirmPhotoNote(withNote) {
 
 async function addFiles(mealId, files) {
   for (const file of files) {
-    const id = ++itemIdSeq;
+    const id = nextItemId();
     const item = { id, file:null, previewSrc:null, result:null, loading:false, error:null };
     state[mealId].items.push(item);
     renderStrip(mealId);
@@ -1111,6 +1320,7 @@ async function addFiles(mealId, files) {
 
 function removeItem(mealId, itemId) {
   state[mealId].items = state[mealId].items.filter(i => i.id !== itemId);
+  if (!_editingDate) markItemDeleted(itemId);   // 他の端末との同期で復活しないように記録
   renderStrip(mealId);
   renderResults(mealId);
   updateDailyTotal();
@@ -1163,7 +1373,7 @@ function saveOil(mealId) {
   if (!o) return;
   const noteEl = document.getElementById(`oilnote-${mealId}`);
   const note = noteEl ? noteEl.value.trim() : '';
-  const id = ++itemIdSeq;
+  const id = nextItemId();
   const item = {
     id, file:null, previewSrc:null, loading:false, error:null,
     isOil:true, oilLabel:o.label, oilNote:note,
@@ -1250,7 +1460,7 @@ function addCopyMealToRecord(copyId) {
   const cm = getCopyMeals().find(c => c.id === copyId);
   if (!cm) return;
   const mealId = _copyPickerMeal || 'food';
-  const id = ++itemIdSeq;
+  const id = nextItemId();
   state[mealId].items.push({
     id, file:null, previewSrc: cm.previewSrc || null, loading:false, error:null,
     result: cm.result
@@ -1410,7 +1620,7 @@ async function submitTextEntry(mealId) {
   const text = ta && ta.value ? ta.value.trim() : '';
   if (!text) { ta && ta.focus(); return; }
 
-  const id = ++itemIdSeq;
+  const id = nextItemId();
   const item = { id, file:null, previewSrc:null, result:null, loading:true, error:null, isText:true, text };
   state[mealId].items.push(item);
 
@@ -2572,7 +2782,11 @@ function renderExLog() {
 function getExBCountForDate(date) {
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  return logs.filter(l => l.date === date).reduce((s, l) => s + l.bc, 0);
+  const local = logs.filter(l => l.date === date).reduce((s, l) => s + l.bc, 0);
+  // 他の端末で記録された運動（サーバー値）も反映する。
+  // 同じ端末の記録はサーバー値と一致するため、大きい方を採用すれば二重計上にならない。
+  const server = _serverExByDate[date] || 0;
+  return Math.max(local, server);
 }
 
 function getTodayExBCount() {
@@ -2598,7 +2812,10 @@ async function loadHistory() {
 
     // サーバーの履歴に、端末ローカルの体重・Bカウント記録も重ねる（当日分やDBリセット時の復元用）
     const byDate = {};
-    (data.daily||[]).forEach(d => { byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight }; });
+    (data.daily||[]).forEach(d => {
+      byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight };
+      if (d.ex_b_count != null) _serverExByDate[d.date] = d.ex_b_count;   // 他の端末の運動も反映
+    });
     const wlog = getWeightLog();
     Object.keys(wlog).forEach(date => {
       if (!byDate[date]) byDate[date] = { date, b_count:null, weight:wlog[date] };
@@ -2628,12 +2845,8 @@ async function loadHistory() {
       listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
       return;
     }
-    let exLogs = [];
-    try { exLogs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-    const exByDate = {};
-    exLogs.forEach(l => { exByDate[l.date] = (exByDate[l.date] || 0) + l.bc; });
     listEl.innerHTML = daily.map(d => {
-      const exBc = exByDate[d.date] || 0;
+      const exBc = getExBCountForDate(d.date);   // ローカル＋他の端末（サーバー値）の運動を合わせて表示
       const exHtml = exBc > 0
         ? `<div class="history-ex-tag">🏃 運動で −${fmtCount(exBc)}B 消費</div>`
         : '';
@@ -2910,6 +3123,17 @@ showRecordSub('food');
 updateDailyTotal();
 loadStats();
 resumePendingAnalyses();   // 中断された解析（写真・文章）を復帰時に再開
+syncTodayMealsFromServer();   // 他の端末で記録された今日の食事を取り込む
+syncHistoryFromServer();      // 他の端末の履歴（体重・Bカウント・運動）を取り込む
+
+// 画面に戻ってきたとき（スマホでアプリを開き直したとき等）にもサーバーと同期し、
+// デスクトップ⇔スマホの表示が揃うようにする。
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !_editingDate) {
+    syncTodayMealsFromServer();
+    syncHistoryFromServer();
+  }
+});
 if (!localStorage.getItem(NOTICE_KEY)) {
   document.getElementById('update-notice-overlay').style.display = 'flex';
 }

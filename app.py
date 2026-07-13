@@ -5,6 +5,7 @@ import gzip
 import base64
 import json
 import time
+import secrets
 import datetime
 import threading
 import smtplib
@@ -382,6 +383,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            )
+        """)
+        # 端末連携コード（デスクトップ⇔スマホで同じ記録を共有するための一時コード）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS link_codes (
+                code       TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL,
+                expires_at TEXT NOT NULL
             )
         """)
         conn.commit()
@@ -1440,6 +1449,109 @@ def api_profile():
                 conn.close()
     _save_user_goal(uid, data.get("gender") or "", data.get("goal") or "")
     return jsonify({"ok": True})
+
+
+@app.route("/api/profile", methods=["GET"])
+def api_profile_get():
+    """端末連携時に、連携先アカウントのプロフィールを取得する。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"error": "パラメータ不足"}), 400
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT display_name, gender, goal FROM user_profile WHERE user_id={PH}",
+            (uid,)
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"display_name": None, "gender": None, "goal": None})
+    return jsonify({"display_name": row[0], "gender": row[1], "goal": row[2]})
+
+
+# ═══════════════════════════════════════════
+#  端末連携（デスクトップ⇔スマホで同じ記録を共有）
+#  片方の端末で6桁コードを発行し、もう片方で入力すると
+#  同じユーザーIDになり、記録が全端末で共有される。
+# ═══════════════════════════════════════════
+LINK_CODE_TTL_MIN = 10
+
+
+@app.route("/api/link-code", methods=["POST"])
+def api_link_code():
+    """連携コードを発行する（10分間有効）。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    now = datetime.datetime.now(JST)
+    expires = (now + datetime.timedelta(minutes=LINK_CODE_TTL_MIN)).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            # 期限切れコードを掃除
+            cur.execute(f"DELETE FROM link_codes WHERE expires_at < {PH}", (now.isoformat(),))
+            # 衝突しない6桁コードを生成
+            code = None
+            for _ in range(20):
+                candidate = f"{secrets.randbelow(1000000):06d}"
+                cur.execute(f"SELECT 1 FROM link_codes WHERE code={PH}", (candidate,))
+                if not cur.fetchone():
+                    code = candidate
+                    break
+            if not code:
+                conn.commit()
+                return jsonify({"error": "コードの発行に失敗しました。もう一度お試しください。"}), 500
+            cur.execute(
+                f"INSERT INTO link_codes (code, user_id, expires_at) VALUES ({PH}, {PH}, {PH})",
+                (code, uid, expires)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"code": code, "expires_minutes": LINK_CODE_TTL_MIN})
+
+
+@app.route("/api/link-redeem", methods=["POST"])
+def api_link_redeem():
+    """連携コードを使って、コード発行元のユーザーIDを取得する。"""
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"error": "コードを入力してください"}), 400
+
+    now_iso = datetime.datetime.now(JST).isoformat()
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT user_id, expires_at FROM link_codes WHERE code={PH}",
+            (code,)
+        )
+        row = cur.fetchone()
+        if not row or row[1] < now_iso:
+            return jsonify({"error": "コードが見つからないか、期限切れです。もう一度発行してください。"}), 404
+        uid = row[0]
+        cur.execute(
+            f"SELECT display_name, gender, goal FROM user_profile WHERE user_id={PH}",
+            (uid,)
+        )
+        prof = cur.fetchone()
+    finally:
+        conn.close()
+    return jsonify({
+        "user_id": uid,
+        "profile": {
+            "display_name": prof[0] if prof else None,
+            "gender":       prof[1] if prof else None,
+            "goal":         prof[2] if prof else None,
+        },
+    })
 
 
 @app.route("/api/admin/users/<user_id>/vip", methods=["POST"])
@@ -2511,17 +2623,26 @@ def get_monthly_b():
             (uid, date_start, date_end)
         )
         w_rows = cur.fetchall()
+
+        cur.execute(
+            f"""SELECT date, ex_b_count FROM daily_exercise
+               WHERE user_id={PH} AND date>={PH} AND date<={PH}
+               ORDER BY date""",
+            (uid, date_start, date_end)
+        )
+        e_rows = cur.fetchall()
     finally:
         conn.close()
 
     b_by_date = {r[0]: r[1] for r in b_rows}
     w_by_date = {r[0]: r[1] for r in w_rows}
+    e_by_date = {r[0]: r[1] for r in e_rows}
 
     total      = sum(b_by_date.values())
     days_count = len(b_by_date)
-    all_dates  = sorted(set(b_by_date) | set(w_by_date))
+    all_dates  = sorted(set(b_by_date) | set(w_by_date) | set(e_by_date))
     daily      = [
-        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d)}
+        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d), "ex_b_count": e_by_date.get(d)}
         for d in all_dates
     ]
     return jsonify({
@@ -2587,14 +2708,14 @@ def get_daily_meals():
     conn = _get_conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT payload FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, date))
+        cur.execute(f"SELECT payload, created_at FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, date))
         row = cur.fetchone()
     finally:
         conn.close()
     if not row:
         return jsonify({"payload": None})
     try:
-        return jsonify({"payload": json.loads(row[0])})
+        return jsonify({"payload": json.loads(row[0]), "updated_at": row[1]})
     except Exception:
         return jsonify({"payload": None})
 
