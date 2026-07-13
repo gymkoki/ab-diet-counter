@@ -393,6 +393,16 @@ def init_db():
                 expires_at TEXT NOT NULL
             )
         """)
+        # ひとこと日記（食事タブで入力・履歴に表示。1日1件・30字まで）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS daily_diary (
+                user_id    TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                diary      TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, date)
+            )
+        """)
         conn.commit()
         # 既存DBへの列追加（デイリーレポートの目的別集計用）。列が既にあれば無視。
         for col in ("gender", "goal"):
@@ -2230,7 +2240,7 @@ def api_send_test_report():
 # バックアップ対象のテーブル一覧（全データ）
 _BACKUP_TABLES = [
     "daily_b_count", "daily_weight", "daily_exercise", "daily_meals",
-    "user_profile", "staff_comments", "usage_log", "settings",
+    "daily_diary", "user_profile", "staff_comments", "usage_log", "settings",
 ]
 
 
@@ -2574,6 +2584,43 @@ def post_daily_weight():
     return jsonify({"ok": True})
 
 
+@app.route("/api/daily-diary", methods=["POST"])
+def post_daily_diary():
+    """その日のひとこと日記を保存（30字まで）。空文字で削除。"""
+    data = request.get_json(silent=True) or {}
+    uid   = (data.get("user_id") or "").strip()
+    date  = (data.get("date") or "").strip()
+    diary = (data.get("diary") or "").strip()[:30]
+    if not uid or not date:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if not diary:
+                cur.execute(f"DELETE FROM daily_diary WHERE user_id={PH} AND date={PH}", (uid, date))
+            elif USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_diary (user_id, date, diary, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET diary=%s, created_at=%s""",
+                    (uid, date, diary, ts, diary, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_diary (user_id, date, diary, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET diary=excluded.diary, created_at=excluded.created_at""",
+                    (uid, date, diary, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/daily-exercise", methods=["POST"])
 def post_daily_exercise():
     """その日の運動によるBカウント消費合計を記録（運動の保存・削除時に呼ばれる）"""
@@ -2655,18 +2702,28 @@ def get_monthly_b():
             (uid, date_start, date_end)
         )
         e_rows = cur.fetchall()
+
+        cur.execute(
+            f"""SELECT date, diary FROM daily_diary
+               WHERE user_id={PH} AND date>={PH} AND date<={PH}
+               ORDER BY date""",
+            (uid, date_start, date_end)
+        )
+        d_rows = cur.fetchall()
     finally:
         conn.close()
 
     b_by_date = {r[0]: r[1] for r in b_rows}
     w_by_date = {r[0]: r[1] for r in w_rows}
     e_by_date = {r[0]: r[1] for r in e_rows}
+    d_by_date = {r[0]: r[1] for r in d_rows}
 
     total      = sum(b_by_date.values())
     days_count = len(b_by_date)
-    all_dates  = sorted(set(b_by_date) | set(w_by_date) | set(e_by_date))
+    all_dates  = sorted(set(b_by_date) | set(w_by_date) | set(e_by_date) | set(d_by_date))
     daily      = [
-        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d), "ex_b_count": e_by_date.get(d)}
+        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d),
+         "ex_b_count": e_by_date.get(d), "diary": d_by_date.get(d)}
         for d in all_dates
     ]
     return jsonify({
