@@ -75,6 +75,10 @@ def repair_json(text: str) -> str:
             parsed["total_veg_g"] = sum(
                 f.get("veg_g", 0) or 0 for f in parsed.get("foods", [])
             )
+        if "total_fruit_g" not in parsed:
+            parsed["total_fruit_g"] = sum(
+                f.get("fruit_g", 0) or 0 for f in parsed.get("foods", [])
+            )
         if "advice" not in parsed:
             parsed["advice"] = "（分析データが多いため一部省略されました）"
         return json.dumps(parsed, ensure_ascii=False)
@@ -381,6 +385,13 @@ def init_db():
             )
         """)
         conn.commit()
+        # 既存DBへの列追加（デイリーレポートの目的別集計用）。列が既にあれば無視。
+        for col in ("gender", "goal"):
+            try:
+                cur.execute(f"ALTER TABLE user_profile ADD COLUMN {col} TEXT")
+                conn.commit()
+            except Exception:
+                conn.rollback()
     finally:
         conn.close()
 
@@ -390,6 +401,52 @@ try:
 except Exception as _e:
     # DB初期化に失敗してもアプリ自体は起動させる（記録は端末側にも保存されている）
     print(f"[DB][WARN] init_db に失敗しました: {_e}")
+
+
+_VALID_GENDERS = ("male", "female")
+_VALID_GOALS   = ("cut", "maintain", "bulk")
+
+
+def _save_user_goal(uid, gender, goal):
+    """会員の性別・目標(減量/維持/増量)を user_profile へ保存する（レポートの目的別集計用）。
+    食事解析リクエストに毎回付いてくる値を随時保存するため、既存会員も
+    プロフィールを保存し直さなくても次回の利用時に自動で反映される。"""
+    uid    = (uid or "").strip()
+    gender = gender if gender in _VALID_GENDERS else None
+    goal   = goal   if goal   in _VALID_GOALS   else None
+    if not uid or (gender is None and goal is None):
+        return
+    ts = datetime.datetime.now(JST).isoformat()
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                if USE_PG:
+                    cur.execute(
+                        """INSERT INTO user_profile (user_id, gender, goal, updated_at)
+                           VALUES (%s, %s, %s, %s)
+                           ON CONFLICT (user_id) DO UPDATE SET
+                             gender     = COALESCE(EXCLUDED.gender, user_profile.gender),
+                             goal       = COALESCE(EXCLUDED.goal,   user_profile.goal),
+                             updated_at = EXCLUDED.updated_at""",
+                        (uid, gender, goal, ts)
+                    )
+                else:
+                    cur.execute(
+                        """INSERT INTO user_profile (user_id, gender, goal, updated_at)
+                           VALUES (?, ?, ?, ?)
+                           ON CONFLICT(user_id) DO UPDATE SET
+                             gender     = COALESCE(excluded.gender, user_profile.gender),
+                             goal       = COALESCE(excluded.goal,   user_profile.goal),
+                             updated_at = excluded.updated_at""",
+                        (uid, gender, goal, ts)
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception:
+        pass  # 集計用の付帯情報のため、保存に失敗しても解析処理は続行する
 
 
 _backfill_done = False
@@ -811,6 +868,15 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 具だくさん味噌汁の野菜≒40〜60g、ラーメンの野菜トッピング≒30〜80g、トマト1個≒150g。
 全食材の合計を total_veg_g に整数で入れる。
 
+━━━━━━━━━━━━━━━━━━━━━━━
+■ 果物(g)の推定ルール
+━━━━━━━━━━━━━━━━━━━━━━━
+各食材について、実際に食べた果物の重量(g)を fruit_g に整数で入れる（果物のみ。果物以外はすべて0）。
+- 対象：生・冷凍・缶詰・ドライフルーツなどの果物そのもの（トマト・アボカドは野菜扱いで0）
+- 対象外（fruit_g=0）：果汁ジュース・ジャム・果物味の菓子や飲料
+分量の目安：バナナ1本≒100g、りんご1個≒250g、みかん1個≒80g、いちご5粒≒75g、キウイ1個≒85g、ぶどう1房≒150g。
+全食材の合計を total_fruit_g に整数で入れる。
+
 必ず以下のJSON形式のみで回答してください。JSONの前後に説明文やコードブロックは不要です：
 【重要】categoryフィールドは "A" または "B" のみ使用すること。"Good B"・"グッドB" は使用禁止。
 {
@@ -821,6 +887,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
+      "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "amount": "写真での量（例：たっぷり、1人前、少量など）",
       "b_count": 0,
       "reason": "A食材のため（1人前約○kcal、120kcal未満）Bカウント0"
@@ -831,6 +898,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
+      "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "amount": "写真での量と推定kcal（例：1人前・約250kcal）",
       "b_count": 1,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが200kcal超のためB1"
@@ -841,6 +909,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
+      "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "amount": "写真での量と推定kcal（例：約150kcal相当）",
       "b_count": 0.5,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが120〜200kcalのためB0.5"
@@ -851,6 +920,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
       "kcal_per_serving": 1人前の推定kcal（整数）,
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
+      "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "amount": "写真での量と推定kcal（例：少量・約70kcal）",
       "b_count": 0,
       "reason": "B食材だが実際の摂取量約○kcalが120kcal未満のためノーカウント"
@@ -859,6 +929,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
   "total_b_count": 合計Bカウント（数値）,
   "total_protein_g": 全食材の推定タンパク質の合計（g・整数）,
   "total_veg_g": 全食材の野菜の合計（g・整数）,
+  "total_fruit_g": 全食材の果物の合計（g・整数）,
   "advice": "このメニューをABダイエット観点でのワンポイントアドバイス（1〜2文）"
 }"""
 
@@ -1121,6 +1192,29 @@ def admin_report_data():
         for dt, users, analyses in cur.fetchall():
             usage_by_day[dt] = {"users": users, "analyses": analyses}
 
+        # ── 全体平均Bカウント（直近30日・1人1日あたり） ──────
+        cur.execute(
+            f"SELECT AVG(b_count) FROM daily_b_count WHERE date>={PH}",
+            (start_30d,),
+        )
+        row = cur.fetchone()
+        b_overall_avg = round(float(row[0]), 2) if row and row[0] is not None else None
+
+        # ── 会員の目標（減量/維持/増量）マップ ────────────────
+        goal_by_user: dict = {}
+        try:
+            cur.execute("SELECT user_id, goal FROM user_profile WHERE goal IS NOT NULL")
+            goal_by_user = {r[0]: r[1] for r in cur.fetchall()}
+        except Exception:
+            pass  # goal列が無い旧スキーマでも動くように
+
+        # ── 栄養素集計用に直近30日の食事明細を取得 ────────────
+        cur.execute(
+            f"SELECT user_id, date, payload FROM daily_meals WHERE date>={PH}",
+            (start_30d,),
+        )
+        nutrition_rows = cur.fetchall()
+
     finally:
         conn.close()
 
@@ -1149,6 +1243,89 @@ def admin_report_data():
         if vals:
             loss_avg_by_day[d] = round(sum(vals) / len(vals), 2)
 
+    # ── 栄養素（タンパク質・野菜・果物）の集計 ────────────────
+    def _day_nutrition(payload_str):
+        """1人1日ぶんの食事payloadから (タンパク質g, 野菜g, 果物g or None) を返す。
+        果物は計測開始前の記録にはフィールド自体が無いため、未計測(None)と0gを区別する。"""
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            return None
+        protein = veg = 0.0
+        fruit = None
+        has_result = False
+        for key in MEAL_KEYS:
+            for item in payload.get(key, {}).get("items", []):
+                res = item.get("result")
+                if not isinstance(res, dict):
+                    continue
+                has_result = True
+                foods = res.get("foods") or []
+                p = res.get("total_protein_g")
+                protein += float(p) if isinstance(p, (int, float)) else sum(float(f.get("protein_g") or 0) for f in foods)
+                v = res.get("total_veg_g")
+                veg += float(v) if isinstance(v, (int, float)) else sum(float(f.get("veg_g") or 0) for f in foods)
+                fr = res.get("total_fruit_g")
+                if not isinstance(fr, (int, float)) and any(isinstance(f, dict) and "fruit_g" in f for f in foods):
+                    fr = sum(float(f.get("fruit_g") or 0) for f in foods)
+                if isinstance(fr, (int, float)):
+                    fruit = (fruit or 0.0) + float(fr)
+        if not has_result:
+            return None
+        return (protein, veg, fruit)
+
+    def _avg(vals, nd=1):
+        vals = [v for v in vals if v is not None]
+        return round(sum(vals) / len(vals), nd) if vals else None
+
+    nut_by_day: dict = {}    # date -> [(p, v, fruit), ...]（1要素=1人の1日合計）
+    nut_by_user: dict = {}   # uid  -> [(p, v, fruit), ...]
+    for uid, dt, payload_str in nutrition_rows:
+        tot = _day_nutrition(payload_str)
+        if tot is None:
+            continue
+        nut_by_day.setdefault(dt, []).append(tot)
+        nut_by_user.setdefault(uid, []).append(tot)
+
+    all_user_days = [t for day in nut_by_day.values() for t in day]
+    nutrition = {
+        "protein_avg": _avg([t[0] for t in all_user_days]),
+        "veg_avg":     _avg([t[1] for t in all_user_days]),
+        "fruit_avg":   _avg([t[2] for t in all_user_days]),
+        # 果物データが付いた記録日数（プロンプト更新後に増えていく。0なら「収集中」表示）
+        "fruit_days":  len([t for t in all_user_days if t[2] is not None]),
+        "users":       len(nut_by_user),
+        "protein_avg_trend": [_avg([t[0] for t in nut_by_day.get(d, [])]) for d in all_dates],
+        "veg_avg_trend":     [_avg([t[1] for t in nut_by_day.get(d, [])]) for d in all_dates],
+        "fruit_avg_trend":   [_avg([t[2] for t in nut_by_day.get(d, [])]) for d in all_dates],
+    }
+
+    # ── 目的別比較（減量/維持/増量ごとの平均B・タンパク質・野菜） ──
+    goal_compare = {}
+    for gkey in ("cut", "maintain", "bulk"):
+        uids = {u for u, g in goal_by_user.items() if g == gkey}
+        b_vals = [b for u in uids for b in b_by_user.get(u, {}).values()]
+        goal_compare[gkey] = {
+            "users":       len(uids),
+            "avg_b":       round(sum(b_vals) / len(b_vals), 2) if b_vals else None,
+            "avg_protein": _avg([t[0] for u in uids for t in nut_by_user.get(u, [])]),
+            "avg_veg":     _avg([t[1] for u in uids for t in nut_by_user.get(u, [])]),
+        }
+
+    # ── 減量希望者：平均Bカウント×平均減量の推移（相関グラフ用） ──
+    cut_uids = {u for u, g in goal_by_user.items() if g == "cut"}
+    cut_corr = {
+        "users": len(cut_uids),
+        "b_avg_trend": [
+            _avg([b_by_user[u][d] for u in cut_uids if u in b_by_user and d in b_by_user[u]], 2)
+            for d in all_dates
+        ],
+        "loss_avg_trend": [
+            _avg([loss_by_user_day[u][d] for u in cut_uids if u in loss_by_user_day and d in loss_by_user_day[u]], 2)
+            for d in all_dates
+        ],
+    }
+
     return jsonify({
         "report_date":          target_date,
         "daily_users":          daily_users,
@@ -1169,6 +1346,10 @@ def admin_report_data():
         "weight_loss_users":    weight_loss_users,
         "loss_avg_trend":       [loss_avg_by_day.get(d) for d in all_dates],
         "individual_loss":      individual_loss,
+        "b_overall_avg":        b_overall_avg,
+        "nutrition":            nutrition,
+        "goal_compare":         goal_compare,
+        "cut_corr":             cut_corr,
     })
 
 
@@ -1226,35 +1407,38 @@ def admin_users():
 
 @app.route("/api/profile", methods=["POST"])
 def api_profile():
-    """会員がアプリの設定画面で入力した表示名を保存（スタッフ確認用）。"""
+    """会員がアプリの設定画面で入力した表示名を保存（スタッフ確認用）。
+    性別・目標（減量/維持/増量）が付いていれば、レポートの目的別集計用に合わせて保存する。"""
     data = request.get_json(silent=True) or {}
     uid  = (data.get("user_id") or "").strip()
     name = (data.get("display_name") or "").strip()[:30]
     if not uid:
         return jsonify({"error": "パラメータ不足"}), 400
 
-    ts = datetime.datetime.now(JST).isoformat()
-    with _db_lock:
-        conn = _get_conn()
-        try:
-            cur = conn.cursor()
-            if USE_PG:
-                cur.execute(
-                    """INSERT INTO user_profile (user_id, display_name, updated_at)
-                       VALUES (%s, %s, %s)
-                       ON CONFLICT (user_id) DO UPDATE SET display_name=%s, updated_at=%s""",
-                    (uid, name, ts, name, ts)
-                )
-            else:
-                cur.execute(
-                    """INSERT INTO user_profile (user_id, display_name, updated_at)
-                       VALUES (?, ?, ?)
-                       ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, updated_at=excluded.updated_at""",
-                    (uid, name, ts)
-                )
-            conn.commit()
-        finally:
-            conn.close()
+    if name:
+        ts = datetime.datetime.now(JST).isoformat()
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                if USE_PG:
+                    cur.execute(
+                        """INSERT INTO user_profile (user_id, display_name, updated_at)
+                           VALUES (%s, %s, %s)
+                           ON CONFLICT (user_id) DO UPDATE SET display_name=%s, updated_at=%s""",
+                        (uid, name, ts, name, ts)
+                    )
+                else:
+                    cur.execute(
+                        """INSERT INTO user_profile (user_id, display_name, updated_at)
+                           VALUES (?, ?, ?)
+                           ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, updated_at=excluded.updated_at""",
+                        (uid, name, ts)
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+    _save_user_goal(uid, data.get("gender") or "", data.get("goal") or "")
     return jsonify({"ok": True})
 
 
@@ -2443,6 +2627,8 @@ def analyze():
                 conn.commit()
             finally:
                 conn.close()
+    # 目的別レポート用に性別・目標を保存（毎回のリクエストに付いてくる）
+    _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))
 
     image_data = file.read()
 
@@ -2511,6 +2697,9 @@ def reanalyze():
     correction = request.form.get("correction", "").strip()
     if not correction:
         return jsonify({"error": "補足情報を入力してください"}), 400
+
+    # 目的別レポート用に性別・目標を保存
+    _save_user_goal(request.form.get("user_id", ""), request.form.get("gender", ""), request.form.get("goal", ""))
 
     image_data = file.read()
     media_type = file.content_type
@@ -2602,6 +2791,8 @@ def analyze_text():
                 conn.commit()
             finally:
                 conn.close()
+    # 目的別レポート用に性別・目標を保存
+    _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))
 
     text_prompt = f"""━━━━━━━━━━━━━━━━━━━━━━━
 【テキスト入力モード・写真なし】

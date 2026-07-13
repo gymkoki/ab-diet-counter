@@ -307,6 +307,171 @@ def chart_exercise(data: dict) -> str:
     return fig_to_png(fig)
 
 
+def _axes_note(ax, msg: str):
+    """データがまだ無いとき、グラフの代わりに案内文を表示する。"""
+    ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=13,
+            color=C_GRAY, transform=ax.transAxes, linespacing=1.8)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+
+def chart_cut_corr(data: dict) -> bytes:
+    """減量希望者：平均Bカウント（左軸）× 平均減量幅（右軸）の推移。
+    Bカウントを抑えられている時期に減量が進んでいるか、相関を目視できる。"""
+    cc     = data.get("cut_corr") or {}
+    dates  = data["dates"]
+    b_tr   = cc.get("b_avg_trend") or []
+    l_tr   = cc.get("loss_avg_trend") or []
+    users  = cc.get("users", 0)
+
+    fig, ax1 = plt.subplots(figsize=(10, 4.2))
+    b_pts = [(i, v) for i, v in enumerate(b_tr) if v is not None]
+    l_pts = [(i, v) for i, v in enumerate(l_tr) if v is not None]
+
+    if users == 0 or (not b_pts and not l_pts):
+        ax1.set_title("減量希望者：平均Bカウント × 平均減量の推移",
+                      fontsize=15, fontweight="bold", pad=8)
+        _axes_note(ax1, "減量希望者のデータを収集中です。\n会員がアプリで食事解析または設定保存をすると\n目標（減量/維持）が自動で記録されます。")
+        fig.tight_layout()
+        return fig_to_png(fig)
+
+    ax2 = ax1.twinx()
+    if b_pts:
+        xs, ys = zip(*b_pts)
+        ax1.plot(xs, ys, color=C_PRIMARY, linewidth=2.4, marker="o", markersize=4,
+                 label=f"平均Bカウント (直近: {ys[-1]:.1f}B)", zorder=3)
+    if l_pts:
+        xs, ys = zip(*l_pts)
+        latest = ys[-1]
+        lbl = f"{latest:.1f}kg減量" if latest >= 0 else f"{-latest:.1f}kg増加"
+        ax2.plot(xs, ys, color=C_GREEN, linewidth=2.4, marker="s", markersize=4,
+                 label=f"平均減量幅 (直近: {lbl})", zorder=3)
+        ax2.fill_between(xs, ys, alpha=0.10, color=C_GREEN, zorder=2)
+    ax2.axhline(0, color=C_GRAY, linewidth=1, zorder=1)
+
+    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
+    ax1.set_xticks(tick_idx)
+    ax1.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax1.set_ylabel("平均Bカウント / 日", fontsize=13, color=C_PRIMARY)
+    ax2.set_ylabel("初回体重からの平均減量 (kg)", fontsize=13, color=C_GREEN)
+    ax1.set_ylim(bottom=0)
+    ax1.tick_params(axis="y", colors=C_PRIMARY, labelsize=13)
+    ax2.tick_params(axis="y", colors=C_GREEN, labelsize=13)
+    ax1.set_title(f"減量希望者（{users}名）：平均Bカウント × 平均減量の推移（直近30日）",
+                  fontsize=15, fontweight="bold", pad=8)
+    h1, lb1 = ax1.get_legend_handles_labels()
+    h2, lb2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, lb1 + lb2, loc="upper left", fontsize=12)
+    for sp in ["top"]:
+        ax1.spines[sp].set_visible(False)
+        ax2.spines[sp].set_visible(False)
+    ax1.grid(axis="y", alpha=0.25, zorder=0)
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
+def chart_nutrition(data: dict) -> bytes:
+    """栄養素（タンパク質・野菜・果物）の平均摂取量推移（1人1日あたり・g）"""
+    nut   = data.get("nutrition") or {}
+    dates = data["dates"]
+    series = [
+        ("タンパク質", nut.get("protein_avg_trend") or [], C_PRIMARY, "o"),
+        ("野菜",       nut.get("veg_avg_trend") or [],     C_GREEN,   "s"),
+        ("果物",       nut.get("fruit_avg_trend") or [],   C_AMBER,   "^"),
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+    plotted = False
+    for name, tr, color, marker in series:
+        pts = [(i, v) for i, v in enumerate(tr) if v is not None]
+        if not pts:
+            continue
+        plotted = True
+        xs, ys = zip(*pts)
+        ax.plot(xs, ys, color=color, linewidth=2.2, marker=marker, markersize=4,
+                label=f"{name} (直近: {ys[-1]:.0f}g)", zorder=3)
+
+    if not plotted:
+        ax.set_title("栄養素の平均摂取量推移（1人1日あたり）", fontsize=15, fontweight="bold", pad=8)
+        _axes_note(ax, "栄養素データを収集中です。\n会員の食事解析が貯まると表示されます。")
+        fig.tight_layout()
+        return fig_to_png(fig)
+
+    # 野菜の目標350gの目安線（上に少し余白を取ってラベルが切れないようにする）
+    data_max = max((v for tr in (nut.get("protein_avg_trend") or [], nut.get("veg_avg_trend") or [], nut.get("fruit_avg_trend") or [])
+                    for v in tr if v is not None), default=0)
+    ax.set_ylim(0, max(350, data_max) * 1.15)
+    ax.axhline(350, color=C_GREEN, linewidth=1.2, linestyle="--", alpha=0.6, zorder=1)
+    ax.text(len(dates) - 1, 356, "野菜目標 350g", fontsize=11, color=C_GREEN, alpha=0.9, ha="right")
+
+    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
+    ax.set_xticks(tick_idx)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax.set_ylabel("平均摂取量 (g / 人・日)", fontsize=13)
+    ax.set_title("栄養素の平均摂取量推移（直近30日・1人1日あたり）",
+                 fontsize=15, fontweight="bold", pad=8)
+    ax.legend(fontsize=12, loc="upper left")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.25, zorder=0)
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
+def chart_goal_compare(data: dict) -> bytes:
+    """目的別比較：減量希望 vs 体重維持のBカウント・タンパク質・野菜の平均"""
+    gc = data.get("goal_compare") or {}
+    groups = [("cut", "減量希望", C_PRIMARY), ("maintain", "体重維持", C_INDIGO)]
+    active = [(k, lbl, c) for k, lbl, c in groups if (gc.get(k) or {}).get("users", 0) > 0]
+
+    fig, (axb, axn) = plt.subplots(1, 2, figsize=(10, 3.8), gridspec_kw={"width_ratios": [1, 1.6]})
+
+    if not active:
+        fig.suptitle("目的別比較（減量希望 vs 体重維持）", fontsize=15, fontweight="bold")
+        _axes_note(axb, "目的別データを収集中です。")
+        _axes_note(axn, "会員がアプリを利用すると\n目標（減量/維持）が自動で記録されます。")
+        fig.tight_layout()
+        return fig_to_png(fig)
+
+    # 左：平均Bカウント
+    xs = np.arange(len(active))
+    b_vals = [(gc[k].get("avg_b") or 0) for k, _, _ in active]
+    bars = axb.bar(xs, b_vals, width=0.55, color=[c for _, _, c in active], zorder=2)
+    for x, v in zip(xs, b_vals):
+        axb.text(x, v, f"{v:.1f}", ha="center", va="bottom", fontsize=13, fontweight="bold")
+    axb.set_xticks(xs)
+    axb.set_xticklabels([f"{lbl}\n({gc[k]['users']}名)" for k, lbl, _ in active], fontsize=12)
+    axb.set_ylabel("平均Bカウント / 日", fontsize=12)
+    axb.set_title("Bカウント", fontsize=13, fontweight="bold")
+    axb.spines["top"].set_visible(False)
+    axb.spines["right"].set_visible(False)
+    axb.grid(axis="y", alpha=0.25, zorder=0)
+
+    # 右：タンパク質・野菜（g）
+    metrics = [("avg_protein", "タンパク質"), ("avg_veg", "野菜")]
+    width = 0.34
+    for gi, (k, lbl, color) in enumerate(active):
+        vals = [(gc[k].get(m) or 0) for m, _ in metrics]
+        pos  = np.arange(len(metrics)) + (gi - (len(active) - 1) / 2) * width
+        axn.bar(pos, vals, width=width, color=color, label=lbl, zorder=2)
+        for x, v in zip(pos, vals):
+            axn.text(x, v, f"{v:.0f}", ha="center", va="bottom", fontsize=12, fontweight="bold")
+    axn.set_xticks(np.arange(len(metrics)))
+    axn.set_xticklabels([lbl for _, lbl in metrics], fontsize=12)
+    axn.set_ylabel("平均摂取量 (g / 人・日)", fontsize=12)
+    axn.set_title("タンパク質・野菜", fontsize=13, fontweight="bold")
+    axn.legend(fontsize=11)
+    axn.spines["top"].set_visible(False)
+    axn.spines["right"].set_visible(False)
+    axn.grid(axis="y", alpha=0.25, zorder=0)
+
+    fig.suptitle("目的別比較（直近30日・1人1日あたりの平均）", fontsize=15, fontweight="bold")
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
 # ── メール HTML 本文 ────────────────────────────────────────────
 # 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
 # cid:chart_weight / cid:chart_weight_loss / cid:chart_exercise で参照する（send_email() が
@@ -336,6 +501,38 @@ def build_html(data: dict) -> str:
         loss_avg_str = f"{loss_avg:.1f} kg 減"
     else:
         loss_avg_str = f"{abs(loss_avg):.1f} kg 増"
+
+    # 全体平均Bカウント（直近30日・1人1日あたり）
+    b_overall = data.get("b_overall_avg")
+    b_overall_str = f"{b_overall:.1f}" if b_overall is not None else "—"
+
+    # 栄養素の平均（直近30日・1人1日あたり）
+    nut = data.get("nutrition") or {}
+    def _g(v):
+        return f"{v:.0f}g" if v is not None else "—"
+    protein_avg_str = _g(nut.get("protein_avg"))
+    veg_avg_str     = _g(nut.get("veg_avg"))
+    if nut.get("fruit_avg") is not None:
+        fruit_avg_str, fruit_sub = _g(nut.get("fruit_avg")), f"計測{nut.get('fruit_days', 0)}人日"
+    else:
+        fruit_avg_str, fruit_sub = "収集中", "解析データに果物計測を追加済み"
+
+    # 目的別比較テーブル
+    gc = data.get("goal_compare") or {}
+    GOAL_LABELS = [("cut", "🔥 減量希望"), ("maintain", "⚖️ 体重維持")]
+    def _fmt(v, unit="", nd=1):
+        return f"{v:.{nd}f}{unit}" if v is not None else "—"
+    goal_rows = ""
+    for key, label in GOAL_LABELS:
+        g = gc.get(key) or {}
+        goal_rows += f"""
+        <tr style="border-bottom:1px solid #F3F4F6">
+          <td style="padding:8px;font-weight:700;color:#374151">{label}</td>
+          <td style="padding:8px;text-align:center">{g.get('users', 0)}名</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#FF6B35">{_fmt(g.get('avg_b'), ' B')}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{_fmt(g.get('avg_protein'), 'g', 0)}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#10B981">{_fmt(g.get('avg_veg'), 'g', 0)}</td>
+        </tr>"""
 
     return f"""<!DOCTYPE html>
 <html lang="ja">
@@ -421,6 +618,11 @@ def build_html(data: dict) -> str:
       <h2>⚖️ 2. 体重 &amp; Bカウント &amp; 運動 推移</h2>
       <div class="kpi-row">
         <div class="kpi">
+          <div class="kpi-lbl">全体平均Bカウント</div>
+          <div class="kpi-val" style="font-size:22px">{b_overall_str}</div>
+          <div class="kpi-sub">回/日（直近30日・1人あたり）</div>
+        </div>
+        <div class="kpi">
           <div class="kpi-lbl">Bカウント集団平均（直近）</div>
           <div class="kpi-val" style="font-size:22px">{b_latest_str}</div>
         </div>
@@ -442,12 +644,57 @@ def build_html(data: dict) -> str:
       <img class="chart" src="cid:chart_b_count" alt="B-Count Trend" style="margin-top:12px">
       <img class="chart" src="cid:chart_weight" alt="Weight Trend" style="margin-top:6px">
       <img class="chart" src="cid:chart_weight_loss" alt="Weight Loss Progress" style="margin-top:6px">
+      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:14px 0 4px">
+        減量希望者の「平均Bカウント」と「平均減量」の相関（Bを抑えた時期に減量が進んでいるか）
+      </div>
+      <img class="chart" src="cid:chart_cut_corr" alt="Cut Users B-Count vs Weight Loss">
       <img class="chart" src="cid:chart_exercise" alt="Exercise B-Count Trend" style="margin-top:6px">
     </div>
 
-    <!-- ③ システム・運用状況 -->
+    <!-- ③ 栄養素の平均摂取量 -->
     <div class="section">
-      <h2>⚙️ 3. システム・運用状況</h2>
+      <h2>🥗 3. 栄養素の平均摂取量（直近30日・1人1日あたり）</h2>
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-lbl">🥩 タンパク質</div>
+          <div class="kpi-val" style="font-size:22px">{protein_avg_str}</div>
+          <div class="kpi-sub">記録{nut.get('users', 0)}名平均</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">🥗 野菜</div>
+          <div class="kpi-val" style="font-size:22px;color:#10B981">{veg_avg_str}</div>
+          <div class="kpi-sub">目標 350g/日</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">🍎 果物</div>
+          <div class="kpi-val" style="font-size:22px;color:#F59E0B">{fruit_avg_str}</div>
+          <div class="kpi-sub">{fruit_sub}</div>
+        </div>
+      </div>
+      <img class="chart" src="cid:chart_nutrition" alt="Nutrition Trend" style="margin-top:12px">
+    </div>
+
+    <!-- ④ 目的別比較 -->
+    <div class="section">
+      <h2>🎯 4. 目的別比較（減量希望 vs 体重維持）</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280">
+          <th style="padding:8px;text-align:left">目標</th>
+          <th style="padding:8px">人数</th>
+          <th style="padding:8px">平均Bカウント/日</th>
+          <th style="padding:8px">平均タンパク質/日</th>
+          <th style="padding:8px">平均野菜/日</th>
+        </tr>{goal_rows}
+      </table>
+      <img class="chart" src="cid:chart_goal_compare" alt="Goal Comparison">
+      <div style="font-size:11px;color:#9CA3AF;margin-top:4px">
+        ※ 目標（減量/維持）は会員がアプリを利用した際に自動記録されます。未記録の会員は集計対象外です。
+      </div>
+    </div>
+
+    <!-- ⑤ システム・運用状況 -->
+    <div class="section">
+      <h2>⚙️ 5. システム・運用状況</h2>
 
       <!-- 時間帯別分布 -->
       <div style="margin-bottom:14px">
@@ -531,7 +778,10 @@ def main():
         "chart_b_count":  chart_b_count(data),
         "chart_weight":   chart_weight(data),
         "chart_weight_loss": chart_weight_loss(data),
+        "chart_cut_corr":  chart_cut_corr(data),
         "chart_exercise": chart_exercise(data),
+        "chart_nutrition": chart_nutrition(data),
+        "chart_goal_compare": chart_goal_compare(data),
     }
 
     print("Building HTML email...")
