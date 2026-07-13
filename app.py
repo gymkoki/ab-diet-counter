@@ -2719,7 +2719,34 @@ def reanalyze():
 
     base64_image, media_type = prepare_image_for_api(image_data, media_type)
 
-    correction_text = f"""━━━━━━━━━━━━━━━━━━━━━━━
+    # 前回の解析結果（任意）。ある場合は「指摘された箇所だけ」を直し、他はそのまま維持する。
+    previous_raw = (request.form.get("previous", "") or "").strip()
+    previous_json = None
+    if previous_raw:
+        try:
+            previous_json = json.loads(previous_raw)
+        except Exception:
+            previous_json = None
+
+    if previous_json is not None:
+        correction_text = f"""━━━━━━━━━━━━━━━━━━━━━━━
+【前回の解析結果（このJSONをベースにする）】
+{json.dumps(previous_json, ensure_ascii=False)}
+
+【ユーザーからの訂正情報】
+{correction}
+
+上記「前回の解析結果」をベースに、ユーザーが訂正した箇所だけを修正してください。
+- 訂正が指している食材（foods配列内の該当項目）のみ、写真とABダイエットルールに基づいて計算し直す。
+- それ以外の食材は、name・category・kcal_per_serving・amount・b_count・protein_g・veg_g・reason をすべて前回のまま一切変更しないこと。
+- 訂正で食材の種類が変わる場合（例：豆腐→ヨーグルト）は、その項目のname・category・kcal・b_count等を新しい食材に合わせて計算し直す。
+- 訂正が新しい食材の追加や削除を指す場合のみ、該当項目を追加・削除してよい。訂正に関係ない食材は増やしも減らしもしない。
+- 変更後、total_b_count・total_protein_g・total_veg_g を foods の合計に合わせて必ず計算し直す。
+- advice は訂正内容を反映して簡潔に更新する。
+【重要】前置きや説明文は一切書かず、システムプロンプト指定のJSONだけを出力すること。
+━━━━━━━━━━━━━━━━━━━━━━━"""
+    else:
+        correction_text = f"""━━━━━━━━━━━━━━━━━━━━━━━
 【ユーザーからの補足・訂正情報】
 {correction}
 
