@@ -151,6 +151,10 @@
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-btn { width:100%; margin:8px 0 4px; padding:12px; border:1px dashed #CFC9C2; border-radius:var(--radius-md); background:var(--surface); font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
     .text-entry-btn:active { border-color:var(--indigo); color:var(--indigo); background:var(--indigo-soft); }
+    .add-menu { display:flex; gap:8px; margin:8px 0 4px; }
+    .add-menu-opt { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:16px 8px; border:1.5px solid var(--border); border-radius:var(--radius-md); background:var(--surface); font-size:17px; font-weight:700; color:#5C564F; cursor:pointer; transition:all 0.15s; box-shadow:var(--shadow-sm); }
+    .add-menu-opt:active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
+    .add-menu-ic { font-size:24px; line-height:1; }
     .text-entry-form { margin:4px 0 8px; padding:14px; background:var(--indigo-soft); border:1px solid var(--indigo-line); border-radius:var(--radius-md); }
     .text-entry-textarea { width:100%; min-height:84px; padding:11px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; resize:vertical; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
     .text-entry-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
@@ -656,6 +660,27 @@ function openFileInput(mealId) {
   _photoMealId = mealId;
   document.getElementById('input-file').click();
 }
+
+// 「写真/文章を追加」を押すと、写真か文章かを選べるメニューを開閉する
+function toggleAddMenu(mealId) {
+  const menu = document.getElementById(`addmenu-${mealId}`);
+  if (!menu) return;
+  const opening = getComputedStyle(menu).display === 'none';
+  menu.style.display = opening ? 'flex' : 'none';
+  // メニューを開くときは文章入力フォームは閉じておく
+  if (opening) { const f = document.getElementById(`textform-${mealId}`); if (f) f.style.display = 'none'; }
+}
+function chooseAddPhoto(mealId) {
+  const menu = document.getElementById(`addmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  openFileInput(mealId);
+}
+function chooseAddText(mealId) {
+  const menu = document.getElementById(`addmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  const f = document.getElementById(`textform-${mealId}`);
+  if (f) { f.style.display = 'block'; document.getElementById(`textinput-${mealId}`)?.focus(); }
+}
 function onHiddenInputChange(input) {
   const files = [...input.files];
   input.value = '';
@@ -838,11 +863,14 @@ function buildPanel(m) {
   panel.innerHTML = `
     <div class="container">
       <div id="strip-${m.id}" class="meal-strip"></div>
-      <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
-        <div class="meal-add-icon">📷</div>
-        <h3>写真を追加</h3>
+      <div class="meal-add" id="add-${m.id}" onclick="toggleAddMenu('${m.id}')">
+        <div class="meal-add-icon">📷✏️</div>
+        <h3>写真/文章を追加</h3>
       </div>
-      <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 文章で入力</button>
+      <div class="add-menu" id="addmenu-${m.id}" style="display:none">
+        <button class="add-menu-opt" onclick="chooseAddPhoto('${m.id}')"><span class="add-menu-ic">📷</span>写真を追加</button>
+        <button class="add-menu-opt" onclick="chooseAddText('${m.id}')"><span class="add-menu-ic">✏️</span>文章で入力</button>
+      </div>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
