@@ -363,9 +363,88 @@
     .chara-advice-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; }
     .chara-advice-title { font-size:15px; font-weight:800; color:#374151; margin-bottom:6px; }
     .chara-advice-card p { font-size:17px; line-height:1.7; color:#44403B; }
+
+    /* ── キャラのパーツアニメーション（SVGの手足・目・口などが常に動く）──
+       ダンス（全身の移動）とは独立して、腕振り・足踏み・まばたき・口の開閉・
+       翼の羽ばたき・眉・鼻・土煙・汗などがループする */
+    .chara-img svg { width:100%; height:auto; display:block; overflow:visible; }
+    .chara-img svg [class^='p-'], .chara-img svg .m-open, .chara-img svg .m-smile,
+    .chara-img svg .m-grit, .chara-img svg .m-roar { transform-box:fill-box; transform-origin:50% 50%; }
+    @keyframes an-blink { 0%,91%,100%{transform:scaleY(1)} 94%,97%{transform:scaleY(0.06)} }
+    @keyframes an-wave { 0%,100%{transform:rotate(-18deg)} 50%{transform:rotate(14deg)} }
+    @keyframes an-sway-arm { 0%,100%{transform:rotate(-7deg)} 50%{transform:rotate(8deg)} }
+    @keyframes an-tail { 0%,100%{transform:rotate(-10deg)} 50%{transform:rotate(12deg)} }
+    @keyframes an-ear { 0%,84%,100%{transform:rotate(0)} 89%{transform:rotate(-14deg)} 95%{transform:rotate(5deg)} }
+    @keyframes an-head { 0%,100%{transform:rotate(-4deg)} 50%{transform:rotate(4deg)} }
+    @keyframes an-hop-l { 0%,50%,100%{transform:translateY(0)} 25%{transform:translateY(-9px)} }
+    @keyframes an-hop-r { 0%,50%,100%{transform:translateY(0)} 75%{transform:translateY(-9px)} }
+    @keyframes an-show-a { 0%,58%,100%{opacity:1} 63%,95%{opacity:0} }
+    @keyframes an-show-b { 0%,58%,100%{opacity:0} 63%,95%{opacity:1} }
+    @keyframes an-pupil { 0%,18%,100%{transform:translate(0,0)} 26%,40%{transform:translate(-7px,3px)} 48%,62%{transform:translate(7px,-2px)} 72%,86%{transform:translate(0,4px)} }
+    @keyframes an-flap { 0%,100%{transform:rotate(-7deg)} 50%{transform:rotate(9deg)} }
+    @keyframes an-flap-r { 0%,100%{transform:rotate(7deg)} 50%{transform:rotate(-9deg)} }
+    @keyframes an-beak { 0%,100%{transform:translateY(0)} 50%{transform:translateY(6px)} }
+    @keyframes an-sweat { 0%{opacity:0; transform:translateY(-3px) scale(0.7)} 25%{opacity:1} 100%{opacity:0; transform:translateY(22px) scale(1.05)} }
+    @keyframes an-flash { 0%,100%{opacity:0.15} 50%{opacity:1} }
+    @keyframes an-dust { 0%,100%{transform:scale(0.9); opacity:0.5} 50%{transform:scale(1.15); opacity:0.95} }
+    @keyframes an-dig-l { 0%,100%{transform:rotate(-13deg)} 50%{transform:rotate(11deg)} }
+    @keyframes an-dig-r { 0%,100%{transform:rotate(11deg)} 50%{transform:rotate(-13deg)} }
+    @keyframes an-brow { 0%,78%,100%{transform:translateY(0)} 84%,92%{transform:translateY(-5px)} }
+    @keyframes an-knot { 0%,100%{transform:rotate(-9deg)} 50%{transform:rotate(9deg)} }
+    @keyframes an-snout { 0%,100%{transform:scale(1)} 50%{transform:scale(1.07,0.93)} }
+    @keyframes an-crest { 0%,100%{transform:rotate(-6deg)} 50%{transform:rotate(7deg)} }
+    /* キーラン君 */
+    .cv-cat .p-eye-l, .cv-cat .p-eye-r { animation:an-blink 3.8s infinite; }
+    .cv-cat .p-arm-r { transform-origin:14% 88%; animation:an-wave 1.1s ease-in-out infinite; }
+    .cv-cat .p-arm-l { transform-origin:60% 8%; animation:an-sway-arm 1.6s ease-in-out infinite; }
+    .cv-cat .p-tail { transform-origin:16% 84%; animation:an-tail 1.4s ease-in-out infinite; }
+    .cv-cat .p-ear-l { transform-origin:80% 92%; animation:an-ear 4.2s infinite; }
+    .cv-cat .p-ear-r { transform-origin:20% 92%; animation:an-ear 4.2s 1.9s infinite; }
+    .cv-cat .p-head { transform-origin:50% 90%; animation:an-head 2.6s ease-in-out infinite; }
+    .cv-cat .p-leg-l { animation:an-hop-l 1.1s ease-in-out infinite; }
+    .cv-cat .p-leg-r { animation:an-hop-r 1.1s ease-in-out infinite; }
+    .cv-cat .m-open  { animation:an-show-a 7s infinite; }
+    .cv-cat .m-smile { animation:an-show-b 7s infinite; }
+    .cv-cat .p-spark { animation:an-flash 1.6s ease-in-out infinite; }
+    .cv-cat .p-spark.sp2 { animation-delay:0.8s; }
+    /* 危機管鳥 */
+    .cv-bird .p-pupil { animation:an-pupil 4.5s infinite; }
+    .cv-bird .p-brow-l { animation:an-brow 3.4s infinite; }
+    .cv-bird .p-brow-r { animation:an-brow 3.4s 0.4s infinite; }
+    .cv-bird .p-wing-l { transform-origin:70% 92%; animation:an-flap 0.8s ease-in-out infinite; }
+    .cv-bird .p-wing-r { transform-origin:30% 92%; animation:an-flap-r 0.8s ease-in-out infinite; }
+    .cv-bird .p-beak-low { animation:an-beak 0.45s ease-in-out infinite; }
+    .cv-bird .p-crest { transform-origin:50% 100%; animation:an-crest 1s ease-in-out infinite; }
+    .cv-bird .p-tail { transform-origin:10% 50%; animation:an-knot 1.1s ease-in-out infinite; }
+    .cv-bird .p-foot-l { animation:an-hop-l 0.9s linear infinite; }
+    .cv-bird .p-foot-r { animation:an-hop-r 0.9s linear infinite; }
+    .cv-bird .p-sweat { animation:an-sweat 1.6s ease-in infinite; }
+    .cv-bird .p-alarm { animation:an-flash 0.9s steps(2) infinite; }
+    /* 成果フンバ */
+    .cv-boar .p-arm-l { transform-origin:55% 12%; animation:an-dig-l 0.8s ease-in-out infinite; }
+    .cv-boar .p-arm-r { transform-origin:45% 12%; animation:an-dig-r 0.8s ease-in-out infinite; }
+    .cv-boar .p-head { transform-origin:50% 85%; animation:an-head 2.2s ease-in-out infinite; }
+    .cv-boar .p-ear-l { transform-origin:85% 95%; animation:an-ear 3.8s infinite; }
+    .cv-boar .p-ear-r { transform-origin:15% 95%; animation:an-ear 3.8s 1.7s infinite; }
+    .cv-boar .p-knot { transform-origin:5% 50%; animation:an-knot 1s ease-in-out infinite; }
+    .cv-boar .p-brow-l { animation:an-brow 3s infinite; }
+    .cv-boar .p-brow-r { animation:an-brow 3s 0.3s infinite; }
+    .cv-boar .p-snout { animation:an-snout 1.6s ease-in-out infinite; }
+    .cv-boar .m-grit { animation:an-show-a 8s infinite; }
+    .cv-boar .m-roar { animation:an-show-b 8s infinite; }
+    .cv-boar .p-dust-l { transform-origin:50% 100%; animation:an-dust 1.1s ease-in-out infinite; }
+    .cv-boar .p-dust-r { transform-origin:50% 100%; animation:an-dust 1.1s 0.5s ease-in-out infinite; }
+    .cv-boar .p-bolt { animation:an-flash 0.7s steps(2) infinite; }
+    .cv-boar .p-sweat { animation:an-sweat 1.8s ease-in infinite; }
+    .chara-img svg .s2 { animation-delay:0.35s; }
+    .chara-img svg .s3 { animation-delay:0.7s; }
+    .chara-img svg .s4 { animation-delay:1.05s; }
+    .chara-img svg .s5 { animation-delay:1.4s; }
+
     @media (prefers-reduced-motion: reduce) {
       .chara-img.chara-dance { animation:ch-soft 1.6s ease-in-out infinite; }
       @keyframes ch-soft { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+      .chara-img svg * { animation:none !important; }
     }
 
     /* ── 履歴 ── */
@@ -1526,21 +1605,230 @@ function charaAdvice(s) {
   return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${Math.round((100 - s.vPct) / 3)}点です🥗`;
 }
 
-// キャラごとの見た目設定（公式イラスト。演出はイラスト側に描き込まれているためfxは最小限）
+// ── キャラの動くバージョン（SVG）──
+// 公式イラストを元に、手足・目・口・耳・しっぽ等を別パーツとして再構成したもの。
+// 各パーツはCSSアニメーション（an-*）で常時動き、全身のダンス（kkd/fbd/ctd-*）と組み合わさる。
+const CHARA_SVG = {};
+CHARA_SVG.cat = `
+<svg viewBox="0 0 300 300" class="cv-cat" aria-label="キーラン君">
+  <g class="p-tail">
+    <path d="M212 252 Q268 250 262 196" fill="none" stroke="#3F2A1A" stroke-width="30" stroke-linecap="round"/>
+    <path d="M212 252 Q268 250 262 196" fill="none" stroke="#F8C57C" stroke-width="21" stroke-linecap="round"/>
+    <path d="M212 252 Q268 250 262 196" fill="none" stroke="#FFFCF4" stroke-width="21" stroke-linecap="round" stroke-dasharray="13 13"/>
+  </g>
+  <g class="p-body">
+    <ellipse cx="150" cy="216" rx="76" ry="66" fill="#FFFCF4" stroke="#3F2A1A" stroke-width="5"/>
+    <g class="p-arm-l">
+      <path d="M110 188 Q92 214 102 240" fill="none" stroke="#3F2A1A" stroke-width="25" stroke-linecap="round"/>
+      <path d="M110 188 Q92 214 102 240" fill="none" stroke="#FFFCF4" stroke-width="16" stroke-linecap="round"/>
+    </g>
+    <g class="p-leg-l">
+      <ellipse cx="112" cy="270" rx="30" ry="21" fill="#FFFCF4" stroke="#3F2A1A" stroke-width="5"/>
+      <ellipse cx="112" cy="274" rx="11" ry="8" fill="#F29EAE"/>
+      <circle cx="97" cy="263" r="4.5" fill="#F29EAE"/><circle cx="112" cy="259" r="4.5" fill="#F29EAE"/><circle cx="127" cy="263" r="4.5" fill="#F29EAE"/>
+    </g>
+    <g class="p-leg-r">
+      <ellipse cx="188" cy="270" rx="30" ry="21" fill="#FFFCF4" stroke="#3F2A1A" stroke-width="5"/>
+      <ellipse cx="188" cy="274" rx="11" ry="8" fill="#F29EAE"/>
+      <circle cx="173" cy="263" r="4.5" fill="#F29EAE"/><circle cx="188" cy="259" r="4.5" fill="#F29EAE"/><circle cx="203" cy="263" r="4.5" fill="#F29EAE"/>
+    </g>
+  </g>
+  <g class="p-head">
+    <g class="p-ear-l">
+      <path d="M86 76 Q58 26 72 20 Q86 16 124 50 Z" fill="#F8C57C" stroke="#3F2A1A" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M87 62 Q74 40 80 36 Q88 34 106 52 Z" fill="#F08CA2"/>
+    </g>
+    <g class="p-ear-r">
+      <path d="M214 76 Q242 26 228 20 Q214 16 176 50 Z" fill="#FFFCF4" stroke="#3F2A1A" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M213 62 Q226 40 220 36 Q212 34 194 52 Z" fill="#F08CA2"/>
+    </g>
+    <clipPath id="catHeadClip"><ellipse cx="150" cy="106" rx="92" ry="78"/></clipPath>
+    <ellipse cx="150" cy="106" rx="92" ry="78" fill="#FFFCF4" stroke="#3F2A1A" stroke-width="5"/>
+    <g clip-path="url(#catHeadClip)">
+      <path d="M50 80 Q80 24 140 26 Q118 66 110 96 Q78 98 50 80 Z" fill="#F8C57C"/>
+      <g fill="#F0A94F">
+        <rect x="140" y="24" rx="5" width="10" height="28"/>
+        <rect x="160" y="22" rx="5" width="10" height="32"/>
+        <rect x="180" y="28" rx="5" width="10" height="26"/>
+      </g>
+    </g>
+    <g stroke="#3F2A1A" stroke-width="4" stroke-linecap="round">
+      <path d="M40 92 L80 98"/><path d="M36 110 L78 111"/><path d="M42 128 L80 122"/>
+      <path d="M260 92 L220 98"/><path d="M264 110 L222 111"/><path d="M258 128 L220 122"/>
+    </g>
+    <g class="p-eye-l"><circle cx="118" cy="102" r="8.5" fill="#2B1B10"/></g>
+    <g class="p-eye-r"><circle cx="182" cy="102" r="8.5" fill="#2B1B10"/></g>
+    <g><ellipse cx="96" cy="127" rx="17" ry="13" fill="#F08CA2"/><circle cx="90" cy="123" r="3" fill="#F9C2CE"/><circle cx="100" cy="121" r="2.4" fill="#F9C2CE"/></g>
+    <g><ellipse cx="204" cy="127" rx="17" ry="13" fill="#F08CA2"/><circle cx="198" cy="123" r="3" fill="#F9C2CE"/><circle cx="208" cy="121" r="2.4" fill="#F9C2CE"/></g>
+    <path d="M144 115 Q150 110 156 115 Q153 122 150 122 Q147 122 144 115 Z" fill="#F0708F"/>
+    <g class="p-mouth">
+      <g class="m-open">
+        <path d="M133 125 Q150 155 167 125 Q160 133 150 133 Q140 133 133 125 Z" fill="#5A2B1B" stroke="#3F2A1A" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M140 138 Q150 148 160 138 Q155 143 150 143 Q145 143 140 138 Z" fill="#F0708F"/>
+      </g>
+      <g class="m-smile" opacity="0">
+        <path d="M136 128 Q143 137 150 128 Q157 137 164 128" fill="none" stroke="#3F2A1A" stroke-width="4" stroke-linecap="round"/>
+      </g>
+    </g>
+  </g>
+  <g class="p-arm-r">
+    <path d="M204 190 Q235 172 241 134" fill="none" stroke="#3F2A1A" stroke-width="27" stroke-linecap="round"/>
+    <path d="M204 190 Q235 172 241 134" fill="none" stroke="#FFFCF4" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="243" cy="124" r="21" fill="#FFFCF4" stroke="#3F2A1A" stroke-width="5"/>
+    <ellipse cx="243" cy="129" rx="9" ry="7" fill="#F29EAE"/>
+    <circle cx="231" cy="114" r="4.5" fill="#F29EAE"/><circle cx="243" cy="110" r="4.5" fill="#F29EAE"/><circle cx="255" cy="114" r="4.5" fill="#F29EAE"/>
+  </g>
+  <g fill="#F5C25C">
+    <path class="p-spark" d="M52 176 l5 12 12 5 -12 5 -5 12 -5 -12 -12 -5 12 -5 Z"/>
+    <path class="p-spark sp2" d="M254 196 l4 9 9 4 -9 4 -4 9 -4 -9 -9 -4 9 -4 Z"/>
+  </g>
+</svg>`;
+CHARA_SVG.boar = `
+<svg viewBox="0 0 340 260" class="cv-boar" aria-label="成果フンバ">
+  <g class="p-dust-l" fill="#E5D8C2">
+    <circle cx="38" cy="210" r="26"/><circle cx="66" cy="222" r="18"/><circle cx="18" cy="226" r="15"/>
+  </g>
+  <g class="p-dust-r" fill="#E5D8C2">
+    <circle cx="302" cy="212" r="26"/><circle cx="274" cy="224" r="18"/><circle cx="322" cy="226" r="15"/>
+  </g>
+  <g class="p-bolt" fill="#F7C948">
+    <path d="M34 120 l18 -28 -8 18 15 -5 -20 30 6 -18 Z"/>
+    <path d="M306 108 l-18 -28 8 18 -15 -5 20 30 -6 -18 Z"/>
+  </g>
+  <g class="p-head">
+    <path d="M84 118 Q86 84 104 66 L112 34 L134 54 L152 22 L170 50 L188 20 L206 52 L228 32 L236 66 Q254 84 256 118 Q220 96 170 96 Q120 96 84 118 Z"
+          fill="#7A4A22" stroke="#4A2E14" stroke-width="5" stroke-linejoin="round"/>
+    <g class="p-ear-l"><path d="M100 84 L82 50 L128 64 Z" fill="#8A5A2B" stroke="#4A2E14" stroke-width="5" stroke-linejoin="round"/><path d="M102 76 L92 58 L118 66 Z" fill="#E8899B"/></g>
+    <g class="p-ear-r"><path d="M240 84 L258 50 L212 64 Z" fill="#8A5A2B" stroke="#4A2E14" stroke-width="5" stroke-linejoin="round"/><path d="M238 76 L248 58 L222 66 Z" fill="#E8899B"/></g>
+    <ellipse cx="170" cy="128" rx="86" ry="70" fill="#8A5A2B" stroke="#4A2E14" stroke-width="5"/>
+    <rect x="96" y="78" width="148" height="27" rx="13" fill="#F7C948" stroke="#4A2E14" stroke-width="4"/>
+    <text x="170" y="98" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="16" fill="#FFFFFF">reall</text>
+    <g class="p-knot">
+      <path d="M242 84 Q276 68 286 84 Q264 88 268 102 Q252 104 242 84 Z" fill="#F7C948" stroke="#4A2E14" stroke-width="4" stroke-linejoin="round"/>
+    </g>
+    <g class="p-brow-l"><path d="M112 118 L152 130" stroke="#201208" stroke-width="11" stroke-linecap="round"/></g>
+    <g class="p-brow-r"><path d="M228 118 L188 130" stroke="#201208" stroke-width="11" stroke-linecap="round"/></g>
+    <path d="M124 138 Q131 145 138 138" fill="none" stroke="#201208" stroke-width="4.5" stroke-linecap="round"/>
+    <path d="M202 138 Q209 145 216 138" fill="none" stroke="#201208" stroke-width="4.5" stroke-linecap="round"/>
+    <ellipse cx="106" cy="152" rx="14" ry="10" fill="#E8798F" opacity="0.85"/>
+    <ellipse cx="234" cy="152" rx="14" ry="10" fill="#E8798F" opacity="0.85"/>
+    <g class="p-snout">
+      <rect x="132" y="128" width="76" height="48" rx="23" fill="#E8899B" stroke="#4A2E14" stroke-width="5"/>
+      <ellipse cx="155" cy="152" rx="7.5" ry="11" fill="#4A2E14"/>
+      <ellipse cx="185" cy="152" rx="7.5" ry="11" fill="#4A2E14"/>
+    </g>
+    <g class="p-mouth">
+      <g class="m-grit">
+        <rect x="120" y="176" width="100" height="22" rx="10" fill="#FDFBF5" stroke="#4A2E14" stroke-width="4"/>
+        <g stroke="#4A2E14" stroke-width="3"><path d="M140 176 v22"/><path d="M160 176 v22"/><path d="M180 176 v22"/><path d="M200 176 v22"/></g>
+        <path d="M116 184 Q98 168 106 146 Q120 154 126 178 Z" fill="#FDFBF5" stroke="#4A2E14" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M224 184 Q242 168 234 146 Q220 154 214 178 Z" fill="#FDFBF5" stroke="#4A2E14" stroke-width="4" stroke-linejoin="round"/>
+      </g>
+      <g class="m-roar" opacity="0">
+        <ellipse cx="170" cy="188" rx="42" ry="17" fill="#5A1F12" stroke="#4A2E14" stroke-width="4"/>
+        <rect x="138" y="174" width="64" height="9" rx="4.5" fill="#FDFBF5"/>
+        <path d="M122 186 Q104 170 112 148 Q126 156 132 180 Z" fill="#FDFBF5" stroke="#4A2E14" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M218 186 Q236 170 228 148 Q214 156 208 180 Z" fill="#FDFBF5" stroke="#4A2E14" stroke-width="4" stroke-linejoin="round"/>
+      </g>
+    </g>
+    <g fill="#A9D2F5" stroke="#5E97D8" stroke-width="2">
+      <path class="p-sweat" d="M94 116 q7 11 0 16 q-7 -5 0 -16 Z"/>
+      <path class="p-sweat s2" d="M248 120 q7 11 0 16 q-7 -5 0 -16 Z"/>
+      <path class="p-sweat s3" d="M170 40 q7 11 0 16 q-7 -5 0 -16 Z"/>
+    </g>
+  </g>
+  <path d="M124 190 Q170 212 216 190 L210 238 Q170 252 130 238 Z" fill="#F7C948" stroke="#4A2E14" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="170" cy="222" r="10" fill="none" stroke="#E8842B" stroke-width="4"/>
+  <g class="p-arm-l">
+    <path d="M104 192 Q84 210 80 236" fill="none" stroke="#4A2E14" stroke-width="30" stroke-linecap="round"/>
+    <path d="M104 192 Q84 210 80 236" fill="none" stroke="#6E4420" stroke-width="20" stroke-linecap="round"/>
+  </g>
+  <g class="p-arm-r">
+    <path d="M236 194 Q256 212 260 238" fill="none" stroke="#4A2E14" stroke-width="30" stroke-linecap="round"/>
+    <path d="M236 194 Q256 212 260 238" fill="none" stroke="#6E4420" stroke-width="20" stroke-linecap="round"/>
+  </g>
+</svg>`;
+CHARA_SVG.bird = `
+<svg viewBox="0 0 300 320" class="cv-bird" aria-label="危機管鳥">
+  <g class="p-alarm" fill="#E8442E">
+    <path d="M30 30 l14 28 -11 -3 Z"/><path d="M54 20 l8 30 -11 -4 Z"/><path d="M14 52 l22 20 -12 2 Z"/>
+    <path d="M270 30 l-14 28 11 -3 Z"/><path d="M246 20 l-8 30 11 -4 Z"/><path d="M286 52 l-22 20 12 2 Z"/>
+  </g>
+  <g class="p-tail" fill="#2E5FBE" stroke="#1E3A66" stroke-width="4" stroke-linejoin="round">
+    <path d="M244 196 Q282 178 288 200 Q268 208 252 214 Z"/>
+    <path d="M246 208 Q284 202 284 220 Q264 224 250 222 Z"/>
+  </g>
+  <g class="p-crest" fill="#3468CC" stroke="#1E3A66" stroke-width="4" stroke-linejoin="round">
+    <path d="M132 40 Q118 4 142 2 Q140 22 156 34 Z"/>
+    <path d="M156 34 Q158 6 178 12 Q168 26 174 42 Z"/>
+  </g>
+  <path d="M150 30 Q244 40 248 158 Q250 250 150 254 Q50 250 52 158 Q56 40 150 30 Z" fill="#3468CC" stroke="#1E3A66" stroke-width="5"/>
+  <path d="M150 74 Q216 80 218 160 Q220 236 150 240 Q80 236 82 160 Q84 80 150 74 Z" fill="#F6EFE6"/>
+  <g class="p-eye-l">
+    <circle cx="110" cy="120" r="38" fill="#FEFCF6" stroke="#1E3A66" stroke-width="4"/>
+    <g stroke="#D14336" stroke-width="2" fill="none">
+      <path d="M80 106 q12 5 19 14"/><path d="M85 138 q12 -2 19 -9"/><path d="M130 92 q-7 9 -7 19"/><path d="M136 130 q-8 2 -14 8"/>
+    </g>
+    <g class="p-pupil"><circle cx="112" cy="122" r="11" fill="#2E1C12"/><circle cx="116" cy="117" r="3.5" fill="#FFF"/></g>
+  </g>
+  <g class="p-eye-r">
+    <circle cx="190" cy="120" r="38" fill="#FEFCF6" stroke="#1E3A66" stroke-width="4"/>
+    <g stroke="#D14336" stroke-width="2" fill="none">
+      <path d="M220 106 q-12 5 -19 14"/><path d="M215 138 q-12 -2 -19 -9"/><path d="M170 92 q7 9 7 19"/><path d="M164 130 q8 2 14 8"/>
+    </g>
+    <g class="p-pupil"><circle cx="188" cy="122" r="11" fill="#2E1C12"/><circle cx="192" cy="117" r="3.5" fill="#FFF"/></g>
+  </g>
+  <g stroke="#12294F" stroke-width="7" stroke-linecap="round" fill="none">
+    <path class="p-brow-l" d="M86 70 q22 -12 44 -4"/>
+    <path class="p-brow-r" d="M214 70 q-22 -12 -44 -4"/>
+  </g>
+  <g class="p-beak">
+    <path d="M150 128 L124 152 Q150 163 176 152 Z" fill="#F0A233" stroke="#8C5A12" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="150" cy="174" rx="27" ry="22" fill="#7E1F12" stroke="#5A140B" stroke-width="3"/>
+    <path d="M134 187 Q150 196 166 187 Q159 180 150 180 Q141 180 134 187 Z" fill="#C4543B"/>
+    <g class="p-beak-low"><path d="M128 192 Q150 206 172 192 Q161 183 150 183 Q139 183 128 192 Z" fill="#E5952B" stroke="#8C5A12" stroke-width="3" stroke-linejoin="round"/></g>
+  </g>
+  <g class="p-wing-l">
+    <path d="M92 138 Q56 140 52 184 Q50 224 86 222 Q118 220 118 184 Q118 148 92 138 Z" fill="#3468CC" stroke="#1E3A66" stroke-width="5"/>
+    <path d="M76 162 Q66 180 72 202" fill="none" stroke="#274F9E" stroke-width="4" stroke-linecap="round"/>
+    <path d="M95 160 Q87 180 91 206" fill="none" stroke="#274F9E" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g class="p-wing-r">
+    <path d="M208 138 Q244 140 248 184 Q250 224 214 222 Q182 220 182 184 Q182 148 208 138 Z" fill="#3468CC" stroke="#1E3A66" stroke-width="5"/>
+    <path d="M224 162 Q234 180 228 202" fill="none" stroke="#274F9E" stroke-width="4" stroke-linecap="round"/>
+    <path d="M205 160 Q213 180 209 206" fill="none" stroke="#274F9E" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <path d="M96 232 Q150 252 204 232 L204 294 Q150 308 96 294 Z" fill="#26221E" stroke="#141210" stroke-width="4"/>
+  <path d="M96 232 Q150 252 204 232" fill="none" stroke="#E8842B" stroke-width="5"/>
+  <circle cx="122" cy="264" r="12" fill="none" stroke="#E8842B" stroke-width="4.5"/>
+  <text x="170" y="272" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="21" fill="#F5F1E9">reall</text>
+  <g class="p-foot-l"><path d="M106 294 q-12 20 3 20 l26 0 q12 0 3 -20 Z" fill="#EF9D2C" stroke="#8C5A12" stroke-width="3.5" stroke-linejoin="round"/></g>
+  <g class="p-foot-r"><path d="M158 294 q-12 20 3 20 l26 0 q12 0 3 -20 Z" fill="#EF9D2C" stroke="#8C5A12" stroke-width="3.5" stroke-linejoin="round"/></g>
+  <g fill="#A9D2F5" stroke="#5E97D8" stroke-width="2">
+    <path class="p-sweat" d="M70 58 q8 12 0 18 q-8 -6 0 -18 Z"/>
+    <path class="p-sweat s2" d="M230 54 q8 12 0 18 q-8 -6 0 -18 Z"/>
+    <path class="p-sweat s3" d="M150 6 q8 12 0 18 q-8 -6 0 -18 Z"/>
+    <path class="p-sweat s4" d="M48 118 q8 12 0 18 q-8 -6 0 -18 Z"/>
+    <path class="p-sweat s5" d="M252 122 q8 12 0 18 q-8 -6 0 -18 Z"/>
+  </g>
+</svg>`;
+
+// キャラごとの見た目設定
 // anims：各キャラ10種のダンス。表示のたびランダムに1つ再生し、キャラをタップすると踊り直す。
+// svg：手足・表情が動くSVG版（ステージ表示用）。imgは紹介ダイアログ等で使う公式イラスト。
 const CHARA_TYPES = {
   kiki: {
-    img: '/static/chara-kikikancho.webp?v=1', name: '危機管鳥', tier: 'tier-kiki',
+    img: '/static/chara-kikikancho.webp?v=1', svg: CHARA_SVG.bird, name: '危機管鳥', tier: 'tier-kiki',
     anims: ['kkd-cossack','kkd-bon','kkd-awa','kkd-charleston','kkd-hiphop','kkd-moonwalk','kkd-adumu','kkd-samba','kkd-spin','kkd-twist'],
     fx: '',
   },
   funba: {
-    img: '/static/chara-funba.webp?v=1', name: '成果フンバ', tier: 'tier-funba',
+    img: '/static/chara-funba.webp?v=1', svg: CHARA_SVG.boar, name: '成果フンバ', tier: 'tier-funba',
     anims: ['fbd-cossack','fbd-bon','fbd-awa','fbd-sumo','fbd-hiphop','fbd-moonwalk','fbd-adumu','fbd-samba','fbd-spin','fbd-headbang'],
     fx: '',
   },
   cat: {
-    img: '/static/chara-kieran.webp?v=1', name: 'キーラン君', tier: 'tier-happy',
+    img: '/static/chara-kieran.webp?v=1', svg: CHARA_SVG.cat, name: 'キーラン君', tier: 'tier-happy',
     anims: ['ctd-cossack','ctd-bon','ctd-awa','ctd-charleston','ctd-hiphop','ctd-moonwalk','ctd-adumu','ctd-samba','ctd-pirouette','ctd-maneki'],
     fx: `<span class="chara-fx fx-spark" style="left:8%; top:56%; animation-delay:0s">✨</span>
          <span class="chara-fx fx-spark" style="right:8%; top:50%; animation-delay:.4s">🎉</span>
@@ -1695,7 +1983,7 @@ function renderChara() {
     <div class="chara-bubble">${bubble}</div>
     <div class="chara-img-wrap">
       ${type.fx}
-      <img class="chara-img chara-dance ${anim}" src="${type.img}" alt="${type.name}" draggable="false">
+      <div class="chara-img chara-dance ${anim}">${type.svg}</div>
     </div>
     <div class="chara-name-tag">${type.name}</div>`;
 }
