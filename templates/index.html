@@ -230,6 +230,64 @@
       .gc-spark { animation-duration:2s; }
     }
 
+    /* ── キャラ（今日の進捗をマスコットが応援・警告） ── */
+    .chara-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:20px 18px; text-align:center; }
+    .chara-card h2 { font-size:18px; font-weight:800; margin-bottom:10px; }
+    .chara-score-row { display:flex; align-items:baseline; justify-content:center; gap:6px; }
+    .chara-score-label { font-size:16px; color:var(--text-muted); font-weight:700; }
+    .chara-score-num { font-size:56px; font-weight:900; color:var(--primary); line-height:1; }
+    .chara-score-unit { font-size:22px; font-weight:800; color:var(--primary); }
+    .chara-breakdown { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .chara-bd-chip { background:#F9FAFB; border:1px solid var(--border); border-radius:999px; padding:6px 12px; font-size:14px; font-weight:700; color:#5C564F; }
+    .chara-stage { position:relative; margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:26px 12px 16px; text-align:center; overflow:hidden; min-height:250px; }
+    .chara-stage.tier-happy { background:linear-gradient(160deg,#FFF7E8,#FFE9D6); }
+    .chara-stage.tier-funba { background:linear-gradient(160deg,#FFF3E0,#FFE0B2); }
+    .chara-stage.tier-kiki  { background:linear-gradient(160deg,#FFEBEE,#FFCDD2); }
+    .chara-bubble { display:inline-block; background:#fff; border:2px solid rgba(0,0,0,0.08); border-radius:16px; padding:10px 16px; font-size:18px; font-weight:800; box-shadow:var(--shadow-sm); margin-bottom:14px; }
+    .tier-kiki .chara-bubble { color:#C62828; border-color:#EF9A9A; animation:ch-bubble-flash 0.8s steps(2) infinite; }
+    @keyframes ch-bubble-flash { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+    .chara-img-wrap { position:relative; height:150px; display:flex; align-items:flex-end; justify-content:center; }
+    .chara-img { width:130px; height:130px; image-rendering:pixelated; image-rendering:crisp-edges; filter:drop-shadow(0 6px 8px rgba(0,0,0,0.22)); transform-origin:50% 100%; }
+    .anim-happy { animation:gc-dance 0.6s ease-in-out infinite; }
+    .anim-funba { animation:ch-funba 0.28s linear infinite; }
+    @keyframes ch-funba {
+      0%,100% { transform:translate(0,0) rotate(0deg); }
+      20% { transform:translate(-3px,2px) rotate(-2deg); }
+      40% { transform:translate(3px,0)  rotate(2deg); }
+      60% { transform:translate(-3px,2px) rotate(-1.5deg) scale(1.02,0.98); }
+      80% { transform:translate(3px,2px)  rotate(1.5deg); }
+    }
+    .anim-kiki { animation:ch-kiki 1.7s linear infinite; }
+    @keyframes ch-kiki {
+      0%   { transform:translateX(-64px) scaleX(-1) translateY(0); }
+      12%  { transform:translateX(-32px) scaleX(-1) translateY(-12px); }
+      24%  { transform:translateX(0)     scaleX(-1) translateY(0); }
+      37%  { transform:translateX(32px)  scaleX(-1) translateY(-12px); }
+      49%  { transform:translateX(64px)  scaleX(-1) translateY(0); }
+      50%  { transform:translateX(64px)  scaleX(1)  translateY(0); }
+      62%  { transform:translateX(32px)  scaleX(1)  translateY(-12px); }
+      74%  { transform:translateX(0)     scaleX(1)  translateY(0); }
+      87%  { transform:translateX(-32px) scaleX(1)  translateY(-12px); }
+      99%  { transform:translateX(-64px) scaleX(1)  translateY(0); }
+      100% { transform:translateX(-64px) scaleX(-1) translateY(0); }
+    }
+    .chara-fx { position:absolute; font-size:22px; pointer-events:none; opacity:0; }
+    .fx-spark { animation:gc-spark 1.4s ease-out infinite; }
+    .fx-dust  { animation:ch-dust 0.9s ease-out infinite; bottom:18px; }
+    @keyframes ch-dust { 0%{opacity:0; transform:translateX(0) scale(0.5)} 30%{opacity:0.9} 100%{opacity:0; transform:translateX(-26px) scale(1.3)} }
+    .fx-alert { animation:ch-alert 0.7s steps(2) infinite; font-weight:900; color:#E53935; font-size:26px; }
+    @keyframes ch-alert { 0%,100%{opacity:0} 50%{opacity:1} }
+    .fx-sweat { animation:ch-sweat 1.1s ease-in infinite; }
+    @keyframes ch-sweat { 0%{opacity:0; transform:translateY(-6px)} 30%{opacity:1} 100%{opacity:0; transform:translateY(22px)} }
+    .chara-name-tag { margin-top:10px; display:inline-block; background:rgba(255,255,255,0.85); border-radius:999px; padding:5px 14px; font-size:15px; font-weight:800; color:#5C564F; }
+    .chara-advice-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; }
+    .chara-advice-title { font-size:15px; font-weight:800; color:#374151; margin-bottom:6px; }
+    .chara-advice-card p { font-size:17px; line-height:1.7; color:#44403B; }
+    @media (prefers-reduced-motion: reduce) {
+      .anim-happy, .anim-funba { animation:gc-dance-soft 1.2s ease-in-out infinite; }
+      .anim-kiki { animation:ch-kiki 3.4s linear infinite; }
+    }
+
     /* ── 履歴 ── */
     .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:20px 18px; }
     .history-card h2 { font-size:18px; font-weight:800; margin-bottom:4px; letter-spacing:0.01em; }
@@ -363,7 +421,7 @@
       /* アプリ本体を中央カラムに（ヘッダー・各画面・お知らせバナー） */
       header,
       #warmup-banner,
-      #view-main, #view-history, #view-exercise, #view-settings {
+      #view-main, #view-history, #view-exercise, #view-chara, #view-settings {
         max-width: 720px;
         margin-left: auto;
         margin-right: auto;
@@ -372,12 +430,12 @@
         margin-top: 24px;
         border-radius: 22px 22px 0 0;
       }
-      #view-main, #view-history, #view-exercise, #view-settings {
+      #view-main, #view-history, #view-exercise, #view-chara, #view-settings {
         background: var(--bg);
         box-shadow: 0 24px 60px rgba(33,29,26,0.10);
         border-radius: 0 0 22px 22px;
       }
-      #view-history, #view-settings { min-height: 60vh; }
+      #view-history, #view-chara, #view-settings { min-height: 60vh; }
       /* 運動ビューは記録ビューの直下に続けて表示されるため、
          上に少し重ねてつなぎ目（角丸のすき間）を隠し、1枚のカードに見せる */
       #view-exercise { margin-top: -24px; padding-top: 24px; }
@@ -592,6 +650,24 @@
   </div>
 </div>
 
+<!-- キャラビュー（今日の進捗をマスコットが応援・警告する） -->
+<div id="view-chara" style="display:none;padding-bottom:90px">
+  <div class="chara-card">
+    <h2>🏅 今日のダイエット進捗</h2>
+    <div class="chara-score-row">
+      <span class="chara-score-label">100点満点中</span>
+      <span class="chara-score-num" id="chara-score-num">0</span>
+      <span class="chara-score-unit">点</span>
+    </div>
+    <div class="chara-breakdown" id="chara-breakdown"></div>
+  </div>
+  <div class="chara-stage" id="chara-stage"></div>
+  <div class="chara-advice-card">
+    <div class="chara-advice-title">💡 点数を上げるには</div>
+    <p id="chara-advice-text"></p>
+  </div>
+</div>
+
 <!-- 設定ビュー -->
 <div id="view-settings" style="display:none;padding-bottom:80px">
   <div class="setting-card" id="profile-summary-card" style="display:none">
@@ -675,6 +751,9 @@
   </button>
   <button class="bnav-btn" id="nav-history" onclick="switchView('history')">
     <span class="bnav-icon">📊</span>履歴
+  </button>
+  <button class="bnav-btn" id="nav-chara" onclick="switchView('chara')">
+    <span class="bnav-icon">🐱</span>キャラ
   </button>
   <button class="bnav-btn" id="nav-settings" onclick="switchView('settings')">
     <span class="bnav-icon">⚙️</span>設定
@@ -1288,6 +1367,104 @@ function hideGoalCelebrate() {
   if (_gcTimer) { clearTimeout(_gcTimer); _gcTimer = null; }
   ov.classList.add('hide');
   setTimeout(() => { ov.classList.remove('show', 'hide'); }, 400);
+}
+
+// ═══════════════════════════════════════════
+//  キャラタブ：今日の進捗スコアとマスコットアニメーション
+//  配点：B管理30点＋タンパク質35点＋野菜35点＝100点
+// ═══════════════════════════════════════════
+function calcCharaScore() {
+  let foodTotal = 0, protein = 0, veg = 0, count = 0;
+  MEALS.forEach(m => {
+    state[m.id].items.filter(i => i.result).forEach(i => {
+      count++;
+      foodTotal += i.result.total_b_count || 0;
+      protein   += mealProtein(i.result);
+      veg       += mealVeg(i.result);
+    });
+  });
+  const exBc = getExBCountForDate(currentDate());
+  const net  = Math.max(0, foodTotal - exBc);
+
+  // タンパク質 35点（目標下限に対する充足率。体重未設定は80gで概算）
+  const pt = getProteinTarget();
+  const pGoal = pt ? pt.min : 80;
+  const pScore = Math.min(1, protein / pGoal) * 35;
+
+  // 野菜 35点（350gに対する充足率）
+  const vScore = Math.min(1, veg / VEG_TARGET_G) * 35;
+
+  // B管理 30点（目標内なら満点、1回オーバーごとに-10点）
+  const tgt  = getGoalTarget(getProfile());
+  const bMax = tgt ? tgt.max : 8;
+  let bScore = 30;
+  if (isFinite(bMax) && net > bMax) bScore = Math.max(0, 30 - (net - bMax) * 10);
+
+  return {
+    score: Math.round(pScore + vScore + bScore),
+    net, protein, veg, pGoal, bMax, count,
+    pScore: Math.round(pScore), vScore: Math.round(vScore), bScore: Math.round(bScore),
+  };
+}
+
+// 点数を上げるための一言アドバイス（いちばん効く1つだけ）
+function charaAdvice(s) {
+  if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
+  if (isFinite(s.bMax) && s.net > s.bMax) {
+    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。次の食事はA食材中心にして、運動でBを取り返しましょう🏃`;
+  }
+  const pLack = Math.max(0, s.pGoal - s.protein);
+  const vLack = Math.max(0, VEG_TARGET_G - s.veg);
+  if (pLack <= 0 && vLack <= 0) return 'パーフェクト！この調子で1日をキープしましょう✨';
+  // 不足割合が大きい方を優先して案内
+  if ((pLack / s.pGoal) >= (vLack / VEG_TARGET_G)) {
+    return `タンパク質があと約${Math.round(pLack)}g。鶏むね肉・卵・プロテインなどを足すと最大＋${35 - s.pScore}点です🥩`;
+  }
+  return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${35 - s.vScore}点です🥗`;
+}
+
+function renderChara() {
+  const s = calcCharaScore();
+  document.getElementById('chara-score-num').textContent = s.score;
+  document.getElementById('chara-breakdown').innerHTML = `
+    <span class="chara-bd-chip">🍽️ B管理 ${s.bScore}/30</span>
+    <span class="chara-bd-chip">🥩 タンパク質 ${s.pScore}/35</span>
+    <span class="chara-bd-chip">🥗 野菜 ${s.vScore}/35</span>`;
+  document.getElementById('chara-advice-text').textContent = charaAdvice(s);
+
+  const stage = document.getElementById('chara-stage');
+  let tier, img, anim, bubble, name, fx;
+  if (s.score >= 80) {
+    tier = 'tier-happy'; img = '/static/kieran.svg'; anim = 'anim-happy';
+    bubble = 'すごいにゃ！今日は完璧だにゃ〜🎉'; name = 'キーラン君';
+    fx = `
+      <span class="chara-fx fx-spark" style="left:12%; top:52%; animation-delay:0s">✨</span>
+      <span class="chara-fx fx-spark" style="right:14%; top:48%; animation-delay:.4s">🎉</span>
+      <span class="chara-fx fx-spark" style="left:24%; top:40%; animation-delay:.8s">⭐</span>
+      <span class="chara-fx fx-spark" style="right:26%; top:58%; animation-delay:1.1s">🎵</span>`;
+  } else if (s.score >= 30) {
+    tier = 'tier-funba'; img = '/static/funba.svg'; anim = 'anim-funba';
+    bubble = 'ふんばれ〜っ！！まだまだこれからだブヒ💪'; name = '成果フンバ';
+    fx = `
+      <span class="chara-fx fx-dust" style="left:26%;">💨</span>
+      <span class="chara-fx fx-dust" style="right:26%; animation-delay:.45s; transform:scaleX(-1)">💨</span>`;
+  } else {
+    tier = 'tier-kiki'; img = '/static/kikikancho.svg'; anim = 'anim-kiki';
+    bubble = 'お前、やばいって！！このままだとまずいって！！'; name = '危機管鳥';
+    fx = `
+      <span class="chara-fx fx-alert" style="left:10%; top:38%">！！</span>
+      <span class="chara-fx fx-alert" style="right:10%; top:34%; animation-delay:.35s">！！</span>
+      <span class="chara-fx fx-sweat" style="left:22%; top:42%">💦</span>
+      <span class="chara-fx fx-sweat" style="right:22%; top:46%; animation-delay:.55s">💦</span>`;
+  }
+  stage.className = `chara-stage ${tier}`;
+  stage.innerHTML = `
+    <div class="chara-bubble">${bubble}</div>
+    <div class="chara-img-wrap">
+      ${fx}
+      <img class="chara-img ${anim}" src="${img}" alt="${name}" draggable="false">
+    </div>
+    <div class="chara-name-tag">${name}</div>`;
 }
 
 // 1日の野菜目標(g)。厚労省の推奨目安に合わせて350g固定。
@@ -2257,7 +2434,7 @@ function saveDiary() {
 let _recordSub = 'food';   // 記録タブ内のサブ（food / exercise / weight）
 
 function switchView(view) {
-  ['main','history','settings'].forEach(v => {
+  ['main','history','chara','settings'].forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.style.display = (v === view) ? '' : 'none';
     const btn = document.getElementById('nav-' + v);
@@ -2271,6 +2448,7 @@ function switchView(view) {
     if (ex) ex.style.display = 'none';
   }
   if (view === 'history') loadHistory();
+  if (view === 'chara') renderChara();
   if (view === 'settings') loadProfileInputs();
 }
 
