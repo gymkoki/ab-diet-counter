@@ -481,7 +481,7 @@
       <button class="chip" data-custom="1" onclick="selectExCustom()">✏️ その他<br>（自分で入力）</button>
     </div>
     <div id="custom-ex-section" style="display:none;margin-top:12px">
-      <input type="text" id="custom-ex-input" class="oil-note-input" placeholder="運動内容を入力（例：水泳、ダンス、ピラティス）" maxlength="30" oninput="onCustomExInput(this.value)">
+      <input type="text" id="custom-ex-input" class="oil-note-input" placeholder="種目と時間を入力（例：水泳を30分）" maxlength="30" oninput="onCustomExInput(this.value)">
     </div>
   </div>
   <div class="ex-card" id="duration-section" style="display:none;margin-top:10px">
@@ -2646,9 +2646,29 @@ function selectExCustom() {
   inp.focus();
 }
 
+// 「水泳を30分」「ダンス1時間」のような入力から種目名と時間を分ける。
+// 時間が書かれていればダイヤルに反映し、種目名だけを残す（ダイヤルだけの操作も従来どおり可）。
+let _customExLastMin = null;
+function _parseCustomEx(raw) {
+  let min = null;
+  const hm = raw.match(/(\d+)\s*時間\s*(半|\d+\s*分)?/);
+  const mm = raw.match(/(\d+)\s*分/);
+  if (hm) {
+    const extra = hm[2] === '半' ? 30 : (hm[2] ? parseInt(hm[2], 10) : 0);
+    min = parseInt(hm[1], 10) * 60 + extra;
+  } else if (mm) {
+    min = parseInt(mm[1], 10);
+  }
+  const name = raw
+    .replace(/[をで]?\s*\d+\s*時間\s*(半|\d+\s*分)?/g, '')
+    .replace(/[をで]?\s*\d+\s*分/g, '')
+    .trim();
+  return { name, min };
+}
+
 // 入力された運動名で時間ベース（MET既定4）の消費を計算する
 function onCustomExInput(val) {
-  const name = (val || '').trim();
+  const { name, min } = _parseCustomEx((val || '').trim());
   const durSec = document.getElementById('duration-section');
   if (!name) {
     _exType = null;
@@ -2656,6 +2676,15 @@ function onCustomExInput(val) {
     document.getElementById('ex-result-card').style.display = 'none';
     document.getElementById('ex-profile-notice').style.display = 'none';
     return;
+  }
+  if (min != null) {
+    // ドラムの範囲（5〜120分・5分刻み）に丸めて反映。同じ値なら再セットしない
+    // （時間を書いた後にダイヤルを動かした場合はダイヤルを優先する）
+    const snapped = Math.min(120, Math.max(5, Math.round(min / 5) * 5));
+    if (snapped !== _customExLastMin) {
+      _customExLastMin = snapped;
+      _initDurationDrum(snapped);
+    }
   }
   if (!_drumDurationInited) _initDurationDrum(30);
   _exType = name;
@@ -2801,7 +2830,7 @@ function recordExercise() {
 
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
   submitDailyExercise(getExBCountForDate(today), today);
-  _exType = null; _exDuration = 30; _exFloors = 5;
+  _exType = null; _exDuration = 30; _exFloors = 5; _customExLastMin = null;
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
   const cs = document.getElementById('custom-ex-section');
   if (cs) { cs.style.display = 'none'; document.getElementById('custom-ex-input').value = ''; }
