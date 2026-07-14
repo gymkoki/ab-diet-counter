@@ -258,11 +258,12 @@ def init_db():
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS daily_b_count (
-                    id         SERIAL PRIMARY KEY,
-                    user_id    TEXT   NOT NULL,
-                    date       TEXT   NOT NULL,
-                    b_count    REAL   NOT NULL,
-                    created_at TEXT   NOT NULL,
+                    id          SERIAL PRIMARY KEY,
+                    user_id     TEXT   NOT NULL,
+                    date        TEXT   NOT NULL,
+                    b_count     REAL   NOT NULL,
+                    chara_score REAL,
+                    created_at  TEXT   NOT NULL,
                     UNIQUE(user_id, date)
                 )
             """)
@@ -323,11 +324,12 @@ def init_db():
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS daily_b_count (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id    TEXT    NOT NULL,
-                    date       TEXT    NOT NULL,
-                    b_count    REAL    NOT NULL,
-                    created_at TEXT    NOT NULL,
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     TEXT    NOT NULL,
+                    date        TEXT    NOT NULL,
+                    b_count     REAL    NOT NULL,
+                    chara_score REAL,
+                    created_at  TEXT    NOT NULL,
                     UNIQUE(user_id, date)
                 )
             """)
@@ -411,6 +413,12 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+        # 既存DBへの列追加（キャラカレンダー用：その日の進捗スコア）。列が既にあれば無視。
+        try:
+            cur.execute("ALTER TABLE daily_b_count ADD COLUMN chara_score REAL")
+            conn.commit()
+        except Exception:
+            conn.rollback()
     finally:
         conn.close()
 
@@ -2634,6 +2642,12 @@ def post_daily_b():
     uid     = (data or {}).get("user_id", "").strip()
     b_count = (data or {}).get("b_count", 0)
     date    = (data or {}).get("date", "")   # YYYY-MM-DD (JST)
+    # キャラカレンダー用：その日の進捗スコア（0〜100・任意）。未指定なら既存値を保持する。
+    chara_score = (data or {}).get("chara_score")
+    try:
+        chara_score = float(chara_score) if chara_score is not None else None
+    except (TypeError, ValueError):
+        chara_score = None
     if not uid or not date:
         return jsonify({"error": "パラメータ不足"}), 400
 
@@ -2644,17 +2658,23 @@ def post_daily_b():
             cur = conn.cursor()
             if USE_PG:
                 cur.execute(
-                    """INSERT INTO daily_b_count (user_id, date, b_count, created_at)
-                       VALUES (%s, %s, %s, %s)
-                       ON CONFLICT (user_id, date) DO UPDATE SET b_count=%s, created_at=%s""",
-                    (uid, date, b_count, ts, b_count, ts)
+                    """INSERT INTO daily_b_count (user_id, date, b_count, chara_score, created_at)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE
+                       SET b_count=%s,
+                           chara_score=COALESCE(EXCLUDED.chara_score, daily_b_count.chara_score),
+                           created_at=%s""",
+                    (uid, date, b_count, chara_score, ts, b_count, ts)
                 )
             else:
                 cur.execute(
-                    """INSERT INTO daily_b_count (user_id, date, b_count, created_at)
-                       VALUES (?, ?, ?, ?)
-                       ON CONFLICT(user_id, date) DO UPDATE SET b_count=excluded.b_count, created_at=excluded.created_at""",
-                    (uid, date, b_count, ts)
+                    """INSERT INTO daily_b_count (user_id, date, b_count, chara_score, created_at)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE
+                       SET b_count=excluded.b_count,
+                           chara_score=COALESCE(excluded.chara_score, daily_b_count.chara_score),
+                           created_at=excluded.created_at""",
+                    (uid, date, b_count, chara_score, ts)
                 )
             conn.commit()
         finally:
@@ -2797,7 +2817,7 @@ def get_monthly_b():
     try:
         cur = conn.cursor()
         cur.execute(
-            f"""SELECT date, b_count FROM daily_b_count
+            f"""SELECT date, b_count, chara_score FROM daily_b_count
                WHERE user_id={PH} AND date>={PH} AND date<={PH}
                ORDER BY date""",
             (uid, date_start, date_end)
@@ -2831,6 +2851,7 @@ def get_monthly_b():
         conn.close()
 
     b_by_date = {r[0]: r[1] for r in b_rows}
+    c_by_date = {r[0]: r[2] for r in b_rows if r[2] is not None}
     w_by_date = {r[0]: r[1] for r in w_rows}
     e_by_date = {r[0]: r[1] for r in e_rows}
     d_by_date = {r[0]: r[1] for r in d_rows}
@@ -2840,7 +2861,8 @@ def get_monthly_b():
     all_dates  = sorted(set(b_by_date) | set(w_by_date) | set(e_by_date) | set(d_by_date))
     daily      = [
         {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d),
-         "ex_b_count": e_by_date.get(d), "diary": d_by_date.get(d)}
+         "ex_b_count": e_by_date.get(d), "diary": d_by_date.get(d),
+         "chara_score": c_by_date.get(d)}
         for d in all_dates
     ]
     return jsonify({

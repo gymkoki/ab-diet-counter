@@ -247,6 +247,23 @@
     .chara-stage.tier-happy { background:#FDF4E7; }
     .chara-stage.tier-funba { background:#F9ECDB; }
     .chara-stage.tier-kiki  { background:#F8E0CF; }
+    /* ── キャラカレンダー（日ごとの「1日の終わりのキャラ」を月表示） ── */
+    .chara-cal-card { margin:12px 16px; background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 12px 14px; }
+    .chara-cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; padding:0 4px; }
+    .chara-cal-title { font-size:17px; font-weight:800; }
+    .chara-cal-nav { border:1px solid var(--border); background:var(--surface); border-radius:10px; padding:7px 14px; font-size:14px; cursor:pointer; color:#5C564F; }
+    .chara-cal-nav:disabled { opacity:0.3; cursor:default; }
+    .chara-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+    .chara-cal-dow { text-align:center; font-size:12px; font-weight:700; color:var(--text-muted); padding:4px 0 6px; }
+    .chara-cal-dow.sun, .chara-cal-num.sun { color:#E05B4B; }
+    .chara-cal-dow.sat, .chara-cal-num.sat { color:#4A7FD4; }
+    .chara-cal-cell { min-height:46px; border-radius:10px; text-align:center; padding:3px 0 2px; }
+    .chara-cal-num { display:block; font-size:11px; font-weight:700; color:var(--text-muted); line-height:1.3; }
+    .chara-cal-cell img { width:26px; height:26px; display:block; margin:1px auto 0; }
+    .chara-cal-cell.today { background:var(--primary-soft); box-shadow:inset 0 0 0 1.5px var(--primary); }
+    .chara-cal-cell.future .chara-cal-num { opacity:0.35; }
+    .chara-cal-legend { margin-top:10px; padding:0 4px; font-size:13px; font-weight:600; color:#5C564F; display:flex; flex-direction:column; gap:5px; }
+    .chara-cal-legend img { width:20px; height:20px; vertical-align:-5px; margin-right:5px; }
     .chara-bubble { display:inline-block; background:#fff; border:2px solid rgba(0,0,0,0.08); border-radius:16px; padding:10px 16px; font-size:18px; font-weight:800; box-shadow:var(--shadow-sm); margin-bottom:14px; }
     .tier-kiki .chara-bubble { color:#C62828; border-color:#EF9A9A; animation:ch-bubble-flash 0.8s steps(2) infinite; }
     @keyframes ch-bubble-flash { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
@@ -746,6 +763,20 @@
     <div class="chara-advice-title">💡 点数を上げるには</div>
     <p id="chara-advice-text"></p>
   </div>
+  <!-- キャラカレンダー：日ごとに「1日の終わりのキャラ」を表示し、月の調子を一目で可視化 -->
+  <div class="chara-cal-card">
+    <div class="chara-cal-head">
+      <button class="chara-cal-nav" id="chara-cal-prev" onclick="charaCalShift(-1)">◀</button>
+      <span class="chara-cal-title" id="chara-cal-title"></span>
+      <button class="chara-cal-nav" id="chara-cal-next" onclick="charaCalShift(1)">▶</button>
+    </div>
+    <div class="chara-cal-grid" id="chara-cal-grid"></div>
+    <div class="chara-cal-legend">
+      <div><img src="/static/chara-kieran.webp?v=1" alt="">よくできている日（80点〜）：キーラン君</div>
+      <div><img src="/static/chara-funba.webp?v=1" alt="">まあまあの日（30〜79点）：成果フンバ</div>
+      <div><img src="/static/chara-kikikancho.webp?v=1" alt="">やばい日（〜29点）：危機管鳥</div>
+    </div>
+  </div>
 </div>
 
 <!-- キャラ紹介のお知らせ（キャラを押した最初の1回だけ表示） -->
@@ -1152,17 +1183,19 @@ async function syncHistoryFromServer() {
   try {
     const res  = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(USER_ID)}`);
     const data = await res.json();
-    const wlog = getWeightLog(), blog = getBCountLog(), dlog = getDiaryLog();
-    let wch = false, bch = false, dch = false;
+    const wlog = getWeightLog(), blog = getBCountLog(), dlog = getDiaryLog(), clog = getCharaLog();
+    let wch = false, bch = false, dch = false, cch = false;
     (data.daily || []).forEach(dd => {
       if (dd.ex_b_count != null) _serverExByDate[dd.date] = dd.ex_b_count;
       if (dd.weight  != null && wlog[dd.date] == null) { wlog[dd.date] = dd.weight;  wch = true; }
       if (dd.b_count != null && blog[dd.date] == null) { blog[dd.date] = dd.b_count; bch = true; }
       if (dd.diary   != null && dlog[dd.date] == null) { dlog[dd.date] = dd.diary;   dch = true; }
+      if (dd.chara_score != null && clog[dd.date] == null) { clog[dd.date] = dd.chara_score; cch = true; }
     });
     if (wch) localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(wlog));
     if (bch) localStorage.setItem(BCOUNT_LOG_KEY, JSON.stringify(blog));
     if (dch) { localStorage.setItem(DIARY_LOG_KEY, JSON.stringify(dlog)); renderDiaryInline(); }
+    if (cch) localStorage.setItem(CHARA_LOG_KEY, JSON.stringify(clog));
   } catch(e) {}
 }
 
@@ -1234,7 +1267,7 @@ async function adoptLinkedAccount(newUid, prof) {
     Object.keys(blog).forEach(date => {
       if (!sb[date]) posts.push(fetch('/api/daily-b', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: newUid, b_count: blog[date], date })
+        body: JSON.stringify({ user_id: newUid, b_count: blog[date], date, chara_score: getCharaLog()[date] ?? null })
       }).catch(() => {}));
     });
     Object.keys(wlog).forEach(date => {
@@ -1370,6 +1403,8 @@ function updateDailyTotal() {
   // 食事を記録している日は、その時点のBカウントを端末ローカルへ即保存しておく。
   // これで履歴グラフに当日分がすぐ反映され、サーバーDBがリセットされても折れ線が残る。
   if (foodTotal > 0) setBCountLogEntry(currentDate(), net);
+  // キャラカレンダー用：その時点の進捗スコアも保存（1日の最後の値がその日のキャラになる）
+  { const cs = calcCharaScore(); if (cs.count > 0) setCharaLogEntry(currentDate(), cs.score); }
   const bar   = document.getElementById('ex-deduct-bar');
   const numEl = document.getElementById('ex-deduct-num');
   if (bar && numEl) {
@@ -1698,6 +1733,64 @@ function renderChara() {
       <img class="chara-img chara-dance ${anim}" src="${type.img}" alt="${type.name}" draggable="false">
     </div>
     <div class="chara-name-tag">${type.name}</div>`;
+  renderCharaCalendar();
+}
+
+// ═══════════════════════════════════════════
+//  キャラカレンダー：日ごとの「1日の終わりのキャラ」を月表示
+//  その日の最後に記録されたスコアのキャラ（キーラン君／成果フンバ／危機管鳥）を
+//  日付ごとに表示し、その月の調子が一目で分かるようにする。
+// ═══════════════════════════════════════════
+let _charaCalOffset = 0;   // 0=今月、-1=先月、-2=先々月…
+
+function charaCalShift(diff) {
+  _charaCalOffset = Math.min(0, _charaCalOffset + diff);
+  renderCharaCalendar();
+}
+
+// スコア(0〜100)から表示キャラを決める（キャラ画面本体と同じ区分けを使う）
+function charaTypeForScore(score) {
+  const pat = CHARA_PATTERNS[Math.min(19, Math.max(0, Math.floor(score / 5)))];
+  return CHARA_TYPES[pat.c];
+}
+
+function renderCharaCalendar() {
+  const grid = document.getElementById('chara-cal-grid');
+  if (!grid) return;
+  const today = getTodayJST();                       // 'YYYY-MM-DD'（JST）
+  let y = parseInt(today.slice(0, 4), 10);
+  let m = parseInt(today.slice(5, 7), 10) + _charaCalOffset;
+  while (m < 1) { m += 12; y--; }
+  const mm = String(m).padStart(2, '0');
+
+  document.getElementById('chara-cal-title').textContent = `${y}年${m}月`;
+  const nextBtn = document.getElementById('chara-cal-next');
+  if (nextBtn) nextBtn.disabled = (_charaCalOffset >= 0);   // 未来の月へは進めない
+
+  const log = getCharaLog();
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const firstDow = new Date(y, m - 1, 1).getDay();   // 0=日曜
+
+  const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+  let html = DOW.map((d, i) =>
+    `<div class="chara-cal-dow${i === 0 ? ' sun' : (i === 6 ? ' sat' : '')}">${d}</div>`).join('');
+  for (let i = 0; i < firstDow; i++) html += '<div class="chara-cal-cell"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${mm}-${String(d).padStart(2, '0')}`;
+    const dow = (firstDow + d - 1) % 7;
+    const numCls = `chara-cal-num${dow === 0 ? ' sun' : (dow === 6 ? ' sat' : '')}`;
+    const isToday  = dateStr === today;
+    const isFuture = dateStr > today;
+    const score = log[dateStr];
+    let inner = `<span class="${numCls}">${d}</span>`;
+    if (!isFuture && score != null) {
+      const type = charaTypeForScore(score);
+      inner += `<img src="${type.img}" alt="${type.name}" title="${type.name}（${Math.round(score)}点）">`;
+    }
+    html += `<div class="chara-cal-cell${isToday ? ' today' : ''}${isFuture ? ' future' : ''}">${inner}</div>`;
+  }
+  grid.innerHTML = html;
 }
 
 // キャラをタップ：最初の1回はキャラ紹介を表示し、以降は別のダンス＆セリフで踊り直す
@@ -2547,13 +2640,29 @@ function setBCountLogEntry(date, bCount) {
   try { localStorage.setItem(BCOUNT_LOG_KEY, JSON.stringify(log)); } catch(e) {}
 }
 
+// キャラカレンダー用：日ごとの進捗スコア（0〜100）も端末ローカルに保存する。
+// その日の最後に保存された値＝「1日の終わりのキャラ」としてカレンダーに表示する。
+const CHARA_LOG_KEY = 'ab-diet-charalog-v1';   // { 'YYYY-MM-DD': score }
+
+function getCharaLog() {
+  try { return JSON.parse(localStorage.getItem(CHARA_LOG_KEY)) || {}; } catch { return {}; }
+}
+
+function setCharaLogEntry(date, score) {
+  if (!date || score == null || isNaN(score)) return;
+  const log = getCharaLog();
+  log[date] = score;
+  try { localStorage.setItem(CHARA_LOG_KEY, JSON.stringify(log)); } catch(e) {}
+}
+
 async function submitDailyB(bCount, date) {
   setBCountLogEntry(date, bCount);   // まず端末ローカルへ保存（サーバー保存の成否に関わらず残す）
   try {
+    const cs = getCharaLog()[date];
     await fetch('/api/daily-b', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: USER_ID, b_count: bCount, date })
+      body: JSON.stringify({ user_id: USER_ID, b_count: bCount, date, chara_score: cs != null ? cs : null })
     });
     localStorage.setItem('weeklyUploadDate',  date);
     localStorage.setItem('weeklyUploadCount', bCount);
