@@ -467,7 +467,6 @@
     /* ── 履歴 ── */
     .history-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:20px 18px; }
     .history-card h2 { font-size:18px; font-weight:800; margin-bottom:4px; letter-spacing:0.01em; }
-    .history-card .history-range { font-size:17px; color:var(--text-muted); margin-bottom:14px; }
     .history-row { display:flex; align-items:center; justify-content:space-between; padding:13px 4px; border-bottom:1px solid var(--border); }
     .history-row:last-child { border-bottom:none; }
     .history-date { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -476,6 +475,13 @@
     .history-unit { font-size:16px; font-weight:600; color:var(--text-muted); }
     .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:17px; line-height:1.9; }
     .history-weight { font-size:17px; font-weight:700; color:#2563EB; margin-top:3px; font-variant-numeric:tabular-nums; }
+    .month-acc { border-bottom:1px solid var(--border); }
+    .month-acc summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 4px; font-size:17px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    .month-acc summary::-webkit-details-marker { display:none; }
+    .month-acc summary::after { content:'▸'; color:var(--text-muted); font-size:16px; transition:transform 0.15s; }
+    .month-acc[open] summary::after { transform:rotate(90deg); }
+    .month-acc-count { font-size:15px; color:var(--text-muted); font-weight:600; margin-left:auto; }
+    .month-acc .history-row { padding-left:12px; }
     .history-diary { font-size:15px; font-weight:700; color:#7C5E10; background:#FFF7E0; border-radius:6px; padding:2px 8px; display:inline-block; margin-top:3px; max-width:200px; text-align:left; white-space:normal; word-break:break-word; line-height:1.5; }
     .diary-card { margin-top:14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px; }
     .diary-title { font-size:17px; font-weight:800; margin-bottom:8px; }
@@ -709,8 +715,7 @@
 
 <div id="view-history" style="display:none">
   <div class="history-card">
-    <h2>📊 Bカウント＆体重の履歴（直近50日）</h2>
-    <div class="history-range" id="history-range">読み込み中…</div>
+    <h2>📊 Bカウント＆体重の履歴</h2>
     <div class="history-total" id="history-total" style="display:none">
       <span class="label">1日平均</span>
       <span class="count" id="history-total-count">-</span>
@@ -3852,19 +3857,16 @@ function getTodayExBCount() {
 const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
 
 async function loadHistory() {
-  const rangeEl = document.getElementById('history-range');
   const listEl  = document.getElementById('history-list');
   const totalEl = document.getElementById('history-total');
   const totalCountEl = document.getElementById('history-total-count');
-  rangeEl.textContent = '読み込み中…';
-  listEl.innerHTML = '';
+  listEl.innerHTML = '<div class="history-empty">読み込み中…</div>';
   totalEl.style.display = 'none';
   try {
     const res  = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(USER_ID)}`);
     const data = await res.json();
     const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
     const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
-    rangeEl.textContent = `${fmtDate(data.date_start)} 〜 ${fmtDate(data.date_end)}（直近50日）`;
 
     // サーバーの履歴に、端末ローカルの体重・Bカウント・日記も重ねる（当日分やDBリセット時の復元用）
     const byDate = {};
@@ -3895,8 +3897,9 @@ async function loadHistory() {
       totalEl.style.display = 'flex';
     }
 
-    // 体重の折れ線グラフ
-    renderWeightChart(daily);
+    // 体重の折れ線グラフ（見やすさのため描画は直近50日分のみ。履歴データ自体は全期間保持）
+    const chartCutoff = (() => { const d = new Date(getTodayJST()+'T00:00:00'); d.setDate(d.getDate()-49); return d.toLocaleDateString('sv-SE'); })();
+    renderWeightChart(daily.filter(x => x.date >= chartCutoff));
 
     // 編集用に保持
     _histDaily = {};
@@ -3906,7 +3909,7 @@ async function loadHistory() {
       listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
       return;
     }
-    listEl.innerHTML = daily.map(d => {
+    const rowHtml = d => {
       const countHtml = (d.b_count != null)
         ? `<span class="history-count">B${fmtCount(d.b_count)}</span>`
         : `<span class="history-unit">記録なし</span>`;
@@ -3924,9 +3927,28 @@ async function loadHistory() {
           <button class="hist-edit-btn" onclick="openHistEdit('${d.date}')" title="この日の記録を編集">✏️</button>
         </div>
       </div>`;
+    };
+
+    // 今月はそのまま表示し、先月以前は「◯月」のアコーディオンにまとめる（タップで展開）
+    const todayStr = getTodayJST();
+    const curMonth = todayStr.slice(0, 7);
+    const curYear  = todayStr.slice(0, 4);
+    const groups = {};
+    daily.forEach(d => { const mk = d.date.slice(0, 7); (groups[mk] = groups[mk] || []).push(d); });
+    const monthKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    listEl.innerHTML = monthKeys.map(mk => {
+      const rows = groups[mk].map(rowHtml).join('');
+      if (mk === curMonth) return rows;
+      const [y, m] = mk.split('-');
+      const label = (y === curYear) ? `${parseInt(m)}月` : `${y}年${parseInt(m)}月`;
+      return `
+      <details class="month-acc">
+        <summary><span>📁 ${label}</span><span class="month-acc-count">${groups[mk].length}日分</span></summary>
+        ${rows}
+      </details>`;
     }).join('');
   } catch(e) {
-    rangeEl.textContent = '読み込みに失敗しました';
+    listEl.innerHTML = '<div class="history-empty">読み込みに失敗しました</div>';
   }
 }
 

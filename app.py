@@ -2800,7 +2800,7 @@ def post_daily_exercise():
 @app.route("/api/weekly-b")
 @app.route("/api/monthly-b")
 def get_monthly_b():
-    """直近30日間のBカウント履歴＋体重を返す"""
+    """Bカウント履歴＋体重の全期間を返す（履歴はずっと保存）"""
     uid = request.args.get("user_id", "")
     if not uid:
         return jsonify({"total": 0, "days_count": 0, "daily": [], "date_start": "", "date_end": ""})
@@ -2810,45 +2810,41 @@ def get_monthly_b():
         backfill_bcount_from_meals()
 
     now = datetime.datetime.now(JST)
-    date_end   = now.strftime("%Y-%m-%d")
-    date_start = (now - datetime.timedelta(days=49)).strftime("%Y-%m-%d")
+    date_end = now.strftime("%Y-%m-%d")
 
     conn = _get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
             f"""SELECT date, b_count, chara_score FROM daily_b_count
-               WHERE user_id={PH} AND date>={PH} AND date<={PH}
-               ORDER BY date""",
-            (uid, date_start, date_end)
+               WHERE user_id={PH} ORDER BY date""",
+            (uid,)
         )
         b_rows = cur.fetchall()
 
         cur.execute(
             f"""SELECT date, weight FROM daily_weight
-               WHERE user_id={PH} AND date>={PH} AND date<={PH}
-               ORDER BY date""",
-            (uid, date_start, date_end)
+               WHERE user_id={PH} ORDER BY date""",
+            (uid,)
         )
         w_rows = cur.fetchall()
 
         cur.execute(
             f"""SELECT date, ex_b_count FROM daily_exercise
-               WHERE user_id={PH} AND date>={PH} AND date<={PH}
-               ORDER BY date""",
-            (uid, date_start, date_end)
+               WHERE user_id={PH} ORDER BY date""",
+            (uid,)
         )
         e_rows = cur.fetchall()
 
         cur.execute(
             f"""SELECT date, diary FROM daily_diary
-               WHERE user_id={PH} AND date>={PH} AND date<={PH}
-               ORDER BY date""",
-            (uid, date_start, date_end)
+               WHERE user_id={PH} ORDER BY date""",
+            (uid,)
         )
         d_rows = cur.fetchall()
     finally:
         conn.close()
+    date_start = min([r[0] for r in b_rows] + [r[0] for r in w_rows], default=date_end)
 
     b_by_date = {r[0]: r[1] for r in b_rows}
     c_by_date = {r[0]: r[2] for r in b_rows if r[2] is not None}
@@ -2874,9 +2870,9 @@ def get_monthly_b():
     })
 
 
-# 食事の明細＋写真サムネを日別に保存（過去3日分のみ保持し、それ以前は自動削除。
+# 食事の明細＋写真サムネを日別に保存（過去5日分のみ保持し、それ以前は自動削除。
 # ただしVIP会員（user_profile.is_vip）はスタッフ確認用に無期限保持する）
-MEALS_RETAIN_DAYS = 3
+MEALS_RETAIN_DAYS = 5
 
 
 @app.route("/api/daily-meals", methods=["POST"])
