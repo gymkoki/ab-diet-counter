@@ -1407,7 +1407,7 @@ function hideGoalCelebrate() {
 
 // ═══════════════════════════════════════════
 //  キャラタブ：今日の進捗スコアとマスコットアニメーション
-//  配点：美（B）管理50%＋タンパク質25%＋野菜25%＝100点
+//  配点：Bカウント50%＋タンパク質25%＋野菜25%＝100点
 // ═══════════════════════════════════════════
 function calcCharaScore() {
   let foodTotal = 0, protein = 0, veg = 0, count = 0;
@@ -1422,7 +1422,7 @@ function calcCharaScore() {
   const exBc = getExBCountForDate(currentDate());
   const net  = Math.max(0, foodTotal - exBc);
 
-  // 美（B）管理：目標内なら100%、1回オーバーするごとに−20%
+  // Bカウント：目標内なら100%、1回オーバーするごとに−20%
   const tgt  = getGoalTarget(getProfile());
   const bMax = tgt ? tgt.max : 8;
   const bPct = (!isFinite(bMax) || net <= bMax) ? 100 : Math.max(0, Math.round(100 - (net - bMax) * 20));
@@ -1443,7 +1443,7 @@ function calcCharaScore() {
 function charaAdvice(s) {
   if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
   if (s.bPct < 100) {
-    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。美（B）管理は配点の50%。次の食事はA食材中心にして、運動でBを取り返しましょう🏃`;
+    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。Bカウントは配点の50%。次の食事はA食材中心にして、運動でBを取り返しましょう🏃`;
   }
   const pLack = Math.max(0, s.pGoal - s.protein);
   const vLack = Math.max(0, VEG_TARGET_G - s.veg);
@@ -1606,7 +1606,7 @@ function renderChara() {
   const s = calcCharaScore();
   document.getElementById('chara-score-num').textContent = s.score;
   document.getElementById('chara-breakdown').innerHTML = `
-    <span class="chara-bd-chip">💄 美（B）管理 ${s.bPct}%</span>
+    <span class="chara-bd-chip">🍽️ Bカウント ${s.bPct}%</span>
     <span class="chara-bd-chip">🥩 タンパク質 ${s.pPct}%</span>
     <span class="chara-bd-chip">🥗 野菜 ${s.vPct}%</span>`;
   document.getElementById('chara-advice-text').textContent = charaAdvice(s);
