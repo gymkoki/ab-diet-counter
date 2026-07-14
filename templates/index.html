@@ -469,12 +469,10 @@
   <div class="ex-card">
     <h3>🏋️ 運動種目を選ぶ</h3>
     <div class="chip-grid" id="chips-type">
-      <button class="chip" onclick="selectExType('散歩')">🚶 散歩</button>
+      <button class="chip" onclick="selectExType('散歩／室内散歩（室内歩行）')">🚶 散歩／<br>室内散歩<br>（室内歩行）</button>
       <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
       <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
-      <button class="chip" onclick="selectExType('室内ウォーキング')">🏠 室内<br>ウォーキング</button>
-      <button class="chip" onclick="selectExType('ヨガ')">🧘 ヨガ</button>
-      <button class="chip" onclick="selectExType('ストレッチ')">🤸 ストレッチ</button>
+      <button class="chip" onclick="selectExType('ヨガ／ストレッチ')">🧘 ヨガ／<br>ストレッチ</button>
       <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジム<br>オンラインレッスン</button>
       <button class="chip" onclick="selectExType('リオールジム対面トレーニング')">🤝 リオールジム<br>対面トレーニング</button>
       <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
@@ -2375,11 +2373,12 @@ function getProfile() {
 //  運動トラッキング
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
-const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, '室内ウォーキング': 3.0, 'ヨガ': 2.5, 'ストレッチ': 2.5, 'リオールジムオンラインレッスン': 5.0 };
+// 散歩と室内散歩（室内ウォーキング）、ヨガとストレッチはそれぞれ強度がほぼ同じなので1種目に統合
+const MET_BASE = { '散歩／室内散歩（室内歩行）': 3.25, 'ランニング': 8.0, '筋トレ': 5.0, 'ヨガ／ストレッチ': 2.5, 'リオールジムオンラインレッスン': 5.0 };
 // 時間・体重に関係なく固定のBカウントを消費する種目（対面トレーニングは一律B1消費）
 const FIXED_EX_BCOUNT = { 'リオールジム対面トレーニング': 1 };
 // プリセット種目（これ以外は「自分で入力」したカスタム種目として扱う）
-const PRESET_EX_TYPES = ['散歩','ランニング','筋トレ','室内ウォーキング','ヨガ','ストレッチ','リオールジムオンラインレッスン','リオールジム対面トレーニング','階段'];
+const PRESET_EX_TYPES = ['散歩／室内散歩（室内歩行）','ランニング','筋トレ','ヨガ／ストレッチ','リオールジムオンラインレッスン','リオールジム対面トレーニング','階段'];
 let _exType = null, _exDuration = 30, _exFloors = 5;
 
 // 階段：1階のぼるのに約15秒、MET8として消費kcalを算出（体重×階数×0.0333）
