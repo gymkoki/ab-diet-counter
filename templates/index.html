@@ -242,23 +242,25 @@
     .chara-score-unit { font-size:22px; font-weight:800; color:var(--primary); }
     .chara-breakdown { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:12px; }
     .chara-bd-chip { background:#F9FAFB; border:1px solid var(--border); border-radius:999px; padding:6px 12px; font-size:14px; font-weight:700; color:#5C564F; }
-    .chara-stage { position:relative; margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:26px 12px 16px; text-align:center; overflow:hidden; min-height:250px; cursor:pointer; }
-    .chara-stage.tier-happy { background:linear-gradient(160deg,#FFF7E8,#FFE9D6); }
-    .chara-stage.tier-funba { background:linear-gradient(160deg,#FFF3E0,#FFE0B2); }
-    .chara-stage.tier-kiki  { background:linear-gradient(160deg,#FFEBEE,#FFCDD2); }
+    .chara-stage { position:relative; margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:22px 12px 16px; text-align:center; overflow:hidden; min-height:250px; cursor:pointer; }
+    /* ステージの背景色はイラストの地の色と揃えて、キャラが舞台に溶け込むようにする */
+    .chara-stage.tier-happy { background:#FDF4E7; }
+    .chara-stage.tier-funba { background:#F9ECDB; }
+    .chara-stage.tier-kiki  { background:#F8E0CF; }
     .chara-bubble { display:inline-block; background:#fff; border:2px solid rgba(0,0,0,0.08); border-radius:16px; padding:10px 16px; font-size:18px; font-weight:800; box-shadow:var(--shadow-sm); margin-bottom:14px; }
     .tier-kiki .chara-bubble { color:#C62828; border-color:#EF9A9A; animation:ch-bubble-flash 0.8s steps(2) infinite; }
     @keyframes ch-bubble-flash { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
-    .chara-img-wrap { position:relative; height:160px; display:flex; align-items:flex-end; justify-content:center; }
-    .chara-img { width:140px; height:140px; filter:drop-shadow(0 6px 8px rgba(0,0,0,0.18)); transform-origin:50% 100%; }
+    .chara-img-wrap { position:relative; display:flex; align-items:flex-end; justify-content:center; }
+    .chara-img { width:100%; max-width:300px; height:auto; transform-origin:50% 100%; }
     /* ── キャラの動き：5点刻み20パターン（ch-p0=0〜4点 … ch-p19=95〜100点） ── */
     /* 危機管鳥（0〜29点）：点が低いほど激しくパニック */
+    /* イラストに文字（reallロゴ）が入っているため、左右反転はさせない */
     .ch-p0 { animation:kx-panic 0.8s linear infinite; }
-    @keyframes kx-panic { 0%{transform:translateX(-58px) scaleX(-1) rotate(0)} 10%{transform:translateX(-30px) scaleX(-1) translateY(-18px) rotate(-8deg)} 24%{transform:translateX(0) scaleX(-1) rotate(0)} 37%{transform:translateX(30px) scaleX(-1) translateY(-18px) rotate(8deg)} 49%{transform:translateX(58px) scaleX(-1)} 50%{transform:translateX(58px) scaleX(1)} 62%{transform:translateX(30px) scaleX(1) translateY(-18px) rotate(-8deg)} 74%{transform:translateX(0) scaleX(1)} 87%{transform:translateX(-30px) scaleX(1) translateY(-18px) rotate(8deg)} 99%,100%{transform:translateX(-58px) scaleX(1)} }
+    @keyframes kx-panic { 0%,100%{transform:translateX(-34px) rotate(-6deg)} 10%{transform:translateX(-18px) translateY(-18px) rotate(-3deg)} 24%{transform:translateX(0) rotate(0)} 37%{transform:translateX(18px) translateY(-18px) rotate(3deg)} 50%{transform:translateX(34px) rotate(6deg)} 62%{transform:translateX(18px) translateY(-18px) rotate(3deg)} 74%{transform:translateX(0) rotate(0)} 87%{transform:translateX(-18px) translateY(-18px) rotate(-3deg)} }
     .ch-p1 { animation:kx-dash 1.05s linear infinite; }
-    @keyframes kx-dash { 0%{transform:translateX(-58px) scaleX(-1)} 12%{transform:translateX(-30px) scaleX(-1) translateY(-13px)} 24%{transform:translateX(0) scaleX(-1)} 37%{transform:translateX(30px) scaleX(-1) translateY(-13px)} 49%{transform:translateX(58px) scaleX(-1)} 50%{transform:translateX(58px) scaleX(1)} 62%{transform:translateX(30px) scaleX(1) translateY(-13px)} 74%{transform:translateX(0) scaleX(1)} 87%{transform:translateX(-30px) scaleX(1) translateY(-13px)} 99%,100%{transform:translateX(-58px) scaleX(1)} }
+    @keyframes kx-dash { 0%,100%{transform:translateX(-34px)} 12%{transform:translateX(-18px) translateY(-13px)} 25%{transform:translateX(0)} 37%{transform:translateX(18px) translateY(-13px)} 50%{transform:translateX(34px)} 62%{transform:translateX(18px) translateY(-13px)} 75%{transform:translateX(0)} 87%{transform:translateX(-18px) translateY(-13px)} }
     .ch-p2 { animation:kx-hopdash 1.3s linear infinite; }
-    @keyframes kx-hopdash { 0%{transform:translateX(-40px) scaleX(-1)} 25%{transform:translateX(0) scaleX(-1) translateY(-11px)} 49%{transform:translateX(40px) scaleX(-1)} 50%{transform:translateX(40px) scaleX(1)} 75%{transform:translateX(0) scaleX(1) translateY(-11px)} 100%{transform:translateX(-40px) scaleX(1)} }
+    @keyframes kx-hopdash { 0%,100%{transform:translateX(-26px)} 25%{transform:translateX(0) translateY(-11px)} 50%{transform:translateX(26px)} 75%{transform:translateX(0) translateY(-11px)} }
     .ch-p3 { animation:kx-jump 0.5s ease-in-out infinite; }
     @keyframes kx-jump { 0%,100%{transform:translateY(0) rotate(-4deg)} 50%{transform:translateY(-22px) rotate(4deg)} }
     .ch-p4 { animation:kx-pace 1.6s ease-in-out infinite; }
@@ -696,9 +698,23 @@
 <div id="chara-intro-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px" onclick="if(event.target===this)closeCharaIntro()">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">お知らせ</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🐾 キャラクターのご紹介</div>
-    <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
-      リオールジムのマスコットキャラクターである「キープラーニング（キーラン君のネコ）」、リオールジムスタッフ向けのマスコットキャラクターである「成果フンバ」、そして「危機管鳥」のキャラクターがいます。これらによって、現在の食事の進捗が分かりやすく可視化できるように設定しました。
+    <div style="font-size:18px;font-weight:800;margin-bottom:14px">🐾 キャラクターのご紹介</div>
+    <div style="font-size:16px;line-height:1.8;color:#44403B;margin-bottom:14px">
+      その日の進捗（点数）に合わせて、リオールジムの3キャラクターが応援します。
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:12px;background:#F8E0CF;border-radius:14px;padding:8px 12px">
+        <img src="/static/chara-kikikancho.webp?v=1" alt="危機管鳥" style="width:56px;height:56px;object-fit:cover;border-radius:12px" draggable="false">
+        <div style="text-align:left"><div style="font-size:16px;font-weight:800">危機管鳥</div><div style="font-size:14px;color:#8A6A55;font-weight:700">0〜29点：緊急事態を全力でお知らせ</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:#F9ECDB;border-radius:14px;padding:8px 12px">
+        <img src="/static/chara-funba.webp?v=1" alt="成果フンバ" style="width:56px;height:56px;object-fit:cover;border-radius:12px" draggable="false">
+        <div style="text-align:left"><div style="font-size:16px;font-weight:800">成果フンバ</div><div style="font-size:14px;color:#8A6A55;font-weight:700">30〜79点：一緒に踏ん張って応援</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;background:#FDF4E7;border-radius:14px;padding:8px 12px">
+        <img src="/static/chara-kieran.webp?v=1" alt="キーラン君" style="width:56px;height:56px;object-fit:cover;border-radius:12px" draggable="false">
+        <div style="text-align:left"><div style="font-size:16px;font-weight:800">キーラン君</div><div style="font-size:14px;color:#8A6A55;font-weight:700">80〜100点：合格ラインでお祝い</div></div>
+      </div>
     </div>
     <button onclick="closeCharaIntro()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
   </div>
@@ -1455,26 +1471,22 @@ function charaAdvice(s) {
   return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${Math.round((100 - s.vPct) * 0.25)}点です🥗`;
 }
 
-// キャラごとの見た目設定
+// キャラごとの見た目設定（公式イラスト。演出はイラスト側に描き込まれているためfxは最小限）
 const CHARA_TYPES = {
   kiki: {
-    img: '/static/kikikancho.svg?v=2', name: '危機管鳥', tier: 'tier-kiki',
-    fx: `<span class="chara-fx fx-alert" style="left:8%; top:36%">！！</span>
-         <span class="chara-fx fx-alert" style="right:8%; top:32%; animation-delay:.35s">！！</span>
-         <span class="chara-fx fx-sweat" style="left:20%; top:40%">💦</span>
-         <span class="chara-fx fx-sweat" style="right:20%; top:44%; animation-delay:.55s">💦</span>`,
+    img: '/static/chara-kikikancho.webp?v=1', name: '危機管鳥', tier: 'tier-kiki',
+    fx: '',
   },
   funba: {
-    img: '/static/funba.svg?v=2', name: '成果フンバ', tier: 'tier-funba',
-    fx: `<span class="chara-fx fx-dust" style="left:24%;">💨</span>
-         <span class="chara-fx fx-dust" style="right:24%; animation-delay:.45s; transform:scaleX(-1)">💨</span>`,
+    img: '/static/chara-funba.webp?v=1', name: '成果フンバ', tier: 'tier-funba',
+    fx: '',
   },
   cat: {
-    img: '/static/kieran-happy.svg?v=1', name: 'キーラン君', tier: 'tier-happy',
-    fx: `<span class="chara-fx fx-spark" style="left:12%; top:52%; animation-delay:0s">✨</span>
-         <span class="chara-fx fx-spark" style="right:14%; top:48%; animation-delay:.4s">🎉</span>
-         <span class="chara-fx fx-spark" style="left:24%; top:40%; animation-delay:.8s">⭐</span>
-         <span class="chara-fx fx-spark" style="right:26%; top:58%; animation-delay:1.1s">🎵</span>`,
+    img: '/static/chara-kieran.webp?v=1', name: 'キーラン君', tier: 'tier-happy',
+    fx: `<span class="chara-fx fx-spark" style="left:8%; top:56%; animation-delay:0s">✨</span>
+         <span class="chara-fx fx-spark" style="right:8%; top:50%; animation-delay:.4s">🎉</span>
+         <span class="chara-fx fx-spark" style="left:16%; top:34%; animation-delay:.8s">⭐</span>
+         <span class="chara-fx fx-spark" style="right:18%; top:62%; animation-delay:1.1s">🎵</span>`,
   },
 };
 
