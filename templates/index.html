@@ -463,9 +463,16 @@
       <button class="chip" onclick="selectExType('散歩')">🚶 散歩</button>
       <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
       <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
+      <button class="chip" onclick="selectExType('室内ウォーキング')">🏠 室内<br>ウォーキング</button>
+      <button class="chip" onclick="selectExType('ヨガ')">🧘 ヨガ</button>
+      <button class="chip" onclick="selectExType('ストレッチ')">🤸 ストレッチ</button>
       <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジム<br>オンラインレッスン</button>
       <button class="chip" onclick="selectExType('リオールジム対面トレーニング')">🤝 リオールジム<br>対面トレーニング</button>
       <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
+      <button class="chip" data-custom="1" onclick="selectExCustom()">✏️ その他<br>（自分で入力）</button>
+    </div>
+    <div id="custom-ex-section" style="display:none;margin-top:12px">
+      <input type="text" id="custom-ex-input" class="oil-note-input" placeholder="運動内容を入力（例：水泳、ダンス、ピラティス）" maxlength="30" oninput="onCustomExInput(this.value)">
     </div>
   </div>
   <div class="ex-card" id="duration-section" style="display:none;margin-top:10px">
@@ -2391,9 +2398,11 @@ function getProfile() {
 //  運動トラッキング
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
-const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, 'リオールジムオンラインレッスン': 5.0 };
+const MET_BASE = { '散歩': 3.5, 'ランニング': 8.0, '筋トレ': 5.0, '室内ウォーキング': 3.0, 'ヨガ': 2.5, 'ストレッチ': 2.5, 'リオールジムオンラインレッスン': 5.0 };
 // 時間・体重に関係なく固定のBカウントを消費する種目（対面トレーニングは一律B1消費）
 const FIXED_EX_BCOUNT = { 'リオールジム対面トレーニング': 1 };
+// プリセット種目（これ以外は「自分で入力」したカスタム種目として扱う）
+const PRESET_EX_TYPES = ['散歩','ランニング','筋トレ','室内ウォーキング','ヨガ','ストレッチ','リオールジムオンラインレッスン','リオールジム対面トレーニング','階段'];
 let _exType = null, _exDuration = 30, _exFloors = 5;
 
 // 階段：1階のぼるのに約15秒、MET8として消費kcalを算出（体重×階数×0.0333）
@@ -2626,8 +2635,11 @@ function _initSpeedSection(targetKmh) {
 function selectExType(type) {
   _exType = type;
   document.querySelectorAll('#chips-type .chip').forEach(b => {
-    b.classList.toggle('sel', b.textContent.trim().includes(type));
+    b.classList.toggle('sel', !b.dataset.custom && b.textContent.trim().includes(type));
   });
+  // プリセット種目を選んだら「その他（自分で入力）」欄は閉じる
+  const cs = document.getElementById('custom-ex-section');
+  if (cs) cs.style.display = 'none';
   const isStair = (type === '階段');
   const isFixed = (FIXED_EX_BCOUNT[type] != null);   // 固定B消費の種目（対面トレーニング等）
   // 階段は「階数」、固定B種目は入力不要、それ以外は「時間」
@@ -2643,6 +2655,35 @@ function selectExType(type) {
     document.getElementById('speed-section').style.display = 'none';
   }
   if (!isStair) _updateExResult();
+}
+
+// 「その他（自分で入力）」を選んだとき：運動名の入力欄を開く
+function selectExCustom() {
+  _exType = null;
+  document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.toggle('sel', b.dataset.custom === '1'));
+  document.getElementById('custom-ex-section').style.display = '';
+  document.getElementById('floor-section').style.display = 'none';
+  document.getElementById('speed-section').style.display = 'none';
+  const inp = document.getElementById('custom-ex-input');
+  onCustomExInput(inp.value);
+  inp.focus();
+}
+
+// 入力された運動名で時間ベース（MET既定4）の消費を計算する
+function onCustomExInput(val) {
+  const name = (val || '').trim();
+  const durSec = document.getElementById('duration-section');
+  if (!name) {
+    _exType = null;
+    durSec.style.display = 'none';
+    document.getElementById('ex-result-card').style.display = 'none';
+    document.getElementById('ex-profile-notice').style.display = 'none';
+    return;
+  }
+  if (!_drumDurationInited) _initDurationDrum(30);
+  _exType = name;
+  durSec.style.display = '';
+  _updateExResult();
 }
 
 function runningMET(speedKmh) {
@@ -2708,9 +2749,16 @@ function editExercise(ts) {
   _editingTs = ts;
 
   _exType = log.type;
+  // プリセットに無い種目（自分で入力したもの）は「その他」チップ＋入力欄で復元する
+  const isCustom = !PRESET_EX_TYPES.includes(log.type);
   document.querySelectorAll('#chips-type .chip').forEach(b => {
-    b.classList.toggle('sel', b.textContent.trim().includes(log.type));
+    b.classList.toggle('sel', isCustom ? (b.dataset.custom === '1') : (!b.dataset.custom && b.textContent.trim().includes(log.type)));
   });
+  const cs = document.getElementById('custom-ex-section');
+  if (cs) {
+    cs.style.display = isCustom ? '' : 'none';
+    if (isCustom) document.getElementById('custom-ex-input').value = log.type;
+  }
   const isStair = (log.type === '階段');
   const isFixed = (FIXED_EX_BCOUNT[log.type] != null);
   document.getElementById('duration-section').style.display = (isStair || isFixed) ? 'none' : '';
@@ -2778,6 +2826,8 @@ function recordExercise() {
   submitDailyExercise(getExBCountForDate(today), today);
   _exType = null; _exDuration = 30; _exFloors = 5;
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
+  const cs = document.getElementById('custom-ex-section');
+  if (cs) { cs.style.display = 'none'; document.getElementById('custom-ex-input').value = ''; }
   document.getElementById('speed-section').style.display = 'none';
   document.getElementById('floor-section').style.display = 'none';
   document.getElementById('duration-section').style.display = 'none';
