@@ -426,7 +426,7 @@
     .ex-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; margin:12px 16px 0; }
     .ex-card h3 { font-size:18px; font-weight:800; margin-bottom:12px; }
     .chip-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .chip { padding:13px 8px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--surface); font-size:17px; font-weight:700; cursor:pointer; color:#5C564F; text-align:center; transition:all 0.15s; box-shadow:var(--shadow-sm); }
+    .chip { padding:8px 4px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--surface); font-size:15px; line-height:1.4; font-weight:700; cursor:pointer; color:#5C564F; text-align:center; transition:all 0.15s; box-shadow:var(--shadow-sm); display:flex; align-items:center; justify-content:center; min-height:44px; }
     .chip.sel { border-color:var(--primary); background:var(--primary-soft); color:var(--primary-dark); box-shadow:0 0 0 1px var(--primary) inset; }
     .ex-result-card { background:var(--primary-soft); border-radius:var(--radius); padding:20px; margin:12px 16px 0; }
     .ex-result-row { display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid rgba(180,90,40,0.1); }
@@ -666,11 +666,11 @@
       <button class="chip" onclick="selectExType('散歩/室内歩行')">🚶 散歩/室内歩行</button>
       <button class="chip" onclick="selectExType('ランニング')">🏃 ランニング</button>
       <button class="chip" onclick="selectExType('筋トレ')">💪 筋トレ</button>
-      <button class="chip" onclick="selectExType('ヨガ／ストレッチ')">🧘 ヨガ／<br>ストレッチ</button>
+      <button class="chip" onclick="selectExType('ヨガ／ストレッチ')">🧘 ヨガ／ストレッチ</button>
       <button class="chip" onclick="selectExType('リオールジムオンラインレッスン')">💻 リオールジム<br>オンラインレッスン</button>
       <button class="chip" onclick="selectExType('リオールジム対面トレーニング')">🤝 リオールジム<br>対面トレーニング</button>
       <button class="chip" onclick="selectExType('階段')">🪜 階段</button>
-      <button class="chip" data-custom="1" onclick="selectExCustom()">✏️ その他<br>（自分で入力）</button>
+      <button class="chip" data-custom="1" onclick="selectExCustom()">✏️ 自分で入力</button>
     </div>
     <div id="custom-ex-section" style="display:none;margin-top:12px">
       <input type="text" id="custom-ex-input" class="oil-note-input" placeholder="種目と時間を入力（例：水泳を30分）" maxlength="30" oninput="onCustomExInput(this.value)">
