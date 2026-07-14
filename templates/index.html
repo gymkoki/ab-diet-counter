@@ -653,15 +653,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.19</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.20</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📝</span>
-        <span>「体重」タブが<b>「体重/日記」</b>になりました。体重と一緒にその日のひとこと日記（50字まで）を記録でき、書いた日記は「履歴」からいつでも読み返せます。</span>
+        <span style="font-size:20px;flex-shrink:0">🧘</span>
+        <span>運動種目の選択に<b>「ヨガ」「ストレッチ」</b>を追加しました。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🛠️</span>
-        <span><b>「修正強化キャンペーン」も引き続き実施中です！</b><br>設定の一番下のメッセージ欄から、修正希望やご要望をご遠慮なくお知らせください。</span>
+        <span style="font-size:20px;flex-shrink:0">✏️</span>
+        <span>運動も<b>手動で入力</b>できるようになりました。「その他（自分で入力）」を選んで「水泳を30分」のように入力すると、種目と時間がそのまま記録できます。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -3230,7 +3230,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v21';
+const NOTICE_KEY = 'ab-diet-notice-v22';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
