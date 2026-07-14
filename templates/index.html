@@ -155,6 +155,9 @@
     .text-add-btn:hover { border-color:var(--indigo); background:var(--indigo-soft); }
     .text-add-btn:active { border-color:var(--indigo); background:var(--indigo-soft); color:var(--indigo); }
     .add-menu-ic { font-size:22px; line-height:1; }
+    .add-menu { display:flex; gap:8px; margin:8px 0 4px; }
+    .add-menu-opt { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:16px 8px; border:1.5px solid var(--border); border-radius:var(--radius-md); background:var(--surface); font-size:16px; font-weight:700; color:#5C564F; cursor:pointer; transition:all 0.15s; box-shadow:var(--shadow-sm); text-align:center; }
+    .add-menu-opt:active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
     .text-entry-form { margin:4px 0 8px; padding:14px; background:var(--indigo-soft); border:1px solid var(--indigo-line); border-radius:var(--radius-md); }
     .text-entry-textarea { width:100%; min-height:84px; padding:11px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; resize:vertical; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
     .text-entry-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
@@ -1080,23 +1083,14 @@ function buildPanel(m) {
         <div class="meal-add-icon">📷</div>
         <h3>写真を追加</h3>
       </div>
-      <button class="text-add-btn" onclick="toggleTextForm('${m.id}')"><span class="add-menu-ic">✏️</span>手動追加</button>
+      <button class="text-add-btn" onclick="toggleManualMenu('${m.id}')"><span class="add-menu-ic">✏️</span>手動追加</button>
+      <div class="add-menu" id="manualmenu-${m.id}" style="display:none">
+        <button class="add-menu-opt" onclick="chooseManualText('${m.id}')"><span class="add-menu-ic">✏️</span>文章で手動入力</button>
+        <button class="add-menu-opt" onclick="chooseManualCopy('${m.id}')"><span class="add-menu-ic">🍚</span>コピーご飯を追加</button>
+      </div>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
-        <button class="oil-btn oil-btn-inline" onclick="toggleOilMenu('${m.id}')">${onigiriIcon(18)} Bを手動追加</button>
-        <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
-          <div class="oil-menu-row">
-            <button class="oil-opt" id="oilopt-${m.id}-0" onclick="selectOil('${m.id}',0)">B0.5</button>
-            <button class="oil-opt" id="oilopt-${m.id}-1" onclick="selectOil('${m.id}',1)">B1</button>
-            <button class="oil-opt" id="oilopt-${m.id}-2" onclick="selectOil('${m.id}',2)">B2</button>
-          </div>
-          <input type="text" class="oil-note-input" id="oilnote-${m.id}" placeholder="内訳（任意）例：おにぎり1個" maxlength="60">
-          <button class="btn-oil-save" id="oilsave-${m.id}" onclick="saveOil('${m.id}')" disabled>保存</button>
-        </div>
-      </div>
-      <div class="food-action-row">
-        <button class="oil-btn" onclick="openCopyPicker('${m.id}')">🍚 コピーご飯を追加</button>
       </div>
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
@@ -1574,6 +1568,29 @@ async function onCopyFileChange(input) {
   } catch(e) {
     status.textContent = '⚠️ 追加に失敗しました。もう一度お試しください。';
   }
+}
+
+// ═══════════════════════════════════════════
+//  手動追加メニュー（文章で手動入力 / コピーご飯を追加 の2択）
+// ═══════════════════════════════════════════
+function toggleManualMenu(mealId) {
+  const menu = document.getElementById(`manualmenu-${mealId}`);
+  if (!menu) return;
+  const opening = getComputedStyle(menu).display === 'none';
+  menu.style.display = opening ? 'flex' : 'none';
+  // メニューを開くときは文章フォームは閉じておく
+  if (opening) { const f = document.getElementById(`textform-${mealId}`); if (f) f.style.display = 'none'; }
+}
+function chooseManualText(mealId) {
+  const menu = document.getElementById(`manualmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  const f = document.getElementById(`textform-${mealId}`);
+  if (f) { f.style.display = 'block'; document.getElementById(`textinput-${mealId}`)?.focus(); }
+}
+function chooseManualCopy(mealId) {
+  const menu = document.getElementById(`manualmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  openCopyPicker(mealId);
 }
 
 // ═══════════════════════════════════════════
