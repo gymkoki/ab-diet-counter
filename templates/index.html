@@ -355,7 +355,6 @@
 <body>
 
 <header>
-  <div class="header-title" id="header-users">今日の利用者 -名</div>
   <div class="daily-total-bar">
     <div class="daily-total-left">
       <span class="daily-total-icon">🍽️</span>
@@ -724,17 +723,8 @@ const USER_ID = getOrCreateUserId();
 // ═══════════════════════════════════════════
 //  Stats
 // ═══════════════════════════════════════════
-async function loadStats() {
-  try {
-    const res = await fetch(`/api/stats?user_id=${encodeURIComponent(USER_ID)}`);
-    const d = await res.json();
-    applyStats(d);
-  } catch(e) {}
-}
-function applyStats(d) {
-  const el = document.getElementById('header-users');
-  if (el) el.textContent = `今日の利用者 ${d.today_users}名`;
-}
+// ヘッダーの「今日の利用者」表示は廃止（loadStatsは互換のため残置・何もしない）
+function loadStats() {}
 
 // ═══════════════════════════════════════════
 //  定数・State
