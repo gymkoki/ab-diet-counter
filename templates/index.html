@@ -457,6 +457,8 @@
         border-radius: 0 0 22px 22px;
       }
       #view-history, #view-chara, #view-settings { min-height: 60vh; }
+      /* 履歴・設定はヘッダー非表示のため単独カードとして全周を角丸に */
+      #view-history, #view-settings { border-radius: 22px; margin-top: 24px; }
       /* 運動ビューは記録ビューの直下に続けて表示されるため、
          上に少し重ねてつなぎ目（角丸のすき間）を隠し、1枚のカードに見せる */
       #view-exercise { margin-top: -24px; padding-top: 24px; }
@@ -2585,10 +2587,10 @@ function switchView(view) {
     const btn = document.getElementById('nav-' + v);
     if (btn) btn.classList.toggle('active', v === view);
   });
-  // キャラ画面では上部ヘッダー（今日のB合計・運動マイナス・推定タンパク質/野菜）を
-  // 隠して「今日のダイエット進捗」から表示する
+  // オレンジのヘッダー（今日のB合計〜推定野菜）は記録タブのみ表示。
+  // 履歴・設定・キャラでは非表示にし、キャラは「今日のダイエット進捗」から始まる。
   const hdr = document.querySelector('header');
-  if (hdr) hdr.style.display = (view === 'chara') ? 'none' : '';
+  if (hdr) hdr.style.display = (view === 'main') ? '' : 'none';
   if (view === 'main') {
     showRecordSub(_recordSub);
   } else {
