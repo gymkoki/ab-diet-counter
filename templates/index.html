@@ -778,6 +778,13 @@
       <input type="text" id="custom-ex-input" class="oil-note-input" placeholder="種目と時間を入力（例：水泳を30分）" maxlength="30" oninput="onCustomExInput(this.value)">
     </div>
   </div>
+  <!-- 散歩/室内歩行のみ表示：時間で記録するか歩数で記録するかを選ぶ -->
+  <div id="walk-mode-section" class="ex-card" style="display:none;margin-top:10px">
+    <div class="speed-toggle-row" style="margin-bottom:0">
+      <button class="speed-mode-btn active" id="wmb-time" onclick="setWalkMode('time')">⏱ 時間を選ぶ</button>
+      <button class="speed-mode-btn" id="wmb-steps" onclick="setWalkMode('steps')">👣 歩数を選ぶ</button>
+    </div>
+  </div>
   <div class="ex-card" id="duration-section" style="display:none;margin-top:10px">
     <h3>⏱ 時間を選ぶ（5〜120分）</h3>
     <div class="drum-wrap">
@@ -788,6 +795,18 @@
       <div class="drum-roll" id="drum-duration"></div>
     </div>
     <div id="drum-duration-label" class="drum-speed-label"></div>
+  </div>
+  <!-- 散歩/室内歩行の歩数モードのみ表示：歩数ドラム -->
+  <div id="steps-section" class="ex-card" style="display:none;margin-top:10px">
+    <h3>👣 歩数を選ぶ（6,000〜20,000歩）</h3>
+    <div class="drum-wrap">
+      <div class="drum-fade-top"></div>
+      <div class="drum-line-top"></div>
+      <div class="drum-line-bot"></div>
+      <div class="drum-fade-bot"></div>
+      <div class="drum-roll" id="drum-steps"></div>
+    </div>
+    <div id="drum-steps-label" class="drum-speed-label"></div>
   </div>
   <!-- 階段選択時のみ表示：階数ドラム -->
   <div id="floor-section" class="ex-card" style="display:none;margin-top:10px">
@@ -3423,6 +3442,75 @@ function _initFloorDrum(targetFloor) {
   });
 }
 
+// ── 散歩/室内歩行の歩数ドラム（6,000〜20,000歩・1,000歩刻み） ──
+const WALK_TYPE = '散歩/室内歩行';
+const STEPS_LIST = (() => { const r=[]; for(let s=6000;s<=20000;s+=1000) r.push(s); return r; })();
+let _walkMode = 'time';       // 'time'（時間）| 'steps'（歩数）
+let _exSteps = 8000, _drumStepsInited = false;
+
+// 歩数→Bカウント消費（仕様：〜14,000歩=B0／15,000〜17,000歩=B1／18,000歩〜=B2）
+function stepsToExBCount(steps) {
+  if (steps >= 18000) return 2;
+  if (steps >= 15000) return 1;
+  return 0;
+}
+// 歩数→消費カロリー概算（散歩のMET・100歩/分ペースで換算）
+function stepsToKcal(steps) {
+  const p = getProfile();
+  const weight = (p && p.weight) ? p.weight : 60;
+  return Math.round((MET_BASE[WALK_TYPE] || 3.25) * weight * (steps / 100 / 60));
+}
+
+function _buildStepsDrum() {
+  const el = document.getElementById('drum-steps');
+  const pad = '<div class="drum-item drum-pad"></div>';
+  el.innerHTML = pad.repeat(DRUM_PAD) + STEPS_LIST.map(s=>`<div class="drum-item">${s.toLocaleString()}歩</div>`).join('') + pad.repeat(DRUM_PAD);
+}
+function _getStepsDrumIdx() {
+  return Math.round(document.getElementById('drum-steps').scrollTop / DRUM_H);
+}
+function _highlightStepsDrum(dataIdx) {
+  document.querySelectorAll('#drum-steps .drum-item').forEach((el,i) => {
+    el.classList.toggle('drum-sel', i === dataIdx + DRUM_PAD);
+  });
+}
+function _onStepsScroll() {
+  const idx = _getStepsDrumIdx();
+  _exSteps = STEPS_LIST[idx] ?? 8000;
+  _highlightStepsDrum(idx);
+  document.getElementById('drum-steps-label').textContent = `選択中: ${_exSteps.toLocaleString()}歩`;
+  _updateExResult();
+}
+function _initStepsDrum(targetSteps) {
+  _buildStepsDrum();
+  if (!_drumStepsInited) {
+    document.getElementById('drum-steps').addEventListener('scroll', _onStepsScroll, { passive: true });
+    _drumStepsInited = true;
+  }
+  const defSteps = targetSteps ?? 8000;
+  let defIdx = STEPS_LIST.indexOf(defSteps);
+  if (defIdx < 0) defIdx = 2; // fallback: 8,000歩
+  requestAnimationFrame(() => {
+    document.getElementById('drum-steps').scrollTop = defIdx * DRUM_H;
+    _exSteps = STEPS_LIST[defIdx];
+    _highlightStepsDrum(defIdx);
+    document.getElementById('drum-steps-label').textContent = `選択中: ${_exSteps.toLocaleString()}歩`;
+    _updateExResult();
+  });
+}
+
+// 散歩/室内歩行の「時間で記録／歩数で記録」切り替え
+function setWalkMode(mode, targetSteps) {
+  _walkMode = mode;
+  document.getElementById('wmb-time')?.classList.toggle('active', mode === 'time');
+  document.getElementById('wmb-steps')?.classList.toggle('active', mode === 'steps');
+  const isSteps = (mode === 'steps');
+  document.getElementById('duration-section').style.display = isSteps ? 'none' : '';
+  document.getElementById('steps-section').style.display = isSteps ? '' : 'none';
+  if (isSteps) _initStepsDrum(targetSteps);
+  else _updateExResult();
+}
+
 // ── コピーご飯（文章登録）のBカウント・ダイヤル（B0〜4・0.5刻み）──
 const COPYB_LIST = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 let _copyBCount = 1, _drumCopyBInited = false;
@@ -3569,9 +3657,12 @@ function selectExType(type) {
   if (cs) cs.style.display = 'none';
   const isStair = (type === '階段');
   const isFixed = (FIXED_EX_BCOUNT[type] != null);   // 固定B消費の種目（対面トレーニング等）
+  const isWalk  = (type === WALK_TYPE);              // 散歩/室内歩行は時間か歩数を選べる
   // 階段は「階数」、固定B種目は入力不要、それ以外は「時間」
   document.getElementById('duration-section').style.display = (isStair || isFixed) ? 'none' : '';
   document.getElementById('floor-section').style.display = isStair ? '' : 'none';
+  document.getElementById('walk-mode-section').style.display = isWalk ? '' : 'none';
+  if (!isWalk) document.getElementById('steps-section').style.display = 'none';
   if (isFixed) {
     document.getElementById('speed-section').style.display = 'none';
   } else if (isStair) {
@@ -3581,6 +3672,7 @@ function selectExType(type) {
   } else {
     document.getElementById('speed-section').style.display = 'none';
   }
+  if (isWalk) setWalkMode(_walkMode);   // 前回選んだ「時間/歩数」モードを引き継ぐ
   if (!isStair) _updateExResult();
 }
 
@@ -3591,6 +3683,8 @@ function selectExCustom() {
   document.getElementById('custom-ex-section').style.display = '';
   document.getElementById('floor-section').style.display = 'none';
   document.getElementById('speed-section').style.display = 'none';
+  document.getElementById('walk-mode-section').style.display = 'none';
+  document.getElementById('steps-section').style.display = 'none';
   const inp = document.getElementById('custom-ex-input');
   onCustomExInput(inp.value);
   inp.focus();
@@ -3671,8 +3765,22 @@ function _updateExResult() {
   const card   = document.getElementById('ex-result-card');
   const notice = document.getElementById('ex-profile-notice');
   const isFixed = (FIXED_EX_BCOUNT[_exType] != null);
-  const ready = _exType && (isFixed ? true : (_exType === '階段' ? _exFloors > 0 : _exDuration));
+  const isWalkSteps = (_exType === WALK_TYPE && _walkMode === 'steps');
+  const ready = _exType && (isFixed ? true : (_exType === '階段' ? _exFloors > 0 : isWalkSteps ? _exSteps > 0 : _exDuration));
   if (!ready) { card.style.display = 'none'; notice.style.display = 'none'; return; }
+  if (isWalkSteps) {
+    // 歩数モード：Bカウントは歩数ルールで決定（〜14,000歩=B0／15,000〜=B1／18,000〜=B2）
+    notice.style.display = getProfile() ? 'none' : '';
+    const kcal = stepsToKcal(_exSteps);
+    const bc   = stepsToExBCount(_exSteps);
+    document.getElementById('ex-result-inner').innerHTML = `
+      <div class="ex-result-row"><span class="ex-result-label">歩数</span><span class="ex-result-val">${_exSteps.toLocaleString()}歩</span></div>
+      <div class="ex-result-row"><span class="ex-result-label">消費カロリー（概算）</span><span class="ex-result-val">${kcal} kcal</span></div>
+      <div class="ex-result-row"><span class="ex-result-label">Bカウント消費</span><span class="ex-result-val" style="color:var(--a-color)">−${fmtCount(bc)} B</span></div>
+    `;
+    card.style.display = '';
+    return;
+  }
   if (isFixed) {
     notice.style.display = 'none';   // 体重・時間に依存しない
     const bcf = FIXED_EX_BCOUNT[_exType];
@@ -3717,18 +3825,25 @@ function editExercise(ts) {
   }
   const isStair = (log.type === '階段');
   const isFixed = (FIXED_EX_BCOUNT[log.type] != null);
+  const isWalk  = (log.type === WALK_TYPE);
   document.getElementById('duration-section').style.display = (isStair || isFixed) ? 'none' : '';
   document.getElementById('floor-section').style.display = isStair ? '' : 'none';
+  document.getElementById('walk-mode-section').style.display = isWalk ? '' : 'none';
+  if (!isWalk) document.getElementById('steps-section').style.display = 'none';
   if (log.type === 'ランニング') {
     _initSpeedSection(log.speedKmh || null);
   } else {
     document.getElementById('speed-section').style.display = 'none';
   }
+  // 散歩/室内歩行は、記録時のモード（歩数 or 時間）で復元する
+  if (isWalk) setWalkMode(log.steps ? 'steps' : 'time', log.steps || undefined);
 
   if (isFixed) {
     _updateExResult();
   } else if (isStair) {
     _initFloorDrum(log.floors || 5);
+  } else if (isWalk && log.steps) {
+    // 歩数はsetWalkModeで復元済み
   } else {
     const dIdx = DURATION_LIST.indexOf(log.min);
     if (dIdx >= 0) {
@@ -3749,12 +3864,13 @@ function editExercise(ts) {
 function recordExercise() {
   const isStair = (_exType === '階段');
   const isFixed = (FIXED_EX_BCOUNT[_exType] != null);
-  if (!_exType || (!isFixed && (isStair ? !_exFloors : !_exDuration))) return;
+  const isWalkSteps = (_exType === WALK_TYPE && _walkMode === 'steps');
+  if (!_exType || (!isFixed && (isStair ? !_exFloors : isWalkSteps ? !_exSteps : !_exDuration))) return;
   const p      = getProfile();
   const weight = (p && p.weight) ? p.weight : 60;
-  const met    = (isStair || isFixed) ? null : ((_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4));
-  const kcal   = isFixed ? 0 : calcExKcal(_exType, _exDuration);
-  const bc     = isFixed ? FIXED_EX_BCOUNT[_exType] : kcalToExBCount(kcal);
+  const met    = (isStair || isFixed || isWalkSteps) ? null : ((_exType === 'ランニング') ? runningMET(_runSpeedKmh) : (MET_BASE[_exType] || 4));
+  const kcal   = isFixed ? 0 : isWalkSteps ? stepsToKcal(_exSteps) : calcExKcal(_exType, _exDuration);
+  const bc     = isFixed ? FIXED_EX_BCOUNT[_exType] : isWalkSteps ? stepsToExBCount(_exSteps) : kcalToExBCount(kcal);
   const today  = currentDate();   // 過去日編集中はその日付に記録
   const speedLabel = (_exType === 'ランニング')
     ? (_speedMode === 'kmh'
@@ -3763,7 +3879,8 @@ function recordExercise() {
     : null;
   const speedKmh = (_exType === 'ランニング') ? _runSpeedKmh : null;
   const floors = isStair ? _exFloors : null;
-  const minVal = (isStair || isFixed) ? null : _exDuration;
+  const steps  = isWalkSteps ? _exSteps : null;
+  const minVal = (isStair || isFixed || isWalkSteps) ? null : _exDuration;
   const metVal = met != null ? Math.round(met * 10) / 10 : null;
 
   let logs = [];
@@ -3771,11 +3888,11 @@ function recordExercise() {
 
   if (_editingTs !== null) {
     const i = logs.findIndex(l => l.ts === _editingTs);
-    if (i >= 0) logs[i] = { ...logs[i], type: _exType, min: minVal, floors, kcal, bc, speedLabel, speedKmh, met: metVal };
+    if (i >= 0) logs[i] = { ...logs[i], type: _exType, min: minVal, floors, steps, kcal, bc, speedLabel, speedKmh, met: metVal };
     _editingTs = null;
     document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
   } else {
-    logs.push({ date: today, type: _exType, min: minVal, floors, kcal, bc, ts: Date.now(), speedLabel, speedKmh, met: metVal });
+    logs.push({ date: today, type: _exType, min: minVal, floors, steps, kcal, bc, ts: Date.now(), speedLabel, speedKmh, met: metVal });
   }
 
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
@@ -3787,6 +3904,8 @@ function recordExercise() {
   document.getElementById('speed-section').style.display = 'none';
   document.getElementById('floor-section').style.display = 'none';
   document.getElementById('duration-section').style.display = 'none';
+  document.getElementById('walk-mode-section').style.display = 'none';
+  document.getElementById('steps-section').style.display = 'none';
   document.getElementById('ex-result-card').style.display = 'none';
   document.getElementById('ex-profile-notice').style.display = 'none';
   _initDurationDrum(30);
@@ -3828,9 +3947,11 @@ function renderExLog() {
     const isFixedLog = (FIXED_EX_BCOUNT[l.type] != null);
     const detail = (l.type === '階段')
       ? `${l.type} ${l.floors}階`
-      : isFixedLog
-        ? `${l.type}`
-        : (l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`);
+      : l.steps
+        ? `${l.type} ${l.steps.toLocaleString()}歩`
+        : isFixedLog
+          ? `${l.type}`
+          : (l.speedLabel ? `${l.type} ${l.min}分 / ${l.speedLabel}` : `${l.type} ${l.min}分`);
     return `<div class="ex-log-row">
       <div>
         <div style="font-weight:800;font-size:18px">${detail}</div>
