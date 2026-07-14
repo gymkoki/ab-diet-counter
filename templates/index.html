@@ -769,7 +769,7 @@ function buildMealsPayload(includePending) {
     data[m.id] = {
       items: state[m.id].items
         .filter(i => i.result || (includePending && (i.previewSrc || (i.isText && i.text))))
-        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, note:i.note, isOil:i.isOil, oilLabel:i.oilLabel, pending: i.result ? undefined : true }))
+        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, note:i.note, isOil:i.isOil, oilLabel:i.oilLabel, isCopy:i.isCopy, pending: i.result ? undefined : true }))
     };
   });
   return data;
@@ -1429,7 +1429,7 @@ function addCopyMealToRecord(copyId) {
   const id = nextItemId();
   state[mealId].items.push({
     id, file:null, previewSrc: cm.previewSrc || null, loading:false, error:null,
-    result: cm.result
+    isCopy:true, result: cm.result
   });
   closeCopyPicker();
   renderStrip(mealId);
@@ -1664,7 +1664,7 @@ function renderStrip(mealId) {
       <div class="meal-thumb">
         ${item.previewSrc
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? onigiriIcon(34) : item.isText ? '📝' : '📷'}</div>`}
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? onigiriIcon(34) : item.isCopy ? '✏️' : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
           <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
