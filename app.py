@@ -1403,6 +1403,101 @@ def admin_report_data():
     })
 
 
+@app.route("/api/admin/weight-insights")
+@_admin_required
+def admin_weight_insights():
+    """ダッシュボード用：目的別の平均体重変化と、Bカウント×体重変化の相関データ。
+    直近30日の体重記録がある会員について、期間内の最初と最後の体重の差を「変化」とする。"""
+    days = 30
+    now = datetime.datetime.now(JST)
+    date_start = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    date_end   = now.strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT user_id, date, weight FROM daily_weight
+               WHERE date>={PH} AND date<={PH} ORDER BY user_id, date""",
+            (date_start, date_end)
+        )
+        w_rows = cur.fetchall()
+        cur.execute(
+            f"""SELECT user_id, AVG(b_count) FROM daily_b_count
+               WHERE date>={PH} AND date<={PH} GROUP BY user_id""",
+            (date_start, date_end)
+        )
+        b_rows = cur.fetchall()
+        cur.execute("SELECT user_id, display_name, goal FROM user_profile")
+        p_rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    avg_b_by_uid = {r[0]: float(r[1]) for r in b_rows if r[1] is not None}
+    prof_by_uid  = {r[0]: {"name": r[1], "goal": r[2]} for r in p_rows}
+
+    # ユーザーごとに期間内の最初・最後の体重から変化量を計算
+    weights_by_uid = {}
+    for uid, date, weight in w_rows:
+        weights_by_uid.setdefault(uid, []).append((date, weight))
+
+    users = []
+    for uid, recs in weights_by_uid.items():
+        if len(recs) < 2:
+            continue
+        first_d, first_w = recs[0]
+        last_d,  last_w  = recs[-1]
+        span = (datetime.date.fromisoformat(last_d) - datetime.date.fromisoformat(first_d)).days
+        if span < 5:
+            continue   # 記録期間が短すぎる場合はノイズが大きいので除外
+        prof = prof_by_uid.get(uid, {})
+        users.append({
+            "user_id_short": uid[:8],
+            "name":   prof.get("name") or None,
+            "goal":   prof.get("goal") or None,
+            "change": round(float(last_w) - float(first_w), 2),
+            "avg_b":  round(avg_b_by_uid[uid], 2) if uid in avg_b_by_uid else None,
+            "span_days": span,
+        })
+
+    # 目的別の集計（減量/維持/増量/未設定）
+    goals = {}
+    for key in ("cut", "maintain", "bulk", "none"):
+        grp = [u for u in users if (u["goal"] or "none") == key]
+        if grp:
+            changes = [u["change"] for u in grp]
+            goals[key] = {
+                "users":      len(grp),
+                "avg_change": round(sum(changes) / len(changes), 2),
+                "lost":       sum(1 for c in changes if c < -0.05),
+            }
+        else:
+            goals[key] = {"users": 0, "avg_change": None, "lost": 0}
+
+    # Bカウント×体重変化の相関（ピアソンのr）。両方のデータがある会員のみ。
+    pts = [u for u in users if u["avg_b"] is not None]
+    corr = None
+    if len(pts) >= 3:
+        xs = [u["avg_b"] for u in pts]
+        ys = [u["change"] for u in pts]
+        n = len(pts)
+        mx, my = sum(xs) / n, sum(ys) / n
+        sxx = sum((x - mx) ** 2 for x in xs)
+        syy = sum((y - my) ** 2 for y in ys)
+        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        if sxx > 0 and syy > 0:
+            corr = round(sxy / (sxx * syy) ** 0.5, 2)
+
+    return jsonify({
+        "period_days": days,
+        "date_start":  date_start,
+        "date_end":    date_end,
+        "goals":       goals,
+        "scatter":     pts,
+        "correlation": corr,
+    })
+
+
 @app.route("/api/admin/users")
 @_admin_required
 def admin_users():
