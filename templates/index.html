@@ -116,7 +116,6 @@
     .advice-row .icon { font-size:18px; flex-shrink:0; }
     .advice-row p { font-size:17px; color:#5C564F; line-height:1.7; }
     .food-list-wrap { border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:var(--surface); }
-    .food-list-header { padding:10px 14px; background:#FAF8F6; font-size:17px; font-weight:700; letter-spacing:0.04em; color:var(--text-muted); border-bottom:1px solid var(--border); }
     .food-row { display:grid; grid-template-columns:1fr auto; gap:6px; padding:12px 14px; border-bottom:1px solid var(--border); align-items:start; }
     .food-row:last-child { border-bottom:none; }
     .food-name { font-size:18px; font-weight:700; margin-bottom:4px; }
@@ -1641,8 +1640,12 @@ async function submitTextEntry(mealId) {
 function renderStrip(mealId) {
   const strip = document.getElementById(`strip-${mealId}`);
   if (!strip) return;
-  strip.innerHTML = state[mealId].items.slice().reverse().map(item => {
-    const cnt = item.result ? fmtCount(item.result.total_b_count) : null;
+  // 解析が終わった項目の写真・Bバッジは下の「食事N」カード側にすでに表示されるため、
+  // ここには解析待ち・解析中の項目だけを表示する（画面をすっきりさせる＝二重表示をなくす）。
+  const pending = state[mealId].items.filter(i => !i.result).slice().reverse();
+  if (!pending.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  strip.innerHTML = pending.map(item => {
     return `
       <div class="meal-thumb">
         ${item.previewSrc
@@ -1653,7 +1656,6 @@ function renderStrip(mealId) {
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
         </div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
-        ${cnt !== null ? `<div class="th-badge">B ${cnt}</div>` : ''}
       </div>`;
   }).join('');
 }
@@ -1692,7 +1694,6 @@ function renderResults(mealId) {
         ${(item.previewSrc && item.note && item.note.trim()) ? `<div class="text-entry-recap">📝 補足：${esc(item.note)}</div>` : ''}
         ${item.result.advice ? `<div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice)}</p></div>` : ''}
         <div class="food-list-wrap">
-          <div class="food-list-header">食材の内訳</div>
           ${buildFoodRows(item.result.foods)}
         </div>
         ${item.previewSrc ? `
