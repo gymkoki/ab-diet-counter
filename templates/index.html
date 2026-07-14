@@ -1681,7 +1681,9 @@ function renderStrip(mealId) {
 function renderResults(mealId) {
   const resEl = document.getElementById(`res-${mealId}`);
   if (!resEl) return;
-  const done = state[mealId].items.filter(i => i.result).reverse();
+  // 古い記録から順に「食事1」「食事2」…と番号を振る（IDは追加時刻ベースなのでID順＝時系列順）。
+  // 一番古い食事が上・最新が一番下に表示される。
+  const done = state[mealId].items.filter(i => i.result).sort((a, b) => a.id - b.id);
   if (!done.length) { resEl.style.display='none'; resEl.innerHTML=''; updateDailyTotal(); return; }
 
   const m = MEALS.find(x => x.id === mealId);
