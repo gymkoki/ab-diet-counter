@@ -242,7 +242,7 @@
     .chara-score-unit { font-size:22px; font-weight:800; color:var(--primary); }
     .chara-breakdown { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:12px; }
     .chara-bd-chip { background:#F9FAFB; border:1px solid var(--border); border-radius:999px; padding:6px 12px; font-size:14px; font-weight:700; color:#5C564F; }
-    .chara-stage { position:relative; margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:26px 12px 16px; text-align:center; overflow:hidden; min-height:250px; }
+    .chara-stage { position:relative; margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:26px 12px 16px; text-align:center; overflow:hidden; min-height:250px; cursor:pointer; }
     .chara-stage.tier-happy { background:linear-gradient(160deg,#FFF7E8,#FFE9D6); }
     .chara-stage.tier-funba { background:linear-gradient(160deg,#FFF3E0,#FFE0B2); }
     .chara-stage.tier-kiki  { background:linear-gradient(160deg,#FFEBEE,#FFCDD2); }
@@ -685,10 +685,22 @@
     </div>
     <div class="chara-breakdown" id="chara-breakdown"></div>
   </div>
-  <div class="chara-stage" id="chara-stage"></div>
+  <div class="chara-stage" id="chara-stage" onclick="onCharaStageTap()"></div>
   <div class="chara-advice-card">
     <div class="chara-advice-title">💡 点数を上げるには</div>
     <p id="chara-advice-text"></p>
+  </div>
+</div>
+
+<!-- キャラ紹介のお知らせ（キャラを押した最初の1回だけ表示） -->
+<div id="chara-intro-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px" onclick="if(event.target===this)closeCharaIntro()">
+  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">お知らせ</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🐾 キャラクターのご紹介</div>
+    <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
+      リオールジムのマスコットキャラクターである「キープラーニング（キーラン君のネコ）」、リオールジムスタッフ向けのマスコットキャラクターである「成果フンバ」、そして「危機管鳥」のキャラクターがいます。これらによって、現在の食事の進捗が分かりやすく可視化できるように設定しました。
+    </div>
+    <button onclick="closeCharaIntro()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
   </div>
 </div>
 
@@ -1613,6 +1625,17 @@ function renderChara() {
       <img class="chara-img ${pat.a}" src="${type.img}" alt="${type.name}" draggable="false">
     </div>
     <div class="chara-name-tag">${type.name}</div>`;
+}
+
+// キャラをタップしたら、最初の1回だけキャラ紹介のお知らせを表示する
+const CHARA_INTRO_KEY = 'ab-diet-chara-intro-v1';
+function onCharaStageTap() {
+  if (localStorage.getItem(CHARA_INTRO_KEY)) return;
+  localStorage.setItem(CHARA_INTRO_KEY, '1');
+  document.getElementById('chara-intro-overlay').style.display = 'flex';
+}
+function closeCharaIntro() {
+  document.getElementById('chara-intro-overlay').style.display = 'none';
 }
 
 // 1日の野菜目標(g)。厚労省の推奨目安に合わせて350g固定。
