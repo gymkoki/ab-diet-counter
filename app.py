@@ -551,6 +551,12 @@ except Exception as _e:
 # ── 管理者認証 ──────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
 
+# 管理画面のURL。/admin だと推測されやすく会員に存在を知られてしまうため、
+# 専用のパスにする（環境変数 ADMIN_URL_PATH で変更可能）。
+# 旧 /admin 系のURLはすべて404になり、外からは存在が分からない。
+ADMIN_URL_PATH = os.environ.get("ADMIN_URL_PATH", "reall-kanri").strip("/")
+ADMIN_BASE = f"/{ADMIN_URL_PATH}"
+
 # 食事分析1回あたりの概算コスト（円）。通常解析はSonnet 4.6（入力$3/出力$15）。
 # 画像1024px・出力約1000トークンで約$0.025≒¥4。為替やモデルを変えたら調整。
 COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "4"))
@@ -570,13 +576,13 @@ def _admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not _is_admin_authed():
-            # APIはJSONの401を返す（fetchで扱うため、ブラウザのBasic認証
-            # ダイアログを出す WWW-Authenticate は付けない）。
-            # ページ表示（/admin/backup 等）は従来通りBasic認証を促す。
+            # 管理APIは未認証だと404を返す（401だと「管理APIが存在する」こと自体が
+            # 分かってしまうため。管理画面のログインフォームは r.ok で判定するので
+            # 404でも問題なく動く）。管理ページ（バックアップ等）はBasic認証を促す。
             if request.path.startswith("/api/"):
-                return jsonify({"error": "管理者認証が必要です"}), 401
+                return jsonify({"error": "not found"}), 404
             return Response(
-                "管理者認証が必要です",
+                "認証が必要です",
                 401,
                 {"WWW-Authenticate": 'Basic realm="AB Diet Admin"'},
             )
@@ -980,12 +986,13 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/admin")
+@app.route(ADMIN_BASE)
 def admin():
     # ページ自体は認証なしで表示し、データを返すAPI側で認証する。
     # （スマホではBasic認証ダイアログが正しく動かないことが多いため、
     #   ページ内のログインフォームでパスワードを入力してもらう方式）
-    return render_template("admin.html")
+    # URLは推測されにくい専用パス（ADMIN_BASE）。旧 /admin は404になる。
+    return render_template("admin.html", admin_base=ADMIN_BASE)
 
 
 @app.route("/api/admin/auth-check")
@@ -1618,10 +1625,10 @@ def admin_set_vip(user_id):
     return jsonify({"ok": True, "is_vip": is_vip})
 
 
-@app.route("/admin/user/<user_id>")
+@app.route(f"{ADMIN_BASE}/user/<user_id>")
 def admin_user_page(user_id):
-    # /admin と同様、ページは認証なしで表示しデータAPI側で認証する
-    return render_template("admin_user.html", user_id=user_id)
+    # ダッシュボードと同様、ページは認証なしで表示しデータAPI側で認証する
+    return render_template("admin_user.html", user_id=user_id, admin_base=ADMIN_BASE)
 
 
 @app.route("/api/admin/user/<user_id>/detail")
@@ -2142,7 +2149,8 @@ def _set_setting(key: str, value: str):
         conn.close()
 
 
-@app.route("/setup-email", methods=["GET"])
+@app.route(f"{ADMIN_BASE}/setup-email", methods=["GET"])
+@_admin_required
 def setup_email_page():
     gmail_user = _get_setting("GMAIL_USER")
     report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
@@ -2160,7 +2168,7 @@ def setup_email_page():
         banner = ""
 
     if gmail_user:
-        test_btn = '<form method="POST" action="/api/send-test-report" style="margin-top:12px"><button class="btn test-btn" type="submit">📧 テストメールを今すぐ送信</button></form>'
+        test_btn = f'<form method="POST" action="{ADMIN_BASE}/send-test-report" style="margin-top:12px"><button class="btn test-btn" type="submit">📧 テストメールを今すぐ送信</button></form>'
     else:
         test_btn = '<p class="hint">※ 先に上のフォームを保存するとテスト送信ボタンが表示されます</p>'
 
@@ -2189,7 +2197,7 @@ def setup_email_page():
   <h1>📧 メールレポート設定</h1>
   <p>毎朝8時に送るレポートのGmail設定をここで行えます</p>
   {banner}
-  <form method="POST" action="/api/setup-email">
+  <form method="POST" action="{ADMIN_BASE}/setup-email-save">
     <label>送信元 Gmail アドレス</label>
     <input type="email" name="gmail_user" value="{gmail_user}" placeholder="yourname@gmail.com" required>
     <label>Gmail アプリパスワード（16桁）</label>
@@ -2212,7 +2220,8 @@ def setup_email_page():
 </body></html>"""
 
 
-@app.route("/api/setup-email", methods=["POST"])
+@app.route(f"{ADMIN_BASE}/setup-email-save", methods=["POST"])
+@_admin_required
 def api_setup_email():
     gmail_user = (request.form.get("gmail_user") or "").strip()
     gmail_pass = (request.form.get("gmail_app_password") or "").strip()
@@ -2223,18 +2232,19 @@ def api_setup_email():
     _set_setting("GMAIL_APP_PASSWORD", gmail_pass)
     _set_setting("REPORT_TO", report_to)
     from flask import redirect
-    return redirect("/setup-email?saved=1")
+    return redirect(f"{ADMIN_BASE}/setup-email?saved=1")
 
 
-@app.route("/api/send-test-report", methods=["POST"])
+@app.route(f"{ADMIN_BASE}/send-test-report", methods=["POST"])
+@_admin_required
 def api_send_test_report():
     from flask import redirect
     from urllib.parse import quote
     try:
         _send_daily_report()
-        return redirect("/setup-email?saved=sent")
+        return redirect(f"{ADMIN_BASE}/setup-email?saved=sent")
     except Exception as e:
-        return redirect(f"/setup-email?saved=err&msg={quote(str(e))}")
+        return redirect(f"{ADMIN_BASE}/setup-email?saved=err&msg={quote(str(e))}")
 
 
 # バックアップ対象のテーブル一覧（全データ）
@@ -2291,7 +2301,7 @@ def _send_daily_report():
     gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
     report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
     if not gmail_user or not gmail_pass or not report_to:
-        raise ValueError("メール設定が未登録です。/setup-email で設定してください。")
+        raise ValueError(f"メール設定が未登録です。{ADMIN_BASE}/setup-email で設定してください。")
 
     target_date = (datetime.datetime.now(JST) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     html_body = _build_report_html(target_date)
@@ -2346,7 +2356,7 @@ def _maybe_send_backup(force=False):
         print(f"[BACKUP][WARN] バックアップ送信に失敗: {_e}")
 
 
-@app.route("/admin/backup", methods=["GET"])
+@app.route(f"{ADMIN_BASE}/backup", methods=["GET"])
 @_admin_required
 def download_backup():
     """管理者が今すぐ全データのバックアップ(.json.gz)をダウンロードする。"""
@@ -2360,7 +2370,7 @@ def download_backup():
     )
 
 
-@app.route("/admin/restore", methods=["GET"])
+@app.route(f"{ADMIN_BASE}/restore", methods=["GET"])
 @_admin_required
 def restore_page():
     """ブラウザからバックアップファイルをアップロードして復元する画面（コマンド操作不要）。"""
@@ -2392,7 +2402,7 @@ document.getElementById('f').addEventListener('submit', async (e)=>{
   r.style.display='block'; r.textContent='復元中…';
   const fd=new FormData(); fd.append('file', fi.files[0]);
   try{
-    const res=await fetch('/admin/restore-backup',{method:'POST',body:fd});
+    const res=await fetch('restore-backup',{method:'POST',body:fd});
     const j=await res.json();
     r.textContent = res.ok ? ('✅ 復元しました\\n'+JSON.stringify(j.restored,null,2)) : ('⚠️ '+(j.error||'失敗'));
   }catch(err){ r.textContent='⚠️ 通信エラー: '+err; }
@@ -2401,7 +2411,7 @@ document.getElementById('f').addEventListener('submit', async (e)=>{
     return Response(html, mimetype="text/html")
 
 
-@app.route("/admin/restore-backup", methods=["POST"])
+@app.route(f"{ADMIN_BASE}/restore-backup", methods=["POST"])
 @_admin_required
 def restore_backup():
     """バックアップ(.json.gz か 生JSON)を受け取り、全テーブルへ復元する。
@@ -2454,6 +2464,7 @@ def restore_backup():
 
 
 @app.route("/api/setup", methods=["POST"])
+@_admin_required
 def setup():
     data = request.get_json()
     key = (data or {}).get("api_key", "").strip()

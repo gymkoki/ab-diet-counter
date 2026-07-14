@@ -307,6 +307,7 @@
 </main>
 
 <script>
+  const ADMIN_BASE = {{ admin_base | tojson }};   // 管理画面のベースURL（専用パス）
   let chartUsers = null, chartB = null, chartAnalyses = null;
   let usersData = [];
   let sortCol = null;         // ソート対象の列キー
@@ -473,7 +474,7 @@
         <td>${u.is_vip ? '<span class="vip-badge">★ VIP</span>' : ''}</td>
         <td style="display:flex;gap:6px">
           <button class="vip-btn${u.is_vip ? ' is-vip' : ''}" onclick="toggleVip('${u.user_id}', ${u.is_vip})">${u.is_vip ? 'VIP解除' : 'VIPにする'}</button>
-          <a class="detail-link" href="/admin/user/${encodeURIComponent(u.user_id)}">詳細</a>
+          <a class="detail-link" href="${ADMIN_BASE}/user/${encodeURIComponent(u.user_id)}">詳細</a>
         </td>
       </tr>
     `).join('');
