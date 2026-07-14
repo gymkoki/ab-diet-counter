@@ -268,6 +268,20 @@
     <canvas id="chart-b" height="120"></canvas>
   </div>
 
+  <!-- 体重変化の分析 -->
+  <div class="charts-grid">
+    <div class="card">
+      <h2>⚖️ 目的別の平均体重変化（直近30日）</h2>
+      <div id="weight-goal-stats"><div class="spinner"></div></div>
+      <div style="font-size:11px;color:#9CA3AF;margin-top:10px">期間内に体重を2回以上（5日以上あけて）記録した会員が対象。マイナス＝痩せた</div>
+    </div>
+    <div class="card">
+      <h2>📈 Bカウントと体重変化の相関（直近30日）</h2>
+      <canvas id="chart-corr" height="200"></canvas>
+      <div id="corr-note" style="font-size:11px;color:#9CA3AF;margin-top:8px"></div>
+    </div>
+  </div>
+
   <!-- Users Table -->
   <div class="card users-card">
     <h2>👤 ユーザー別統計</h2>
@@ -422,6 +436,81 @@
     ));
   }
 
+  // ── 体重変化の分析（目的別平均＋Bカウント相関の散布図）──
+  let chartCorr = null;
+  const GOAL_LABEL = { cut: '🔥 減量', maintain: '⚖️ 維持', bulk: '💪 増量', none: '❔ 未設定' };
+  const GOAL_COLOR = { cut: '#FF6B35', maintain: '#6366F1', bulk: '#059669', none: '#9CA3AF' };
+
+  async function loadWeightInsights() {
+    const r = await fetch('/api/admin/weight-insights');
+    if (!r.ok) throw new Error('weight-insights');
+    const d = await r.json();
+
+    // 目的別の平均体重変化
+    const wrap = document.getElementById('weight-goal-stats');
+    const rows = ['cut', 'maintain', 'bulk', 'none'].map(g => {
+      const s = d.goals[g];
+      if (!s || s.users === 0) return '';
+      const avg = s.avg_change;
+      const color = avg == null ? '#9CA3AF' : (avg < 0 ? '#059669' : '#DC2626');
+      const sign = avg > 0 ? '+' : '';
+      const big = g === 'cut';
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:${big ? '12px' : '8px'} 12px;
+                    background:${big ? '#FFF5F0' : '#FAFAFA'};border-radius:10px;margin-bottom:8px">
+          <div style="font-size:${big ? '14px' : '13px'};font-weight:800">${GOAL_LABEL[g]}
+            <span style="font-weight:400;color:#9CA3AF;font-size:12px">（${s.users}名・うち${s.lost}名が減）</span></div>
+          <div style="font-size:${big ? '24px' : '17px'};font-weight:900;color:${color}">${sign}${avg} kg</div>
+        </div>`;
+    }).join('');
+    wrap.innerHTML = rows || '<div class="no-data">体重を2回以上記録した会員がまだいません</div>';
+
+    // 散布図：X=平均Bカウント/日、Y=体重変化kg（目的別に色分け）
+    const datasets = ['cut', 'maintain', 'bulk', 'none'].map(g => ({
+      label: GOAL_LABEL[g],
+      data: d.scatter.filter(p => (p.goal || 'none') === g)
+        .map(p => ({ x: p.avg_b, y: p.change, name: p.name || p.user_id_short })),
+      backgroundColor: GOAL_COLOR[g],
+      pointRadius: 5,
+      pointHoverRadius: 7,
+    })).filter(ds => ds.data.length > 0);
+
+    if (chartCorr) chartCorr.destroy();
+    chartCorr = new Chart(document.getElementById('chart-corr'), {
+      type: 'scatter',
+      data: { datasets },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: true, labels: { boxWidth: 10, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const p = ctx.raw;
+                const sign = p.y > 0 ? '+' : '';
+                return `${p.name}: 平均B${p.x}/日 → ${sign}${p.y}kg`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { title: { display: true, text: '平均Bカウント／日', font: { size: 11 } }, beginAtZero: true },
+          y: { title: { display: true, text: '体重変化 (kg)', font: { size: 11 } } }
+        }
+      }
+    });
+
+    const note = document.getElementById('corr-note');
+    if (d.correlation != null) {
+      const r2 = d.correlation;
+      const strength = Math.abs(r2) >= 0.7 ? '強い' : Math.abs(r2) >= 0.4 ? '中程度の' : '弱い';
+      const dir = r2 > 0 ? '「Bが多いほど体重が増える」方向' : '「Bが少ないほど体重が減る」方向';
+      note.textContent = `相関係数 r = ${r2}（${strength}${dir}の関係）／ 対象 ${d.scatter.length} 名 ／ 1点＝会員1名`;
+    } else {
+      note.textContent = `データが集まると相関係数が表示されます（対象 ${d.scatter.length} 名）`;
+    }
+  }
+
   async function loadUsers() {
     const r = await fetch('/api/admin/users');
     if (!r.ok) throw new Error('users');
@@ -533,7 +622,7 @@
 
   async function refresh() {
     try {
-      await Promise.all([loadOverview(), loadTrend(), loadUsers(), loadApiStatus()]);
+      await Promise.all([loadOverview(), loadTrend(), loadUsers(), loadApiStatus(), loadWeightInsights()]);
       const now = new Date();
       document.getElementById('last-updated').textContent =
         `最終更新: ${now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
