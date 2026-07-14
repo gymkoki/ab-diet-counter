@@ -805,7 +805,7 @@
     <span class="bnav-icon">📊</span>履歴
   </button>
   <button class="bnav-btn" id="nav-chara" onclick="switchView('chara')">
-    <span class="bnav-icon">🐱</span>キャラ
+    <span class="bnav-icon">🏅</span>進捗
   </button>
   <button class="bnav-btn" id="nav-settings" onclick="switchView('settings')">
     <span class="bnav-icon">⚙️</span>設定
@@ -1422,8 +1422,9 @@ function hideGoalCelebrate() {
 }
 
 // ═══════════════════════════════════════════
-//  キャラタブ：今日の進捗スコアとマスコットアニメーション
-//  配点：Bカウント50%＋タンパク質25%＋野菜25%＝100点
+//  進捗タブ：今日の進捗スコアとマスコットアニメーション
+//  点数＝3項目（Bカウント・タンパク質・野菜）の達成率の平均
+//  （例：100%・100%・0% → 200%÷300% ≒ 67点）
 // ═══════════════════════════════════════════
 function calcCharaScore() {
   let foodTotal = 0, protein = 0, veg = 0, count = 0;
@@ -1451,7 +1452,7 @@ function calcCharaScore() {
   // 野菜：350gに対する充足率
   const vPct = Math.min(100, Math.round(veg / VEG_TARGET_G * 100));
 
-  const score = Math.round(bPct * 0.5 + pPct * 0.25 + vPct * 0.25);
+  const score = Math.round((bPct + pPct + vPct) / 3);
   return { score, net, protein, veg, pGoal, bMax, count, bPct, pPct, vPct };
 }
 
@@ -1459,16 +1460,16 @@ function calcCharaScore() {
 function charaAdvice(s) {
   if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
   if (s.bPct < 100) {
-    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。Bカウントは配点の50%。次の食事はA食材中心にして、運動でBを取り返しましょう🏃`;
+    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。次の食事はA食材中心にして、運動でBを取り返すと最大＋${Math.round((100 - s.bPct) / 3)}点です🏃`;
   }
   const pLack = Math.max(0, s.pGoal - s.protein);
   const vLack = Math.max(0, VEG_TARGET_G - s.veg);
   if (pLack <= 0 && vLack <= 0) return 'パーフェクト！この調子で1日をキープしましょう✨';
   // 不足割合が大きい方を優先して案内
   if ((pLack / s.pGoal) >= (vLack / VEG_TARGET_G)) {
-    return `タンパク質があと約${Math.round(pLack)}g。鶏むね肉・卵・プロテインなどを足すと最大＋${Math.round((100 - s.pPct) * 0.25)}点です🥩`;
+    return `タンパク質があと約${Math.round(pLack)}g。鶏むね肉・卵・プロテインなどを足すと最大＋${Math.round((100 - s.pPct) / 3)}点です🥩`;
   }
-  return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${Math.round((100 - s.vPct) * 0.25)}点です🥗`;
+  return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${Math.round((100 - s.vPct) / 3)}点です🥗`;
 }
 
 // キャラごとの見た目設定（公式イラスト。演出はイラスト側に描き込まれているためfxは最小限）
