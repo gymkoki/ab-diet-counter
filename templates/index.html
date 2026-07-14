@@ -1005,15 +1005,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.20</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.21</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🧘</span>
-        <span>運動種目の選択に<b>「ヨガ」「ストレッチ」</b>を追加しました。</span>
+        <span style="font-size:20px;flex-shrink:0">📊</span>
+        <span>進捗の点数を見直しました。<b>タンパク質か野菜が0%を超えるまでは、Bカウントの達成率は加点されない</b>ようになります（何も食べていないのに点が付くのを防ぐため）。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">✏️</span>
-        <span>運動も<b>手動で入力</b>できるようになりました。「その他（自分で入力）」を選んで「水泳を30分」のように入力すると、種目と時間がそのまま記録できます。</span>
+        <span style="font-size:20px;flex-shrink:0">📅</span>
+        <span>キャラカレンダーに<b>抜けていた過去の日の点数を自動で復元</b>するようにしました。表示されていなかった日も、開き直すと数秒でキャラが現れます。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -1278,6 +1278,45 @@ async function syncHistoryFromServer() {
   } catch(e) {}
 }
 
+// キャラカレンダーの抜けた過去日を復元する。
+// 日別スコアの保存機能より前に記録された日（例：機能追加当日）はスコアが残っていないため、
+// サーバーに残っている食事明細（daily_meals）からスコアを計算し直してカレンダーへ補完する。
+async function backfillCharaLog() {
+  try {
+    const clog = getCharaLog(), blog = getBCountLog();
+    const today = getTodayJST();
+    const t = new Date(today + 'T00:00:00'); t.setDate(t.getDate() - 30);
+    const cutoff = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+    // 食事を記録した日（＝Bカウント履歴がある日）のうち、スコアが無い過去日を新しい順に最大10日分
+    const targets = Object.keys(blog)
+      .filter(d => d < today && d >= cutoff && clog[d] == null)
+      .sort().reverse().slice(0, 10);
+    let changed = false;
+    for (const date of targets) {
+      try {
+        const r = await fetch(`/api/daily-meals?user_id=${encodeURIComponent(USER_ID)}&date=${encodeURIComponent(date)}`);
+        const d = await r.json();
+        if (!d || !d.payload || typeof d.payload !== 'object') continue;
+        let foodTotal = 0, protein = 0, veg = 0, count = 0;
+        Object.values(d.payload).forEach(mv => {
+          if (!mv || !Array.isArray(mv.items)) return;
+          mv.items.filter(i => i && i.result).forEach(i => {
+            count++;
+            foodTotal += i.result.total_b_count || 0;
+            protein   += mealProtein(i.result);
+            veg       += mealVeg(i.result);
+          });
+        });
+        if (count === 0) continue;
+        setCharaLogEntry(date, scoreFromTotals(foodTotal, protein, veg, getExBCountForDate(date)).score);
+        submitDailyB(blog[date], date);   // サーバーにも保存して他の端末のカレンダーにも出す
+        changed = true;
+      } catch(e) {}
+    }
+    if (changed) renderCharaCalendar();
+  } catch(e) {}
+}
+
 // ═══════════════════════════════════════════
 //  端末の連携（連携コードの発行・入力）
 // ═══════════════════════════════════════════
@@ -1394,13 +1433,15 @@ function flushPreviousDayIfNeeded() {
   }
   if (!savedDate || savedDate === getTodayJST()) return;  // 今日のデータなら何もしない
 
-  // 前日の食事Bカウント合計を集計（旧4分類キーも合算）
-  let foodTotal = 0;
+  // 前日の食事Bカウント・タンパク質・野菜の合計を集計（旧4分類キーも合算）
+  let foodTotal = 0, protein = 0, veg = 0;
   ALL_MEAL_KEYS.forEach(k => {
     if (data[k] && data[k].items) {
-      foodTotal += data[k].items
-        .filter(i => i.result)
-        .reduce((s, i) => s + (i.result.total_b_count || 0), 0);
+      data[k].items.filter(i => i.result).forEach(i => {
+        foodTotal += i.result.total_b_count || 0;
+        protein   += mealProtein(i.result);
+        veg       += mealVeg(i.result);
+      });
     }
   });
 
@@ -1408,6 +1449,11 @@ function flushPreviousDayIfNeeded() {
   if (foodTotal > 0) {
     const exBc = getExBCountForDate(savedDate);
     const net  = Math.max(0, foodTotal - exBc);
+    // キャラカレンダー用のスコアが残っていない日は、ここで計算して補完する
+    // （前日中にスコア保存が動かなかった場合の安全網）
+    if (getCharaLog()[savedDate] == null) {
+      setCharaLogEntry(savedDate, scoreFromTotals(foodTotal, protein, veg, exBc).score);
+    }
     submitDailyB(net, savedDate);
   }
 
@@ -1594,6 +1640,32 @@ function hideGoalCelebrate() {
 //  点数＝3項目（Bカウント・タンパク質・野菜）の達成率の平均
 //  （例：100%・100%・0% → 200%÷300% ≒ 67点）
 // ═══════════════════════════════════════════
+// 1日の合計値（食事B・タンパク質・野菜・運動B）からスコアを計算する共通処理。
+// 過去日の復元（キャラカレンダーの補完）でも同じ計算を使う。
+function scoreFromTotals(foodTotal, protein, veg, exBc) {
+  const net = Math.max(0, foodTotal - (exBc || 0));
+
+  // タンパク質：目標下限に対する充足率（体重未設定は80gで概算）
+  const pt = getProteinTarget();
+  const pGoal = pt ? pt.min : 80;
+  const pPct = Math.min(100, Math.round(protein / pGoal * 100));
+
+  // 野菜：350gに対する充足率
+  const vPct = Math.min(100, Math.round(veg / VEG_TARGET_G * 100));
+
+  // Bカウント：目標内なら100%、1回オーバーするごとに−20%。
+  // ただしタンパク質・野菜がどちらも0%のうちは0%扱いにする
+  // （何も食べていない日にB0回だけで100%が付くのを防ぐ）。
+  const tgt  = getGoalTarget(getProfile());
+  const bMax = tgt ? tgt.max : 8;
+  let bPct = (!isFinite(bMax) || net <= bMax) ? 100 : Math.max(0, Math.round(100 - (net - bMax) * 20));
+  const bLocked = (pPct <= 0 && vPct <= 0);
+  if (bLocked) bPct = 0;
+
+  const score = Math.round((bPct + pPct + vPct) / 3);
+  return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked };
+}
+
 function calcCharaScore() {
   let foodTotal = 0, protein = 0, veg = 0, count = 0;
   MEALS.forEach(m => {
@@ -1605,28 +1677,17 @@ function calcCharaScore() {
     });
   });
   const exBc = getExBCountForDate(currentDate());
-  const net  = Math.max(0, foodTotal - exBc);
-
-  // Bカウント：目標内なら100%、1回オーバーするごとに−20%
-  const tgt  = getGoalTarget(getProfile());
-  const bMax = tgt ? tgt.max : 8;
-  const bPct = (!isFinite(bMax) || net <= bMax) ? 100 : Math.max(0, Math.round(100 - (net - bMax) * 20));
-
-  // タンパク質：目標下限に対する充足率（体重未設定は80gで概算）
-  const pt = getProteinTarget();
-  const pGoal = pt ? pt.min : 80;
-  const pPct = Math.min(100, Math.round(protein / pGoal * 100));
-
-  // 野菜：350gに対する充足率
-  const vPct = Math.min(100, Math.round(veg / VEG_TARGET_G * 100));
-
-  const score = Math.round((bPct + pPct + vPct) / 3);
-  return { score, net, protein, veg, pGoal, bMax, count, bPct, pPct, vPct };
+  const s = scoreFromTotals(foodTotal, protein, veg, exBc);
+  s.count = count;
+  return s;
 }
 
 // 点数を上げるための一言アドバイス（いちばん効く1つだけ）
 function charaAdvice(s) {
   if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
+  if (s.bLocked) {
+    return 'タンパク質と野菜がまだ0%です。どちらかが増えるまでBカウントの達成率は加点されません。まずはタンパク質か野菜を1品プラスしましょう🥩🥗';
+  }
   if (s.bPct < 100) {
     return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。次の食事はA食材中心にして、運動でBを取り返すと最大＋${Math.round((100 - s.bPct) / 3)}点です🏃`;
   }
@@ -4113,7 +4174,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v22';
+const NOTICE_KEY = 'ab-diet-notice-v23';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
@@ -4130,7 +4191,8 @@ updateDailyTotal();
 loadStats();
 resumePendingAnalyses();   // 中断された解析（写真・文章）を復帰時に再開
 syncTodayMealsFromServer();   // 他の端末で記録された今日の食事を取り込む
-syncHistoryFromServer();      // 他の端末の履歴（体重・Bカウント・運動）を取り込む
+syncHistoryFromServer()       // 他の端末の履歴（体重・Bカウント・運動）を取り込む
+  .then(backfillCharaLog);    // → 取り込み後、キャラカレンダーの抜けた過去日を食事明細から復元
 
 // 画面に戻ってきたとき（スマホでアプリを開き直したとき等）にもサーバーと同期し、
 // デスクトップ⇔スマホの表示が揃うようにする。
