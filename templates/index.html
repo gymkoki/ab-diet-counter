@@ -252,51 +252,105 @@
     @keyframes ch-bubble-flash { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
     .chara-img-wrap { position:relative; display:flex; align-items:flex-end; justify-content:center; }
     .chara-img { width:100%; max-width:300px; height:auto; transform-origin:50% 100%; }
-    /* ── キャラの動き：5点刻み20パターン（ch-p0=0〜4点 … ch-p19=95〜100点） ── */
-    /* 危機管鳥（0〜29点）：点が低いほど激しくパニック */
-    /* イラストに文字（reallロゴ）が入っているため、左右反転はさせない */
-    .ch-p0 { animation:kx-panic 0.8s linear infinite; }
-    @keyframes kx-panic { 0%,100%{transform:translateX(-34px) rotate(-6deg)} 10%{transform:translateX(-18px) translateY(-18px) rotate(-3deg)} 24%{transform:translateX(0) rotate(0)} 37%{transform:translateX(18px) translateY(-18px) rotate(3deg)} 50%{transform:translateX(34px) rotate(6deg)} 62%{transform:translateX(18px) translateY(-18px) rotate(3deg)} 74%{transform:translateX(0) rotate(0)} 87%{transform:translateX(-18px) translateY(-18px) rotate(-3deg)} }
-    .ch-p1 { animation:kx-dash 1.05s linear infinite; }
-    @keyframes kx-dash { 0%,100%{transform:translateX(-34px)} 12%{transform:translateX(-18px) translateY(-13px)} 25%{transform:translateX(0)} 37%{transform:translateX(18px) translateY(-13px)} 50%{transform:translateX(34px)} 62%{transform:translateX(18px) translateY(-13px)} 75%{transform:translateX(0)} 87%{transform:translateX(-18px) translateY(-13px)} }
-    .ch-p2 { animation:kx-hopdash 1.3s linear infinite; }
-    @keyframes kx-hopdash { 0%,100%{transform:translateX(-26px)} 25%{transform:translateX(0) translateY(-11px)} 50%{transform:translateX(26px)} 75%{transform:translateX(0) translateY(-11px)} }
-    .ch-p3 { animation:kx-jump 0.5s ease-in-out infinite; }
-    @keyframes kx-jump { 0%,100%{transform:translateY(0) rotate(-4deg)} 50%{transform:translateY(-22px) rotate(4deg)} }
-    .ch-p4 { animation:kx-pace 1.6s ease-in-out infinite; }
-    @keyframes kx-pace { 0%,100%{transform:translateX(-24px)} 25%{transform:translateX(0) translateY(-7px)} 50%{transform:translateX(24px)} 75%{transform:translateX(0) translateY(-7px)} }
-    .ch-p5 { animation:kx-tremble 0.16s linear infinite; }
-    @keyframes kx-tremble { 0%,100%{transform:translate(0,0)} 25%{transform:translate(-2.5px,1px)} 50%{transform:translate(2px,-1px)} 75%{transform:translate(-1.5px,-1px)} }
-    /* 成果フンバ（30〜79点）：踏ん張り〜勢いづくまで */
-    .ch-p6 { animation:fb-strain-deep 0.22s linear infinite; }
-    @keyframes fb-strain-deep { 0%,100%{transform:translate(0,2px) scale(1.03,0.95)} 25%{transform:translate(-4px,3px) rotate(-2.5deg) scale(1.03,0.95)} 50%{transform:translate(3px,1px) rotate(2deg)} 75%{transform:translate(-3px,2px) rotate(-1.5deg)} }
-    .ch-p7 { animation:fb-strain 0.28s linear infinite; }
-    @keyframes fb-strain { 0%,100%{transform:translate(0,0)} 25%{transform:translate(-3px,2px) rotate(-2deg)} 50%{transform:translate(3px,0) rotate(2deg)} 75%{transform:translate(-2px,1px) rotate(-1deg)} }
-    .ch-p8 { animation:fb-push 0.9s ease-in-out infinite; }
-    @keyframes fb-push { 0%,100%{transform:translateX(-8px) rotate(2deg)} 45%{transform:translateX(12px) rotate(-5deg) scale(1.02,0.98)} 60%{transform:translateX(10px) rotate(-4deg)} }
-    .ch-p9 { animation:fb-stomp 0.8s linear infinite; }
-    @keyframes fb-stomp { 0%,100%{transform:rotate(-5deg) translateY(0)} 25%{transform:rotate(0) translateY(-8px)} 50%{transform:rotate(5deg) translateY(0)} 75%{transform:rotate(0) translateY(-8px)} }
-    .ch-p10 { animation:fb-shakehop 0.7s linear infinite; }
-    @keyframes fb-shakehop { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-3px,1px) rotate(-2deg)} 30%{transform:translate(3px,0) rotate(2deg)} 50%{transform:translateY(-12px)} 70%{transform:translate(-2px,0) rotate(-1deg)} 85%{transform:translate(2px,1px) rotate(1deg)} }
-    .ch-p11 { animation:fb-bounce 0.65s ease-in-out infinite; }
-    @keyframes fb-bounce { 0%,100%{transform:translateY(0) scale(1.04,0.96)} 50%{transform:translateY(-14px) scale(0.97,1.05)} }
-    .ch-p12 { animation:fb-march 0.85s linear infinite; }
-    @keyframes fb-march { 0%,100%{transform:translateY(0) rotate(-3deg)} 25%{transform:translateY(-9px) rotate(0)} 50%{transform:translateY(0) rotate(3deg)} 75%{transform:translateY(-9px) rotate(0)} }
-    .ch-p13 { animation:fb-squat 0.75s ease-in-out infinite; }
-    @keyframes fb-squat { 0%,100%{transform:scale(1,1)} 30%{transform:scale(1.06,0.92) translateY(4px)} 60%{transform:scale(0.98,1.04) translateY(-6px)} }
-    .ch-p14 { animation:fb-hoptilt 0.6s ease-in-out infinite; }
-    @keyframes fb-hoptilt { 0%,100%{transform:translateY(0) rotate(-4deg)} 50%{transform:translateY(-16px) rotate(4deg)} }
-    .ch-p15 { animation:fb-charge 1.2s ease-in-out infinite; }
-    @keyframes fb-charge { 0%,100%{transform:translateX(-20px) rotate(-2deg)} 20%{transform:translateX(-24px) rotate(-3deg) scale(1.04,0.96)} 55%{transform:translateX(22px) rotate(3deg)} 75%{transform:translateX(10px) rotate(1deg)} }
-    /* キーラン君（80〜100点）：高いほど大喜び */
-    .ch-p16 { animation:ct-sway 1.1s ease-in-out infinite; }
-    @keyframes ct-sway { 0%,100%{transform:rotate(-6deg)} 50%{transform:rotate(6deg)} }
-    .ch-p17 { animation:ct-bounce 0.8s ease-in-out infinite; }
-    @keyframes ct-bounce { 0%,100%{transform:translateY(0) scale(1.03,0.97)} 50%{transform:translateY(-14px) scale(0.97,1.04)} }
-    .ch-p18 { animation:ct-jumpwiggle 0.75s ease-in-out infinite; }
-    @keyframes ct-jumpwiggle { 0%,100%{transform:translateY(0) rotate(-7deg)} 25%{transform:translateY(-16px) rotate(0)} 50%{transform:translateY(0) rotate(7deg)} 75%{transform:translateY(-16px) rotate(0)} }
-    .ch-p19 { animation:ct-dance 0.55s ease-in-out infinite; }
-    @keyframes ct-dance { 0%,100%{transform:translateY(0) rotate(-9deg) scale(1,1)} 25%{transform:translateY(-18px) rotate(0) scale(0.93,1.09)} 50%{transform:translateY(0) rotate(9deg) scale(1.07,0.93)} 75%{transform:translateY(-18px) rotate(0) scale(0.93,1.09)} }
+    /* ── キャラのダンス：各キャラ10種（表示のたびランダムで1つ再生）──
+       イラストに文字（reallロゴ）が入っているため、左右反転（scaleX(-1)）はさせない */
+    .chara-img.chara-dance { will-change:transform; }
+
+    /* ═ 危機管鳥（0〜29点）：焦って踊る・テンポ速め ═ */
+    /* コサックダンス：しゃがんで左右に足を蹴り出す */
+    .kkd-cossack { animation:kkd-cossack 1.1s linear infinite; }
+    @keyframes kkd-cossack { 0%,100%{transform:translateY(12px) scale(1.06,0.86)} 12%{transform:translateX(-16px) translateY(14px) rotate(-9deg) scale(1.08,0.84)} 25%{transform:translateY(6px) scale(1.02,0.94)} 37%{transform:translateX(16px) translateY(14px) rotate(9deg) scale(1.08,0.84)} 50%{transform:translateY(-22px) scale(0.94,1.1)} 62%{transform:translateX(-16px) translateY(14px) rotate(-9deg) scale(1.08,0.84)} 75%{transform:translateY(6px) scale(1.02,0.94)} 87%{transform:translateX(16px) translateY(14px) rotate(9deg) scale(1.08,0.84)} }
+    /* 盆踊り：左右に大きく振りながらせわしなく */
+    .kkd-bon { animation:kkd-bon 1.6s ease-in-out infinite; }
+    @keyframes kkd-bon { 0%,100%{transform:translateX(-28px) rotate(-9deg)} 20%{transform:translateX(-10px) translateY(-12px) rotate(-3deg)} 40%{transform:translateX(28px) rotate(9deg)} 55%{transform:translateX(28px) translateY(6px) rotate(7deg) scale(1.04,0.94)} 75%{transform:translateX(10px) translateY(-12px) rotate(3deg)} }
+    /* 阿波踊り：前のめりでジグザグに跳ねる */
+    .kkd-awa { animation:kkd-awa 1.2s linear infinite; }
+    @keyframes kkd-awa { 0%,100%{transform:translateX(-32px) rotate(7deg)} 25%{transform:translateX(-10px) translateY(-20px) rotate(10deg)} 50%{transform:translateX(32px) rotate(7deg)} 75%{transform:translateX(10px) translateY(-20px) rotate(10deg)} }
+    /* チャールストン：高速で左右キック */
+    .kkd-charleston { animation:kkd-charleston 0.6s linear infinite; }
+    @keyframes kkd-charleston { 0%,100%{transform:rotate(-13deg) translateY(2px)} 25%{transform:rotate(0deg) translateY(-16px)} 50%{transform:rotate(13deg) translateY(2px)} 75%{transform:rotate(0deg) translateY(-16px)} }
+    /* ヒップホップ：バウンス＋体を斜めに入れる */
+    .kkd-hiphop { animation:kkd-hiphop 0.65s ease-in-out infinite; }
+    @keyframes kkd-hiphop { 0%,100%{transform:translateY(2px) scale(1.06,0.92)} 30%{transform:translateY(-24px) scale(0.94,1.1) skewX(5deg)} 55%{transform:translateY(2px) scale(1.08,0.9)} 80%{transform:translateY(-10px) skewX(-5deg)} }
+    /* ムーンウォーク：横にスーッと滑る */
+    .kkd-moonwalk { animation:kkd-moonwalk 2s linear infinite; }
+    @keyframes kkd-moonwalk { 0%,100%{transform:translateX(40px)} 12%{transform:translateX(22px) translateY(-6px) rotate(-3deg)} 25%{transform:translateX(0)} 37%{transform:translateX(-22px) translateY(-6px) rotate(-3deg)} 50%{transform:translateX(-40px)} 62%{transform:translateX(-22px) translateY(-6px) rotate(3deg)} 75%{transform:translateX(0)} 87%{transform:translateX(22px) translateY(-6px) rotate(3deg)} }
+    /* アフリカンダンス：高く跳んで着地でしゃがむ */
+    .kkd-adumu { animation:kkd-adumu 0.9s ease-in-out infinite; }
+    @keyframes kkd-adumu { 0%,100%{transform:translateY(2px) scale(1.05,0.92)} 35%{transform:translateY(-34px) scale(0.92,1.12)} 50%{transform:translateY(-28px) rotate(-4deg)} 70%{transform:translateY(2px) scale(1.1,0.86)} 85%{transform:translateY(-8px)} }
+    /* サンバ：小刻みに揺れながら左右へステップ */
+    .kkd-samba { animation:kkd-samba 1.3s linear infinite; }
+    @keyframes kkd-samba { 0%,100%{transform:translateX(-20px) rotate(-6deg)} 10%{transform:translateX(-14px) rotate(6deg)} 20%{transform:translateX(-8px) rotate(-6deg) translateY(-6px)} 30%{transform:translateX(0) rotate(6deg)} 50%{transform:translateX(20px) rotate(-6deg) translateY(-8px)} 60%{transform:translateX(14px) rotate(6deg)} 70%{transform:translateX(8px) rotate(-6deg) translateY(-6px)} 85%{transform:translateX(0) rotate(6deg)} }
+    /* スピンターン：ジャンプしてくるっと1回転 */
+    .kkd-spin { animation:kkd-spin 1.5s ease-in-out infinite; }
+    @keyframes kkd-spin { 0%,100%{transform:rotate(0deg) translateY(0)} 15%{transform:rotate(0deg) translateY(-18px)} 55%{transform:rotate(360deg) translateY(-18px)} 70%{transform:rotate(360deg) translateY(2px) scale(1.08,0.88)} 85%{transform:rotate(360deg) translateY(-6px)} }
+    /* ツイスト：腰を大きくひねりながら沈み込む */
+    .kkd-twist { animation:kkd-twist 0.85s linear infinite; }
+    @keyframes kkd-twist { 0%,100%{transform:translateX(-12px) rotate(-5deg) skewX(0deg)} 15%{transform:translateX(-5px) translateY(-12px) rotate(-11deg) skewX(12deg)} 35%{transform:translateX(5px) translateY(5px) rotate(11deg) skewX(-12deg) scale(1.05,0.92)} 55%{transform:translateX(12px) translateY(-16px) rotate(-11deg) skewX(12deg)} 75%{transform:translateX(0) translateY(5px) rotate(11deg) skewX(-12deg) scale(1.05,0.92)} }
+
+    /* ═ 成果フンバ（30〜79点）：重量級・地響き系 ═ */
+    /* 重量級コサック：どっしりしゃがんで力強く蹴る */
+    .fbd-cossack { animation:fbd-cossack 1.3s linear infinite; }
+    @keyframes fbd-cossack { 0%,100%{transform:translateY(14px) scale(1.1,0.82)} 12%{transform:translateX(-18px) translateY(16px) rotate(-7deg) scale(1.12,0.8)} 25%{transform:translateY(8px) scale(1.04,0.92)} 37%{transform:translateX(18px) translateY(16px) rotate(7deg) scale(1.12,0.8)} 50%{transform:translateY(-18px) scale(0.95,1.08)} 56%{transform:translateY(4px) scale(1.12,0.82)} 62%{transform:translateX(-18px) translateY(16px) rotate(-7deg) scale(1.12,0.8)} 75%{transform:translateY(8px)} 87%{transform:translateX(18px) translateY(16px) rotate(7deg) scale(1.12,0.8)} }
+    /* 盆踊り：ゆったり大きく、ドスンと重く */
+    .fbd-bon { animation:fbd-bon 2.2s ease-in-out infinite; }
+    @keyframes fbd-bon { 0%,100%{transform:translateX(-26px) rotate(-7deg)} 22%{transform:translateX(-8px) translateY(-10px) rotate(-2deg)} 30%{transform:translateX(0) translateY(4px) scale(1.08,0.9)} 50%{transform:translateX(26px) rotate(7deg)} 72%{transform:translateX(8px) translateY(-10px) rotate(2deg)} 80%{transform:translateX(0) translateY(4px) scale(1.08,0.9)} }
+    /* 阿波踊り：前傾姿勢で突進しながら踊る */
+    .fbd-awa { animation:fbd-awa 1.5s linear infinite; }
+    @keyframes fbd-awa { 0%,100%{transform:translateX(-34px) rotate(5deg)} 20%{transform:translateX(-14px) translateY(-14px) rotate(8deg)} 40%{transform:translateX(14px) translateY(0) rotate(5deg) scale(1.06,0.94)} 50%{transform:translateX(34px) rotate(6deg)} 70%{transform:translateX(14px) translateY(-14px) rotate(8deg)} 90%{transform:translateX(-14px) translateY(0) scale(1.06,0.94)} }
+    /* 相撲の四股踏み：左右交互に大きく足を上げてドスン */
+    .fbd-sumo { animation:fbd-sumo 1.8s ease-in-out infinite; }
+    @keyframes fbd-sumo { 0%,100%{transform:translateY(0)} 12%{transform:translateX(-14px) translateY(-18px) rotate(-16deg)} 22%{transform:translateX(-3px) translateY(12px) rotate(-2deg) scale(1.14,0.8)} 26%{transform:translateX(4px) translateY(9px) scale(1.1,0.86)} 30%{transform:translateX(-3px) translateY(10px) scale(1.12,0.84)} 38%{transform:translateY(0)} 50%{transform:translateY(3px) scale(1.04,0.95)} 62%{transform:translateX(14px) translateY(-18px) rotate(16deg)} 72%{transform:translateX(3px) translateY(12px) rotate(2deg) scale(1.14,0.8)} 76%{transform:translateX(-4px) translateY(9px) scale(1.1,0.86)} 80%{transform:translateX(3px) translateY(10px) scale(1.12,0.84)} 88%{transform:translateY(0)} }
+    /* パワーヒップホップ：地面を揺らすバウンス */
+    .fbd-hiphop { animation:fbd-hiphop 0.7s ease-in-out infinite; }
+    @keyframes fbd-hiphop { 0%,100%{transform:translateY(4px) scale(1.1,0.84)} 35%{transform:translateY(-22px) scale(0.92,1.1)} 60%{transform:translateY(4px) scale(1.12,0.82)} 66%{transform:translateX(-3px) translateY(4px) scale(1.12,0.82)} 72%{transform:translateX(3px) translateY(4px) scale(1.12,0.82)} 85%{transform:translateY(-8px)} }
+    /* ブルドーザームーンウォーク：土を押しながら横滑り */
+    .fbd-moonwalk { animation:fbd-moonwalk 2.4s linear infinite; }
+    @keyframes fbd-moonwalk { 0%,100%{transform:translateX(38px) rotate(-2deg)} 12%{transform:translateX(20px) translateY(-4px) rotate(-3deg)} 25%{transform:translateX(0) rotate(-2deg) scale(1.04,0.96)} 37%{transform:translateX(-20px) translateY(-4px) rotate(-3deg)} 50%{transform:translateX(-38px) rotate(2deg)} 62%{transform:translateX(-20px) translateY(-4px) rotate(3deg)} 75%{transform:translateX(0) rotate(2deg) scale(1.04,0.96)} 87%{transform:translateX(20px) translateY(-4px) rotate(3deg)} }
+    /* 地響きジャンプ：跳んで着地で震わせる */
+    .fbd-adumu { animation:fbd-adumu 1.05s ease-in-out infinite; }
+    @keyframes fbd-adumu { 0%,100%{transform:translateY(2px) scale(1.06,0.9)} 30%{transform:translateY(-28px) scale(0.9,1.12)} 45%{transform:translateY(-24px)} 60%{transform:translateY(6px) scale(1.14,0.8)} 66%{transform:translateX(-4px) translateY(4px) scale(1.12,0.84)} 72%{transform:translateX(4px) translateY(4px) scale(1.12,0.84)} 78%{transform:translateX(0) translateY(2px)} }
+    /* おしりフリフリサンバ：重心低めで大きく左右に揺れる */
+    .fbd-samba { animation:fbd-samba 1.2s linear infinite; }
+    @keyframes fbd-samba { 0%,100%{transform:translateX(-22px) rotate(-7deg) translateY(5px) scale(1.06,0.92)} 12%{transform:translateX(-12px) rotate(7deg) translateY(-8px)} 25%{transform:translateX(0) rotate(-7deg) translateY(5px)} 37%{transform:translateX(12px) rotate(7deg) translateY(-8px)} 50%{transform:translateX(22px) rotate(-7deg) translateY(5px) scale(1.06,0.92)} 62%{transform:translateX(12px) rotate(7deg) translateY(-10px)} 75%{transform:translateX(0) rotate(-7deg) translateY(5px)} 87%{transform:translateX(-12px) rotate(7deg) translateY(-10px)} }
+    /* 豪快スピン：勢いをつけて1回転 */
+    .fbd-spin { animation:fbd-spin 1.9s ease-in-out infinite; }
+    @keyframes fbd-spin { 0%,100%{transform:rotate(0deg)} 12%{transform:rotate(-14deg) translateX(-10px) scale(1.06,0.94)} 25%{transform:rotate(0deg) translateY(-16px)} 60%{transform:rotate(360deg) translateY(-16px)} 74%{transform:rotate(360deg) translateY(6px) scale(1.12,0.84)} 82%{transform:rotate(360deg) translateY(-4px)} 90%{transform:rotate(360deg) translateY(0)} }
+    /* 気合のヘッドバン：唸りながら大きく頭を振り下ろす */
+    .fbd-headbang { animation:fbd-headbang 0.6s ease-in-out infinite; }
+    @keyframes fbd-headbang { 0%,100%{transform:rotate(-7deg) translateY(-16px)} 40%{transform:rotate(14deg) translateY(8px) scale(1.1,0.86)} 52%{transform:rotate(11deg) translateY(6px)} 70%{transform:rotate(-3deg) translateY(-8px)} }
+
+    /* ═ キーラン君（80〜100点）：軽やか・大喜び ═ */
+    /* 軽快コサック：ぴょこぴょこ足を出す */
+    .ctd-cossack { animation:ctd-cossack 0.95s linear infinite; }
+    @keyframes ctd-cossack { 0%,100%{transform:translateY(10px) scale(1.05,0.88)} 12%{transform:translateX(-14px) translateY(12px) rotate(-8deg) scale(1.06,0.86)} 25%{transform:translateY(4px)} 37%{transform:translateX(14px) translateY(12px) rotate(8deg) scale(1.06,0.86)} 50%{transform:translateY(-26px) scale(0.93,1.1)} 62%{transform:translateX(-14px) translateY(12px) rotate(-8deg) scale(1.06,0.86)} 75%{transform:translateY(4px)} 87%{transform:translateX(14px) translateY(12px) rotate(8deg) scale(1.06,0.86)} }
+    /* 優雅な盆踊り：ゆったり左右へ、最後にお辞儀 */
+    .ctd-bon { animation:ctd-bon 2s ease-in-out infinite; }
+    @keyframes ctd-bon { 0%,100%{transform:translateX(-24px) rotate(-8deg)} 20%{transform:translateX(-8px) translateY(-10px) rotate(-2deg)} 40%{transform:translateX(24px) rotate(8deg)} 60%{transform:translateX(8px) translateY(-10px) rotate(2deg)} 80%{transform:translateX(0) translateY(4px) rotate(0deg) scale(1.02,0.95)} }
+    /* るんるん阿波踊り：軽い足取りでジグザグ */
+    .ctd-awa { animation:ctd-awa 1.3s linear infinite; }
+    @keyframes ctd-awa { 0%,100%{transform:translateX(-28px) rotate(6deg)} 25%{transform:translateX(-9px) translateY(-22px) rotate(9deg)} 50%{transform:translateX(28px) rotate(6deg)} 75%{transform:translateX(9px) translateY(-22px) rotate(9deg)} }
+    /* チャールストン：ごきげんキックステップ */
+    .ctd-charleston { animation:ctd-charleston 0.65s linear infinite; }
+    @keyframes ctd-charleston { 0%,100%{transform:rotate(-11deg) translateY(2px)} 25%{transform:rotate(0deg) translateY(-18px)} 50%{transform:rotate(11deg) translateY(2px)} 75%{transform:rotate(0deg) translateY(-18px)} }
+    /* ヒップホップ：ふわっと高く弾む */
+    .ctd-hiphop { animation:ctd-hiphop 0.6s ease-in-out infinite; }
+    @keyframes ctd-hiphop { 0%,100%{transform:translateY(2px) scale(1.06,0.92)} 32%{transform:translateY(-26px) scale(0.93,1.1) skewX(4deg)} 58%{transform:translateY(2px) scale(1.07,0.9)} 82%{transform:translateY(-12px) skewX(-4deg)} }
+    /* ムーンウォーク：しっぽを揺らしてスイスイ */
+    .ctd-moonwalk { animation:ctd-moonwalk 1.8s linear infinite; }
+    @keyframes ctd-moonwalk { 0%,100%{transform:translateX(38px)} 12%{transform:translateX(20px) translateY(-7px) rotate(-4deg)} 25%{transform:translateX(0)} 37%{transform:translateX(-20px) translateY(-7px) rotate(-4deg)} 50%{transform:translateX(-38px)} 62%{transform:translateX(-20px) translateY(-7px) rotate(4deg)} 75%{transform:translateX(0)} 87%{transform:translateX(20px) translateY(-7px) rotate(4deg)} }
+    /* お祝い大ジャンプ：うれしくて跳びはねる */
+    .ctd-adumu { animation:ctd-adumu 0.85s ease-in-out infinite; }
+    @keyframes ctd-adumu { 0%,100%{transform:translateY(2px) scale(1.05,0.92)} 35%{transform:translateY(-36px) scale(0.92,1.12) rotate(3deg)} 50%{transform:translateY(-30px) rotate(-3deg)} 70%{transform:translateY(2px) scale(1.08,0.88)} 85%{transform:translateY(-10px)} }
+    /* しっぽサンバ：リズムに乗って小刻みステップ */
+    .ctd-samba { animation:ctd-samba 1.1s linear infinite; }
+    @keyframes ctd-samba { 0%,100%{transform:translateX(-16px) rotate(-6deg)} 12%{transform:translateX(-10px) rotate(6deg) translateY(-6px)} 25%{transform:translateX(0) rotate(-6deg)} 37%{transform:translateX(10px) rotate(6deg) translateY(-6px)} 50%{transform:translateX(16px) rotate(-6deg)} 62%{transform:translateX(10px) rotate(6deg) translateY(-8px)} 75%{transform:translateX(0) rotate(-6deg)} 87%{transform:translateX(-10px) rotate(6deg) translateY(-8px)} }
+    /* ピルエット：ジャンプしてくるりと1回転 */
+    .ctd-pirouette { animation:ctd-pirouette 1.5s ease-in-out infinite; }
+    @keyframes ctd-pirouette { 0%,100%{transform:rotate(0deg) translateY(0)} 15%{transform:rotate(0deg) translateY(-20px) scale(0.96,1.06)} 55%{transform:rotate(360deg) translateY(-20px) scale(0.96,1.06)} 70%{transform:rotate(360deg) translateY(2px) scale(1.06,0.9)} 85%{transform:rotate(360deg) translateY(-8px)} }
+    /* 招き猫ダンス：片手を上げてゆらゆら＆ジャンプ */
+    .ctd-maneki { animation:ctd-maneki 1.2s ease-in-out infinite; }
+    @keyframes ctd-maneki { 0%,100%{transform:rotate(-9deg) translateY(0)} 15%{transform:rotate(-9deg) translateY(-12px)} 30%{transform:rotate(0deg) translateY(0)} 45%{transform:rotate(9deg) translateY(-12px)} 60%{transform:rotate(9deg) translateY(0)} 80%{transform:rotate(0deg) translateY(-20px) scale(0.95,1.07)} }
     .chara-fx { position:absolute; font-size:22px; pointer-events:none; opacity:0; }
     .fx-spark { animation:gc-spark 1.4s ease-out infinite; }
     .fx-dust  { animation:ch-dust 0.9s ease-out infinite; bottom:18px; }
@@ -310,7 +364,7 @@
     .chara-advice-title { font-size:15px; font-weight:800; color:#374151; margin-bottom:6px; }
     .chara-advice-card p { font-size:17px; line-height:1.7; color:#44403B; }
     @media (prefers-reduced-motion: reduce) {
-      .chara-img[class*="ch-p"] { animation:ch-soft 1.6s ease-in-out infinite; }
+      .chara-img.chara-dance { animation:ch-soft 1.6s ease-in-out infinite; }
       @keyframes ch-soft { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
     }
 
@@ -1473,17 +1527,21 @@ function charaAdvice(s) {
 }
 
 // キャラごとの見た目設定（公式イラスト。演出はイラスト側に描き込まれているためfxは最小限）
+// anims：各キャラ10種のダンス。表示のたびランダムに1つ再生し、キャラをタップすると踊り直す。
 const CHARA_TYPES = {
   kiki: {
     img: '/static/chara-kikikancho.webp?v=1', name: '危機管鳥', tier: 'tier-kiki',
+    anims: ['kkd-cossack','kkd-bon','kkd-awa','kkd-charleston','kkd-hiphop','kkd-moonwalk','kkd-adumu','kkd-samba','kkd-spin','kkd-twist'],
     fx: '',
   },
   funba: {
     img: '/static/chara-funba.webp?v=1', name: '成果フンバ', tier: 'tier-funba',
+    anims: ['fbd-cossack','fbd-bon','fbd-awa','fbd-sumo','fbd-hiphop','fbd-moonwalk','fbd-adumu','fbd-samba','fbd-spin','fbd-headbang'],
     fx: '',
   },
   cat: {
     img: '/static/chara-kieran.webp?v=1', name: 'キーラン君', tier: 'tier-happy',
+    anims: ['ctd-cossack','ctd-bon','ctd-awa','ctd-charleston','ctd-hiphop','ctd-moonwalk','ctd-adumu','ctd-samba','ctd-pirouette','ctd-maneki'],
     fx: `<span class="chara-fx fx-spark" style="left:8%; top:56%; animation-delay:0s">✨</span>
          <span class="chara-fx fx-spark" style="right:8%; top:50%; animation-delay:.4s">🎉</span>
          <span class="chara-fx fx-spark" style="left:16%; top:34%; animation-delay:.8s">⭐</span>
@@ -1491,123 +1549,123 @@ const CHARA_TYPES = {
   },
 };
 
-// 5点刻み20パターン（動き＝ch-p0〜ch-p19、各5メッセージ＝計100パターン）
+// メッセージ：5点刻み20帯×各5種＝計100パターン（動きはキャラごとの10種からランダム）
 const CHARA_PATTERNS = [
-  { c:'kiki', a:'ch-p0', m:[   // 0〜4点
+  { c:'kiki', m:[   // 0〜4点
     'お前、やばいって！！！今日このままだと本当にやばいって！！',
     '起きて！！今すぐ食事を見直すんだ！！手遅れになる前に！！',
     '警報！警報！！ダイエット緊急事態発生！！！',
     'ちょっと待って！？今日まだ何もできてないって！！',
     '目が充血するレベルでやばい！！今からでも間に合うから動いて！！' ] },
-  { c:'kiki', a:'ch-p1', m:[   // 5〜9点
+  { c:'kiki', m:[   // 5〜9点
     'やばいやばいやばい！！このままじゃ今日が無駄になるって！！',
     '現実を見て！！進捗ほぼゼロだよ！？',
     '深呼吸して…って言いたいけど、やばいものはやばい！！',
     '今日の目標、遠すぎて見えないんだけど！？',
     'まだ間に合う…まだ間に合うから！！早く記録して食べ直そう！！' ] },
-  { c:'kiki', a:'ch-p2', m:[   // 10〜14点
+  { c:'kiki', m:[   // 10〜14点
     'ねぇ、気づいてる？かなりピンチだよ！？',
     'このペースはまずいって！次の食事で巻き返そう！！',
     'ソワソワが止まらない…！お願いだから野菜を食べて！！',
     '進捗1割ちょっと…冷や汗が止まらないよ〜！！',
     '今動けばまだ変わる！！僕を安心させてくれ〜！！' ] },
-  { c:'kiki', a:'ch-p3', m:[   // 15〜19点
+  { c:'kiki', m:[   // 15〜19点
     'うぅ…心配で飛び回っちゃう！！もう少し頑張って！！',
     '危険水域だよ！？タンパク質！野菜！思い出して！！',
     'ハラハラして羽が抜けそう…！次の一食が勝負だよ！！',
     'まだ2割かぁ…僕の目、見て？充血してるでしょ？そういうこと！！',
     'ピンチはチャンス！今から挽回できるよ、たぶん、きっと！！' ] },
-  { c:'kiki', a:'ch-p4', m:[   // 20〜24点
+  { c:'kiki', m:[   // 20〜24点
     'うろうろ…そわそわ…あと少しで安心させてくれない！？',
     '4分の1まできた…けどまだ安心できないよ！！',
     '心配で夜も眠れないよ〜！このあとの食事が大事！！',
     '波に乗る一歩手前！ここで気を抜いちゃダメ！！',
     'あともうひと押しでフンバにバトンタッチできるのに〜！！' ] },
-  { c:'kiki', a:'ch-p5', m:[   // 25〜29点
+  { c:'kiki', m:[   // 25〜29点
     'ふるふる…あとちょっとで危機は脱出だよ！がんばって！！',
     '3割目前！ここを越えたら僕は安心して眠れる…！！',
     'もう一品、あと一品で景色が変わるよ！！',
     '惜しい！！本当に惜しい！！野菜かタンパク質をプラスして！！',
     '危機レベル低下中…このまま頼む…！！' ] },
-  { c:'funba', a:'ch-p6', m:[  // 30〜34点
+  { c:'funba', m:[  // 30〜34点
     'ふんっ…！！ここからが本番だブヒ！！',
     'まだ3割…だが諦めるという選択肢はないブヒ！！',
     '歯を食いしばれ…！オレも食いしばってるブヒ！！',
     '苦しい時こそ踏ん張りどころだブヒ！！',
     '土俵際で耐えろ！！まだ負けてないブヒ！！' ] },
-  { c:'funba', a:'ch-p7', m:[  // 35〜39点
+  { c:'funba', m:[  // 35〜39点
     'ぐぬぬ…！まだまだ足りないブヒ！次の食事で稼ぐぞ！！',
     '焦るな、でも止まるな！一歩ずつ進むブヒ！！',
     '4割が見えてきた…！その調子だブヒ！！',
     '踏ん張れ〜〜っ！！オレと一緒に唸るブヒ！うおおお！！',
     '汗をかいた分だけ結果はついてくるブヒ！！' ] },
-  { c:'funba', a:'ch-p8', m:[  // 40〜44点
+  { c:'funba', m:[  // 40〜44点
     '4割突破！！悪くない、悪くないぞブヒ！！',
     'ここで満足するな！半分はもう目の前だブヒ！！',
     'フンフンッ！いい流れができてきたブヒ！！',
     'あと一品、タンパク質を積むんだブヒ！！',
     '折り返し目前！気合を入れ直すブヒ！！' ] },
-  { c:'funba', a:'ch-p9', m:[  // 45〜49点
+  { c:'funba', m:[  // 45〜49点
     '半分まであと一歩！！ここが正念場だブヒ！！',
     '惜しい！！50%の壁をぶち破るブヒ！！',
     'ドスンドスン！勢いはある！あとは中身だブヒ！！',
     '焦らずいこう。でも次の食事は逃すなブヒ！！',
     '半分見えた…！オレの牙にかけて届かせるブヒ！！' ] },
-  { c:'funba', a:'ch-p10', m:[ // 50〜54点
+  { c:'funba', m:[ // 50〜54点
     '半分きた！！よくやってるブヒ！でもここからだ！！',
     '50%は通過点！本番は後半戦だブヒ！！',
     'フンッ！いい汗かいてるな！その調子だブヒ！！',
     '折り返した！ゴールはまだ先だが見えてきたブヒ！！',
     '後半も飛ばしていくブヒ！！うおおおお！！' ] },
-  { c:'funba', a:'ch-p11', m:[ // 55〜59点
+  { c:'funba', m:[ // 55〜59点
     '6割が見えてきた！！このまま押し切るブヒ！！',
     'いいぞいいぞ！！着実に積み上がってるブヒ！！',
     '停滞は後退！もう一品いってみようブヒ！！',
     'オレの鼻が言っている、今日はイケる日だとブヒ！！',
     '気を抜くな！ラストスパートの準備だブヒ！！' ] },
-  { c:'funba', a:'ch-p12', m:[ // 60〜64点
+  { c:'funba', m:[ // 60〜64点
     '6割突破！！視界良好だブヒ！！',
     'その調子！あと野菜をひとつかみだブヒ！！',
     '進め進め！！ゴールの匂いがしてきたブヒ！！',
     '今日のキミはひと味違うブヒ！！',
     '7割の壁まで一直線だブヒ！！' ] },
-  { c:'funba', a:'ch-p13', m:[ // 65〜69点
+  { c:'funba', m:[ // 65〜69点
     '7割目前！！踏ん張りが効いてるブヒ！！',
     'すごいぞ！！オレの牙より鋭い集中力だブヒ！！',
     'ここまで来たら止まれない！！突き進むブヒ！！',
     'あとちょっとで「優秀」の域だブヒ！！',
     'フンヌッ！！最後のひと押しを見せてくれブヒ！！' ] },
-  { c:'funba', a:'ch-p14', m:[ // 70〜74点
+  { c:'funba', m:[ // 70〜74点
     '7割突破！！お見事だブヒ！！',
     'ゴールが見えた！！あとは駆け抜けるだけだブヒ！！',
     'この安定感、もはや職人技だブヒ！！',
     '8割まであと少し！キーラン君が待ってるブヒ！！',
     '最高の流れだ！！このまま突っ走るブヒ！！' ] },
-  { c:'funba', a:'ch-p15', m:[ // 75〜79点
+  { c:'funba', m:[ // 75〜79点
     '8割目前！！バトンを渡す準備はできてるブヒ！！',
     'あと1品、あと1歩で合格ラインだブヒ！！',
     'ここで決めろ！！ラストスパートだブヒ！！',
     'オレの役目もそろそろ終わり…あとは頼んだブヒ！！',
     '泣いても笑ってもあと数点！！食いしばれブヒ！！' ] },
-  { c:'cat', a:'ch-p16', m:[   // 80〜84点
+  { c:'cat', m:[   // 80〜84点
     '合格ラインおめでとうにゃ！！この調子だにゃ〜！',
     'やったにゃ！！8割超えは立派だにゃ！！',
     'いい一日になってるにゃ〜！あとは維持するだけにゃ！',
     'ここまで来たら余裕だにゃ！でも油断は禁物にゃよ？',
     'ボクの尻尾が喜びで揺れてるにゃ〜！！' ] },
-  { c:'cat', a:'ch-p17', m:[   // 85〜89点
+  { c:'cat', m:[   // 85〜89点
     'すごいにゃ！！ほぼ完璧に近づいてるにゃ！！',
     '9割目前！！今日のキミは輝いてるにゃ〜！',
     'るんるん♪ 見てるこっちまで嬉しくなるにゃ！',
     'あと少しで満点圏内！欲張っちゃうにゃ〜？',
     '今日の頑張り、ちゃんと見てたにゃよ！えらいにゃ！！' ] },
-  { c:'cat', a:'ch-p18', m:[   // 90〜94点
+  { c:'cat', m:[   // 90〜94点
     '9割超え！！もう芸術的だにゃ〜！！',
     'ジャンプが止まらないにゃ！！すごすぎるにゃ！！',
     'ここまでくると美しいにゃ…感動だにゃ…！！',
     '満点まであと一歩！写真に残したい一日だにゃ！',
     'キミ、ダイエットの天才かもしれないにゃ！！' ] },
-  { c:'cat', a:'ch-p19', m:[   // 95〜100点
+  { c:'cat', m:[   // 95〜100点
     'パーフェクト級だにゃ！！！今日は祝杯（お茶で）だにゃ〜！！',
     '100点満点級！！キミが誇らしいにゃ！！',
     '完璧すぎて踊りが止まらないにゃ〜〜！！🎉',
@@ -1624,10 +1682,12 @@ function renderChara() {
     <span class="chara-bd-chip">🥗 野菜 ${s.vPct}%</span>`;
   document.getElementById('chara-advice-text').textContent = charaAdvice(s);
 
-  // 5点刻みで動き＆メッセージのパターンを選ぶ（0〜4点=p0 … 95〜100点=p19）
+  // 5点刻みでメッセージ帯を選び（0〜4点=p0 … 95〜100点=p19）、
+  // ダンスはそのキャラの10種からランダムに1つ再生する
   const pat = CHARA_PATTERNS[Math.min(19, Math.floor(s.score / 5))];
   const type = CHARA_TYPES[pat.c];
   const bubble = pat.m[Math.floor(Math.random() * pat.m.length)];
+  const anim = type.anims[Math.floor(Math.random() * type.anims.length)];
 
   const stage = document.getElementById('chara-stage');
   stage.className = `chara-stage ${type.tier}`;
@@ -1635,17 +1695,20 @@ function renderChara() {
     <div class="chara-bubble">${bubble}</div>
     <div class="chara-img-wrap">
       ${type.fx}
-      <img class="chara-img ${pat.a}" src="${type.img}" alt="${type.name}" draggable="false">
+      <img class="chara-img chara-dance ${anim}" src="${type.img}" alt="${type.name}" draggable="false">
     </div>
     <div class="chara-name-tag">${type.name}</div>`;
 }
 
-// キャラをタップしたら、最初の1回だけキャラ紹介のお知らせを表示する
+// キャラをタップ：最初の1回はキャラ紹介を表示し、以降は別のダンス＆セリフで踊り直す
 const CHARA_INTRO_KEY = 'ab-diet-chara-intro-v1';
 function onCharaStageTap() {
-  if (localStorage.getItem(CHARA_INTRO_KEY)) return;
-  localStorage.setItem(CHARA_INTRO_KEY, '1');
-  document.getElementById('chara-intro-overlay').style.display = 'flex';
+  if (!localStorage.getItem(CHARA_INTRO_KEY)) {
+    localStorage.setItem(CHARA_INTRO_KEY, '1');
+    document.getElementById('chara-intro-overlay').style.display = 'flex';
+    return;
+  }
+  renderChara();
 }
 function closeCharaIntro() {
   document.getElementById('chara-intro-overlay').style.display = 'none';
