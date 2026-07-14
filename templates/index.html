@@ -240,7 +240,7 @@
     .history-unit { font-size:16px; font-weight:600; color:var(--text-muted); }
     .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:17px; line-height:1.9; }
     .history-weight { font-size:17px; font-weight:700; color:#2563EB; margin-top:3px; font-variant-numeric:tabular-nums; }
-    .history-diary { font-size:15px; font-weight:700; color:#7C5E10; background:#FFF7E0; border-radius:6px; padding:2px 8px; display:inline-block; margin-top:3px; max-width:130px; white-space:nowrap; overflow:hidden; }
+    .history-diary { font-size:15px; font-weight:700; color:#7C5E10; background:#FFF7E0; border-radius:6px; padding:2px 8px; display:inline-block; margin-top:3px; max-width:200px; text-align:left; white-space:normal; word-break:break-word; line-height:1.5; }
     .diary-card { margin-top:14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px; }
     .diary-title { font-size:17px; font-weight:800; margin-bottom:8px; }
     .diary-row { display:flex; gap:8px; }
@@ -252,7 +252,7 @@
     .hist-edit-btn { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:var(--radius-sm); width:34px; height:34px; font-size:18px; cursor:pointer; flex-shrink:0; margin-left:10px; }
     .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:var(--primary-soft); }
     .record-subnav { display:flex; gap:8px; padding:12px 16px 4px; }
-    .rsub-btn { flex:1; padding:11px 6px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:all 0.15s; box-shadow:var(--shadow-sm); }
+    .rsub-btn { flex:1; padding:11px 4px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); font-size:16px; font-weight:700; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; transition:all 0.15s; box-shadow:var(--shadow-sm); }
     .rsub-btn.active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary-dark); }
     .rsub-emoji { font-size:18px; }
     .weight-inline-row { display:flex; align-items:center; gap:10px; margin-top:12px; }
@@ -386,7 +386,7 @@
   <div class="record-subnav" id="record-subnav">
     <button class="rsub-btn active" id="rsub-food" onclick="switchRecordSub('food')"><span class="rsub-emoji">🍽️</span>食事</button>
     <button class="rsub-btn" id="rsub-exercise" onclick="switchRecordSub('exercise')"><span class="rsub-emoji">🏃</span>運動</button>
-    <button class="rsub-btn" id="rsub-weight" onclick="switchRecordSub('weight')"><span class="rsub-emoji">⚖️</span>体重</button>
+    <button class="rsub-btn" id="rsub-weight" onclick="switchRecordSub('weight')"><span class="rsub-emoji">⚖️</span>体重/日記</button>
   </div>
   <div id="past-edit-banner" style="display:none">
     <span>📝 <span id="past-edit-date"></span> の記録を編集中</span>
@@ -404,6 +404,14 @@
         <button class="weight-inline-save" onclick="saveTodayWeight()">保存</button>
       </div>
       <div id="weight-current-note" style="margin-top:10px"></div>
+    </div>
+    <div class="diary-card">
+      <div class="diary-title" id="diary-title">📝 今日のひとこと日記</div>
+      <div class="diary-row">
+        <input type="text" id="diary-input" maxlength="50" placeholder="例：飲み会で食べすぎた（50字まで）">
+        <button onclick="saveDiary()">保存</button>
+      </div>
+      <div id="diary-saved-note" class="diary-note"></div>
     </div>
   </div>
 </div>
@@ -434,8 +442,8 @@
     <input type="number" step="0.5" min="0" max="30" id="hist-edit-bcount" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal">
     <label class="setting-label" style="text-align:left;margin-top:12px">体重 (kg)</label>
     <input type="number" step="any" min="20" max="200" id="hist-edit-weight" class="weight-input" style="width:100%;font-size:20px" inputmode="decimal" placeholder="未記録">
-    <label class="setting-label" style="text-align:left;margin-top:12px">📝 ひとこと日記（30字まで）</label>
-    <input type="text" maxlength="30" id="hist-edit-diary" class="weight-input" style="width:100%;font-size:17px" placeholder="未記録">
+    <label class="setting-label" style="text-align:left;margin-top:12px">📝 ひとこと日記（50字まで）</label>
+    <input type="text" maxlength="50" id="hist-edit-diary" class="weight-input" style="width:100%;font-size:17px" placeholder="未記録">
     <button class="weight-save-btn" onclick="saveHistEdit()">保存する</button>
     <button class="btn-hist-meal-edit" id="hist-meal-edit-btn" style="display:none" onclick="enterPastEdit(_histEditDate)">✏️ この日の記録を編集（食事・運動・体重）</button>
     <button class="weight-cancel" onclick="closeHistEdit()">閉じる</button>
@@ -640,15 +648,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.17</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.18</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🛠️</span>
-        <span><b>ただいまABダイエットアプリの「修正強化キャンペーン」中です！</b><br>設定の一番下にメッセージ欄がありますので、「この食材のB判定を直してほしい」などの修正希望やご要望がありましたら、ご遠慮なくお知らせください。いただいたご意見をもとにアプリをどんどん改善していきます！</span>
+        <span style="font-size:20px;flex-shrink:0">📝</span>
+        <span>「体重」タブが<b>「体重/日記」</b>になりました。体重と一緒にその日のひとこと日記（50字まで）を記録でき、書いた日記は「履歴」からいつでも読み返せます。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">📝</span>
-        <span>食事写真に手動で文章を入力できるようになりました。写真を撮った後の補足画面で「これは鶏むね肉です」などを入力すると、食材の判定がより正確になります。</span>
+        <span style="font-size:20px;flex-shrink:0">🛠️</span>
+        <span><b>「修正強化キャンペーン」も引き続き実施中です！</b><br>設定の一番下のメッセージ欄から、修正希望やご要望をご遠慮なくお知らせください。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -1118,14 +1126,6 @@ function buildPanel(m) {
       </div>
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
-      <div class="diary-card">
-        <div class="diary-title" id="diary-title">📝 今日のひとこと日記</div>
-        <div class="diary-row">
-          <input type="text" id="diary-input" maxlength="30" placeholder="例：飲み会で食べすぎた（30字まで）">
-          <button onclick="saveDiary()">保存</button>
-        </div>
-        <div id="diary-saved-note" class="diary-note"></div>
-      </div>
     </div>
   `;
   const addEl = document.getElementById(`add-${m.id}`);
@@ -2156,7 +2156,7 @@ async function submitDailyExercise(exBCount, date) {
 }
 
 // ═══════════════════════════════════════════
-//  ひとこと日記（1日1件・30字まで）
+//  ひとこと日記（1日1件・50字まで・体重/日記タブで入力）
 // ═══════════════════════════════════════════
 const DIARY_LOG_KEY = 'ab-diet-diarylog-v1';   // { 'YYYY-MM-DD': text }
 
@@ -2179,13 +2179,6 @@ async function submitDailyDiary(text, date) {
   } catch(e) {}
 }
 
-// 履歴用：7文字以内に圧縮して表示する。
-// 空白・句読点・伸ばし棒などの記号を除いてから、収まらなければ先頭6文字＋…にする。
-function compressDiary(text) {
-  const s = String(text || '').replace(/[\s、。．，・！？!?…～ー〜「」『』()（）]/g, '');
-  return s.length <= 7 ? s : s.slice(0, 6) + '…';
-}
-
 // 日記入力欄の表示を更新（過去日編集中はその日の日記を表示）
 function renderDiaryInline() {
   const inp = document.getElementById('diary-input');
@@ -2202,7 +2195,7 @@ function renderDiaryInline() {
 function saveDiary() {
   const inp = document.getElementById('diary-input');
   if (!inp) return;
-  const text = inp.value.trim().slice(0, 30);
+  const text = inp.value.trim().slice(0, 50);
   const date = currentDate();
   setDiaryEntry(date, text);
   submitDailyDiary(text, date);
@@ -2249,9 +2242,8 @@ function showRecordSub(sub) {
     const b = document.getElementById('rsub-' + s);
     if (b) b.classList.toggle('active', s === sub);
   });
-  if (sub === 'food') renderDiaryInline();
   if (sub === 'exercise') { renderExLog(); if (!_drumDurationInited) _initDurationDrum(); }
-  if (sub === 'weight') renderWeightInline();
+  if (sub === 'weight') { renderWeightInline(); renderDiaryInline(); }
 }
 
 // ═══════════════════════════════════════════
@@ -2918,7 +2910,7 @@ async function loadHistory() {
         ? `<div class="history-weight">⚖️ ${d.weight} kg</div>`
         : '';
       const diaryHtml = d.diary
-        ? `<div class="history-diary">📝 ${esc(compressDiary(d.diary))}</div>`
+        ? `<div class="history-diary">📝 ${esc(d.diary)}</div>`
         : '';
       return `
       <div class="history-row">
@@ -3117,7 +3109,7 @@ async function saveHistEdit() {
     }
   }
   // 日記（空にすると削除）
-  const diaryText = document.getElementById('hist-edit-diary').value.trim().slice(0, 30);
+  const diaryText = document.getElementById('hist-edit-diary').value.trim().slice(0, 50);
   if (diaryText !== (getDiaryLog()[date] || '')) {
     setDiaryEntry(date, diaryText);
     tasks.push(submitDailyDiary(diaryText, date));
@@ -3178,7 +3170,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v19';
+const NOTICE_KEY = 'ab-diet-notice-v20';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';

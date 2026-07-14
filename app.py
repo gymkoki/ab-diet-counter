@@ -393,7 +393,7 @@ def init_db():
                 expires_at TEXT NOT NULL
             )
         """)
-        # ひとこと日記（食事タブで入力・履歴に表示。1日1件・30字まで）
+        # ひとこと日記（体重/日記タブで入力・履歴に表示。1日1件・50字まで）
         cur.execute("""
             CREATE TABLE IF NOT EXISTS daily_diary (
                 user_id    TEXT NOT NULL,
@@ -2596,11 +2596,11 @@ def post_daily_weight():
 
 @app.route("/api/daily-diary", methods=["POST"])
 def post_daily_diary():
-    """その日のひとこと日記を保存（30字まで）。空文字で削除。"""
+    """その日のひとこと日記を保存（50字まで）。空文字で削除。"""
     data = request.get_json(silent=True) or {}
     uid   = (data.get("user_id") or "").strip()
     date  = (data.get("date") or "").strip()
-    diary = (data.get("diary") or "").strip()[:30]
+    diary = (data.get("diary") or "").strip()[:50]
     if not uid or not date:
         return jsonify({"error": "パラメータ不足"}), 400
 
