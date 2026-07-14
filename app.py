@@ -5,6 +5,7 @@ import gzip
 import base64
 import json
 import time
+import secrets
 import datetime
 import threading
 import smtplib
@@ -384,6 +385,24 @@ def init_db():
                 value TEXT NOT NULL
             )
         """)
+        # 端末連携コード（デスクトップ⇔スマホで同じ記録を共有するための一時コード）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS link_codes (
+                code       TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        """)
+        # ひとこと日記（食事タブで入力・履歴に表示。1日1件・30字まで）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS daily_diary (
+                user_id    TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                diary      TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, date)
+            )
+        """)
         conn.commit()
         # 既存DBへの列追加（デイリーレポートの目的別集計用）。列が既にあれば無視。
         for col in ("gender", "goal"):
@@ -532,17 +551,38 @@ except Exception as _e:
 # ── 管理者認証 ──────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
 
+# 管理画面のURL。/admin だと推測されやすく会員に存在を知られてしまうため、
+# 専用のパスにする（環境変数 ADMIN_URL_PATH で変更可能）。
+# 旧 /admin 系のURLはすべて404になり、外からは存在が分からない。
+ADMIN_URL_PATH = os.environ.get("ADMIN_URL_PATH", "reall-kanri").strip("/")
+ADMIN_BASE = f"/{ADMIN_URL_PATH}"
+
 # 食事分析1回あたりの概算コスト（円）。通常解析はSonnet 4.6（入力$3/出力$15）。
 # 画像1024px・出力約1000トークンで約$0.025≒¥4。為替やモデルを変えたら調整。
 COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "4"))
 
+def _is_admin_authed():
+    """Basic認証（従来のデスクトップ向け）と X-Admin-Password ヘッダー
+    （スマホ向け・管理画面のログインフォームが付与）の両方を受け付ける。"""
+    auth = request.authorization
+    if auth and auth.password == ADMIN_PASSWORD:
+        return True
+    if request.headers.get("X-Admin-Password") == ADMIN_PASSWORD:
+        return True
+    return False
+
+
 def _admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or auth.password != ADMIN_PASSWORD:
+        if not _is_admin_authed():
+            # 管理APIは未認証だと404を返す（401だと「管理APIが存在する」こと自体が
+            # 分かってしまうため。管理画面のログインフォームは r.ok で判定するので
+            # 404でも問題なく動く）。管理ページ（バックアップ等）はBasic認証を促す。
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "not found"}), 404
             return Response(
-                "管理者認証が必要です",
+                "認証が必要です",
                 401,
                 {"WWW-Authenticate": 'Basic realm="AB Diet Admin"'},
             )
@@ -946,10 +986,20 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/admin")
-@_admin_required
+@app.route(ADMIN_BASE)
 def admin():
-    return render_template("admin.html")
+    # ページ自体は認証なしで表示し、データを返すAPI側で認証する。
+    # （スマホではBasic認証ダイアログが正しく動かないことが多いため、
+    #   ページ内のログインフォームでパスワードを入力してもらう方式）
+    # URLは推測されにくい専用パス（ADMIN_BASE）。旧 /admin は404になる。
+    return render_template("admin.html", admin_base=ADMIN_BASE)
+
+
+@app.route("/api/admin/auth-check")
+@_admin_required
+def admin_auth_check():
+    """管理画面のログインフォームがパスワードを確認するための軽量API"""
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/overview")
@@ -1442,6 +1492,109 @@ def api_profile():
     return jsonify({"ok": True})
 
 
+@app.route("/api/profile", methods=["GET"])
+def api_profile_get():
+    """端末連携時に、連携先アカウントのプロフィールを取得する。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"error": "パラメータ不足"}), 400
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT display_name, gender, goal FROM user_profile WHERE user_id={PH}",
+            (uid,)
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"display_name": None, "gender": None, "goal": None})
+    return jsonify({"display_name": row[0], "gender": row[1], "goal": row[2]})
+
+
+# ═══════════════════════════════════════════
+#  端末連携（デスクトップ⇔スマホで同じ記録を共有）
+#  片方の端末で6桁コードを発行し、もう片方で入力すると
+#  同じユーザーIDになり、記録が全端末で共有される。
+# ═══════════════════════════════════════════
+LINK_CODE_TTL_MIN = 10
+
+
+@app.route("/api/link-code", methods=["POST"])
+def api_link_code():
+    """連携コードを発行する（10分間有効）。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    now = datetime.datetime.now(JST)
+    expires = (now + datetime.timedelta(minutes=LINK_CODE_TTL_MIN)).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            # 期限切れコードを掃除
+            cur.execute(f"DELETE FROM link_codes WHERE expires_at < {PH}", (now.isoformat(),))
+            # 衝突しない6桁コードを生成
+            code = None
+            for _ in range(20):
+                candidate = f"{secrets.randbelow(1000000):06d}"
+                cur.execute(f"SELECT 1 FROM link_codes WHERE code={PH}", (candidate,))
+                if not cur.fetchone():
+                    code = candidate
+                    break
+            if not code:
+                conn.commit()
+                return jsonify({"error": "コードの発行に失敗しました。もう一度お試しください。"}), 500
+            cur.execute(
+                f"INSERT INTO link_codes (code, user_id, expires_at) VALUES ({PH}, {PH}, {PH})",
+                (code, uid, expires)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"code": code, "expires_minutes": LINK_CODE_TTL_MIN})
+
+
+@app.route("/api/link-redeem", methods=["POST"])
+def api_link_redeem():
+    """連携コードを使って、コード発行元のユーザーIDを取得する。"""
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"error": "コードを入力してください"}), 400
+
+    now_iso = datetime.datetime.now(JST).isoformat()
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT user_id, expires_at FROM link_codes WHERE code={PH}",
+            (code,)
+        )
+        row = cur.fetchone()
+        if not row or row[1] < now_iso:
+            return jsonify({"error": "コードが見つからないか、期限切れです。もう一度発行してください。"}), 404
+        uid = row[0]
+        cur.execute(
+            f"SELECT display_name, gender, goal FROM user_profile WHERE user_id={PH}",
+            (uid,)
+        )
+        prof = cur.fetchone()
+    finally:
+        conn.close()
+    return jsonify({
+        "user_id": uid,
+        "profile": {
+            "display_name": prof[0] if prof else None,
+            "gender":       prof[1] if prof else None,
+            "goal":         prof[2] if prof else None,
+        },
+    })
+
+
 @app.route("/api/admin/users/<user_id>/vip", methods=["POST"])
 @_admin_required
 def admin_set_vip(user_id):
@@ -1472,10 +1625,10 @@ def admin_set_vip(user_id):
     return jsonify({"ok": True, "is_vip": is_vip})
 
 
-@app.route("/admin/user/<user_id>")
-@_admin_required
+@app.route(f"{ADMIN_BASE}/user/<user_id>")
 def admin_user_page(user_id):
-    return render_template("admin_user.html", user_id=user_id)
+    # ダッシュボードと同様、ページは認証なしで表示しデータAPI側で認証する
+    return render_template("admin_user.html", user_id=user_id, admin_base=ADMIN_BASE)
 
 
 @app.route("/api/admin/user/<user_id>/detail")
@@ -1995,7 +2148,8 @@ def _set_setting(key: str, value: str):
         conn.close()
 
 
-@app.route("/setup-email", methods=["GET"])
+@app.route(f"{ADMIN_BASE}/setup-email", methods=["GET"])
+@_admin_required
 def setup_email_page():
     gmail_user = _get_setting("GMAIL_USER")
     report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
@@ -2013,7 +2167,7 @@ def setup_email_page():
         banner = ""
 
     if gmail_user:
-        test_btn = '<form method="POST" action="/api/send-test-report" style="margin-top:12px"><button class="btn test-btn" type="submit">📧 テストメールを今すぐ送信</button></form>'
+        test_btn = f'<form method="POST" action="{ADMIN_BASE}/send-test-report" style="margin-top:12px"><button class="btn test-btn" type="submit">📧 テストメールを今すぐ送信</button></form>'
     else:
         test_btn = '<p class="hint">※ 先に上のフォームを保存するとテスト送信ボタンが表示されます</p>'
 
@@ -2042,7 +2196,7 @@ def setup_email_page():
   <h1>📧 メールレポート設定</h1>
   <p>毎朝8時に送るレポートのGmail設定をここで行えます</p>
   {banner}
-  <form method="POST" action="/api/setup-email">
+  <form method="POST" action="{ADMIN_BASE}/setup-email-save">
     <label>送信元 Gmail アドレス</label>
     <input type="email" name="gmail_user" value="{gmail_user}" placeholder="yourname@gmail.com" required>
     <label>Gmail アプリパスワード（16桁）</label>
@@ -2065,7 +2219,8 @@ def setup_email_page():
 </body></html>"""
 
 
-@app.route("/api/setup-email", methods=["POST"])
+@app.route(f"{ADMIN_BASE}/setup-email-save", methods=["POST"])
+@_admin_required
 def api_setup_email():
     gmail_user = (request.form.get("gmail_user") or "").strip()
     gmail_pass = (request.form.get("gmail_app_password") or "").strip()
@@ -2076,24 +2231,25 @@ def api_setup_email():
     _set_setting("GMAIL_APP_PASSWORD", gmail_pass)
     _set_setting("REPORT_TO", report_to)
     from flask import redirect
-    return redirect("/setup-email?saved=1")
+    return redirect(f"{ADMIN_BASE}/setup-email?saved=1")
 
 
-@app.route("/api/send-test-report", methods=["POST"])
+@app.route(f"{ADMIN_BASE}/send-test-report", methods=["POST"])
+@_admin_required
 def api_send_test_report():
     from flask import redirect
     from urllib.parse import quote
     try:
         _send_daily_report()
-        return redirect("/setup-email?saved=sent")
+        return redirect(f"{ADMIN_BASE}/setup-email?saved=sent")
     except Exception as e:
-        return redirect(f"/setup-email?saved=err&msg={quote(str(e))}")
+        return redirect(f"{ADMIN_BASE}/setup-email?saved=err&msg={quote(str(e))}")
 
 
 # バックアップ対象のテーブル一覧（全データ）
 _BACKUP_TABLES = [
     "daily_b_count", "daily_weight", "daily_exercise", "daily_meals",
-    "user_profile", "staff_comments", "usage_log", "settings",
+    "daily_diary", "user_profile", "staff_comments", "usage_log", "settings",
 ]
 
 
@@ -2144,7 +2300,7 @@ def _send_daily_report():
     gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
     report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
     if not gmail_user or not gmail_pass or not report_to:
-        raise ValueError("メール設定が未登録です。/setup-email で設定してください。")
+        raise ValueError(f"メール設定が未登録です。{ADMIN_BASE}/setup-email で設定してください。")
 
     target_date = (datetime.datetime.now(JST) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     html_body = _build_report_html(target_date)
@@ -2199,7 +2355,7 @@ def _maybe_send_backup(force=False):
         print(f"[BACKUP][WARN] バックアップ送信に失敗: {_e}")
 
 
-@app.route("/admin/backup", methods=["GET"])
+@app.route(f"{ADMIN_BASE}/backup", methods=["GET"])
 @_admin_required
 def download_backup():
     """管理者が今すぐ全データのバックアップ(.json.gz)をダウンロードする。"""
@@ -2213,7 +2369,7 @@ def download_backup():
     )
 
 
-@app.route("/admin/restore", methods=["GET"])
+@app.route(f"{ADMIN_BASE}/restore", methods=["GET"])
 @_admin_required
 def restore_page():
     """ブラウザからバックアップファイルをアップロードして復元する画面（コマンド操作不要）。"""
@@ -2245,7 +2401,7 @@ document.getElementById('f').addEventListener('submit', async (e)=>{
   r.style.display='block'; r.textContent='復元中…';
   const fd=new FormData(); fd.append('file', fi.files[0]);
   try{
-    const res=await fetch('/admin/restore-backup',{method:'POST',body:fd});
+    const res=await fetch('restore-backup',{method:'POST',body:fd});
     const j=await res.json();
     r.textContent = res.ok ? ('✅ 復元しました\\n'+JSON.stringify(j.restored,null,2)) : ('⚠️ '+(j.error||'失敗'));
   }catch(err){ r.textContent='⚠️ 通信エラー: '+err; }
@@ -2254,7 +2410,7 @@ document.getElementById('f').addEventListener('submit', async (e)=>{
     return Response(html, mimetype="text/html")
 
 
-@app.route("/admin/restore-backup", methods=["POST"])
+@app.route(f"{ADMIN_BASE}/restore-backup", methods=["POST"])
 @_admin_required
 def restore_backup():
     """バックアップ(.json.gz か 生JSON)を受け取り、全テーブルへ復元する。
@@ -2307,6 +2463,7 @@ def restore_backup():
 
 
 @app.route("/api/setup", methods=["POST"])
+@_admin_required
 def setup():
     data = request.get_json()
     key = (data or {}).get("api_key", "").strip()
@@ -2437,6 +2594,43 @@ def post_daily_weight():
     return jsonify({"ok": True})
 
 
+@app.route("/api/daily-diary", methods=["POST"])
+def post_daily_diary():
+    """その日のひとこと日記を保存（30字まで）。空文字で削除。"""
+    data = request.get_json(silent=True) or {}
+    uid   = (data.get("user_id") or "").strip()
+    date  = (data.get("date") or "").strip()
+    diary = (data.get("diary") or "").strip()[:30]
+    if not uid or not date:
+        return jsonify({"error": "パラメータ不足"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if not diary:
+                cur.execute(f"DELETE FROM daily_diary WHERE user_id={PH} AND date={PH}", (uid, date))
+            elif USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_diary (user_id, date, diary, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET diary=%s, created_at=%s""",
+                    (uid, date, diary, ts, diary, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_diary (user_id, date, diary, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET diary=excluded.diary, created_at=excluded.created_at""",
+                    (uid, date, diary, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/daily-exercise", methods=["POST"])
 def post_daily_exercise():
     """その日の運動によるBカウント消費合計を記録（運動の保存・削除時に呼ばれる）"""
@@ -2510,17 +2704,36 @@ def get_monthly_b():
             (uid, date_start, date_end)
         )
         w_rows = cur.fetchall()
+
+        cur.execute(
+            f"""SELECT date, ex_b_count FROM daily_exercise
+               WHERE user_id={PH} AND date>={PH} AND date<={PH}
+               ORDER BY date""",
+            (uid, date_start, date_end)
+        )
+        e_rows = cur.fetchall()
+
+        cur.execute(
+            f"""SELECT date, diary FROM daily_diary
+               WHERE user_id={PH} AND date>={PH} AND date<={PH}
+               ORDER BY date""",
+            (uid, date_start, date_end)
+        )
+        d_rows = cur.fetchall()
     finally:
         conn.close()
 
     b_by_date = {r[0]: r[1] for r in b_rows}
     w_by_date = {r[0]: r[1] for r in w_rows}
+    e_by_date = {r[0]: r[1] for r in e_rows}
+    d_by_date = {r[0]: r[1] for r in d_rows}
 
     total      = sum(b_by_date.values())
     days_count = len(b_by_date)
-    all_dates  = sorted(set(b_by_date) | set(w_by_date))
+    all_dates  = sorted(set(b_by_date) | set(w_by_date) | set(e_by_date) | set(d_by_date))
     daily      = [
-        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d)}
+        {"date": d, "b_count": b_by_date.get(d), "weight": w_by_date.get(d),
+         "ex_b_count": e_by_date.get(d), "diary": d_by_date.get(d)}
         for d in all_dates
     ]
     return jsonify({
@@ -2586,14 +2799,14 @@ def get_daily_meals():
     conn = _get_conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT payload FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, date))
+        cur.execute(f"SELECT payload, created_at FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, date))
         row = cur.fetchone()
     finally:
         conn.close()
     if not row:
         return jsonify({"payload": None})
     try:
-        return jsonify({"payload": json.loads(row[0])})
+        return jsonify({"payload": json.loads(row[0]), "updated_at": row[1]})
     except Exception:
         return jsonify({"payload": None})
 

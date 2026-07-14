@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>会員詳細 | ABダイエット 管理ダッシュボード</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23FF6B35'/><text y='78' x='50' text-anchor='middle' font-size='70' font-family='sans-serif' fill='white'>管</text></svg>">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/static/admin-auth.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -130,6 +132,20 @@
     @media (max-width: 900px) {
       .charts-grid { grid-template-columns: 1fr; }
     }
+    @media (max-width: 480px) {
+      header { padding: 12px 16px; }
+      header h1 { font-size: 16px; }
+      main { padding: 12px; }
+      .card { padding: 14px 14px; }
+      /* コメント欄はスマホでは縦に並べ、入力とボタンを大きく */
+      .comment-form { flex-direction: column; }
+      .comment-form input[type=date] { width: 100%; font-size: 16px; }
+      .comment-form textarea { width: 100%; min-width: 0; font-size: 16px; min-height: 70px; }
+      .comment-form button { width: 100%; padding: 12px; font-size: 15px; }
+      .meal-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+      .bcount-summary { gap: 10px; }
+      .bcount-summary .stat { padding: 8px 12px; }
+    }
   </style>
 </head>
 <body>
@@ -140,7 +156,7 @@
 </header>
 
 <main>
-  <a href="/admin" class="back-link">← 一覧に戻る</a>
+  <a href="{{ admin_base }}" class="back-link">← 一覧に戻る</a>
 
   <div class="charts-grid">
     <div class="card">
@@ -365,7 +381,8 @@
   }
 
   document.getElementById('comment-date').value = new Date().toLocaleDateString('sv-SE');
-  load();
+  // 認証が通ってからデータを読み込む（スマホはページ内フォームでログイン）
+  adminAuth.ensure().then(load);
 </script>
 </body>
 </html>
