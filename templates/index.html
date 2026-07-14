@@ -306,7 +306,6 @@
     .floor-val { min-width:90px; text-align:center; }
     .floor-val #floor-num { font-size:38px; font-weight:800; color:var(--primary-dark); font-variant-numeric:tabular-nums; }
     .floor-unit { font-size:18px; font-weight:700; color:var(--primary-dark); margin-left:4px; }
-    .history-ex-tag { font-size:15px; font-weight:700; color:#1F7A3D; background:#EAF6EC; border-radius:6px; padding:2px 7px; display:inline-block; margin-bottom:3px; }
 
     /* ── 速度ドラム ── */
     .speed-toggle-row { display:flex; gap:8px; margin-bottom:14px; }
@@ -2964,10 +2963,6 @@ async function loadHistory() {
       return;
     }
     listEl.innerHTML = daily.map(d => {
-      const exBc = getExBCountForDate(d.date);   // ローカル＋他の端末（サーバー値）の運動を合わせて表示
-      const exHtml = exBc > 0
-        ? `<div class="history-ex-tag">🏃 運動で−${fmtCount(exBc)}</div>`
-        : '';
       const countHtml = (d.b_count != null)
         ? `<span class="history-count">B${fmtCount(d.b_count)}</span>`
         : `<span class="history-unit">記録なし</span>`;
@@ -2981,7 +2976,7 @@ async function loadHistory() {
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
         <div style="display:flex;align-items:center">
-          <div style="text-align:right">${exHtml}${countHtml}${weightHtml}${diaryHtml}</div>
+          <div style="text-align:right">${countHtml}${weightHtml}${diaryHtml}</div>
           <button class="hist-edit-btn" onclick="openHistEdit('${d.date}')" title="この日の記録を編集">✏️</button>
         </div>
       </div>`;
