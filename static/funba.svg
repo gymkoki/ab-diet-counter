@@ -1,204 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" shape-rendering="crispEdges">
-<rect x="24" y="0" width="8" height="8" fill="#5c3a1e"/>
-<rect x="56" y="0" width="8" height="8" fill="#5c3a1e"/>
-<rect x="80" y="0" width="8" height="8" fill="#5c3a1e"/>
-<rect x="112" y="0" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="24" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="40" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="48" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="56" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="72" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="80" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="88" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="104" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="112" y="8" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="24" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="32" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="40" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="48" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="56" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="64" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="72" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="80" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="88" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="96" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="104" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="112" y="16" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="24" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="40" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="48" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="56" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="64" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="72" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="80" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="88" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="96" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="24" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="24" width="8" height="8" fill="#5c3a1e"/>
-<rect x="0" y="32" width="8" height="8" fill="#4fc3f7"/>
-<rect x="8" y="32" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="32" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="32" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="40" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="48" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="56" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="64" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="72" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="80" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="88" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="96" y="32" width="8" height="8" fill="#ffd93b"/>
-<rect x="104" y="32" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="32" width="8" height="8" fill="#5c3a1e"/>
-<rect x="120" y="32" width="8" height="8" fill="#4fc3f7"/>
-<rect x="8" y="40" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="40" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="32" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="40" y="40" width="8" height="8" fill="#d9c9a0"/>
-<rect x="48" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="56" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="64" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="72" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="80" y="40" width="8" height="8" fill="#d9c9a0"/>
-<rect x="88" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="96" y="40" width="8" height="8" fill="#ffd93b"/>
-<rect x="104" y="40" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="40" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="48" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="40" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="48" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="56" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="64" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="72" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="80" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="88" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="96" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="48" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="48" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="56" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="56" width="8" height="8" fill="#1c1c1c"/>
-<rect x="32" y="56" width="8" height="8" fill="#1c1c1c"/>
-<rect x="40" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="48" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="56" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="64" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="72" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="80" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="88" y="56" width="8" height="8" fill="#1c1c1c"/>
-<rect x="96" y="56" width="8" height="8" fill="#1c1c1c"/>
-<rect x="104" y="56" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="56" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="64" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="64" width="8" height="8" fill="#1c1c1c"/>
-<rect x="40" y="64" width="8" height="8" fill="#1c1c1c"/>
-<rect x="48" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="56" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="64" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="72" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="80" y="64" width="8" height="8" fill="#1c1c1c"/>
-<rect x="88" y="64" width="8" height="8" fill="#1c1c1c"/>
-<rect x="96" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="64" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="64" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="72" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="72" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="72" width="8" height="8" fill="#e5766a"/>
-<rect x="32" y="72" width="8" height="8" fill="#8b5a2b"/>
-<rect x="40" y="72" width="8" height="8" fill="#f08f7e"/>
-<rect x="48" y="72" width="8" height="8" fill="#f08f7e"/>
-<rect x="56" y="72" width="8" height="8" fill="#f08f7e"/>
-<rect x="64" y="72" width="8" height="8" fill="#f08f7e"/>
-<rect x="72" y="72" width="8" height="8" fill="#f08f7e"/>
-<rect x="80" y="72" width="8" height="8" fill="#f08f7e"/>
-<rect x="88" y="72" width="8" height="8" fill="#8b5a2b"/>
-<rect x="96" y="72" width="8" height="8" fill="#e5766a"/>
-<rect x="104" y="72" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="72" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="80" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="80" width="8" height="8" fill="#8b5a2b"/>
-<rect x="24" y="80" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="80" width="8" height="8" fill="#f08f7e"/>
-<rect x="40" y="80" width="8" height="8" fill="#f08f7e"/>
-<rect x="48" y="80" width="8" height="8" fill="#4a1f16"/>
-<rect x="56" y="80" width="8" height="8" fill="#f08f7e"/>
-<rect x="64" y="80" width="8" height="8" fill="#f08f7e"/>
-<rect x="72" y="80" width="8" height="8" fill="#4a1f16"/>
-<rect x="80" y="80" width="8" height="8" fill="#f08f7e"/>
-<rect x="88" y="80" width="8" height="8" fill="#f08f7e"/>
-<rect x="96" y="80" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="80" width="8" height="8" fill="#8b5a2b"/>
-<rect x="112" y="80" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="88" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="88" width="8" height="8" fill="#ffffff"/>
-<rect x="24" y="88" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="40" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="48" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="56" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="64" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="72" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="80" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="88" y="88" width="8" height="8" fill="#f08f7e"/>
-<rect x="96" y="88" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="88" width="8" height="8" fill="#ffffff"/>
-<rect x="112" y="88" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="96" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="96" width="8" height="8" fill="#ffffff"/>
-<rect x="24" y="96" width="8" height="8" fill="#ffffff"/>
-<rect x="32" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="40" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="48" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="56" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="64" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="72" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="80" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="88" y="96" width="8" height="8" fill="#fdf6ec"/>
-<rect x="96" y="96" width="8" height="8" fill="#ffffff"/>
-<rect x="104" y="96" width="8" height="8" fill="#ffffff"/>
-<rect x="112" y="96" width="8" height="8" fill="#5c3a1e"/>
-<rect x="8" y="104" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="104" width="8" height="8" fill="#5c3a1e"/>
-<rect x="24" y="104" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="40" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="48" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="56" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="64" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="72" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="80" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="88" y="104" width="8" height="8" fill="#fdf6ec"/>
-<rect x="96" y="104" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="104" width="8" height="8" fill="#5c3a1e"/>
-<rect x="112" y="104" width="8" height="8" fill="#5c3a1e"/>
-<rect x="16" y="112" width="8" height="8" fill="#5c3a1e"/>
-<rect x="24" y="112" width="8" height="8" fill="#8b5a2b"/>
-<rect x="32" y="112" width="8" height="8" fill="#8b5a2b"/>
-<rect x="40" y="112" width="8" height="8" fill="#5c3a1e"/>
-<rect x="48" y="112" width="8" height="8" fill="#5c3a1e"/>
-<rect x="56" y="112" width="8" height="8" fill="#8b5a2b"/>
-<rect x="64" y="112" width="8" height="8" fill="#8b5a2b"/>
-<rect x="72" y="112" width="8" height="8" fill="#5c3a1e"/>
-<rect x="80" y="112" width="8" height="8" fill="#5c3a1e"/>
-<rect x="88" y="112" width="8" height="8" fill="#8b5a2b"/>
-<rect x="96" y="112" width="8" height="8" fill="#8b5a2b"/>
-<rect x="104" y="112" width="8" height="8" fill="#5c3a1e"/>
-<rect x="24" y="120" width="8" height="8" fill="#5c3a1e"/>
-<rect x="32" y="120" width="8" height="8" fill="#5c3a1e"/>
-<rect x="56" y="120" width="8" height="8" fill="#5c3a1e"/>
-<rect x="64" y="120" width="8" height="8" fill="#5c3a1e"/>
-<rect x="88" y="120" width="8" height="8" fill="#5c3a1e"/>
-<rect x="96" y="120" width="8" height="8" fill="#5c3a1e"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- 成果フンバ（滑らかイラスト版・歯を食いしばって踏ん張るイノシシ） -->
+  <!-- 前脚（踏ん張り） -->
+  <path d="M52 158 L46 190 Q46 195 52 195 L66 195 Q71 195 70 189 L68 160 Z" fill="#7A4A26" stroke="#3A2417" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M148 158 L154 190 Q154 195 148 195 L134 195 Q129 195 130 189 L132 160 Z" fill="#7A4A26" stroke="#3A2417" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- たてがみ（ギザギザ） -->
+  <path d="M30 92 Q22 60 40 44 L46 26 L58 40 L68 20 L78 36 L90 14 L100 32 L110 14 L122 36 L132 20 L142 40 L154 26 L160 44 Q178 60 170 92 Z"
+        fill="#6B4423" stroke="#3A2417" stroke-width="5" stroke-linejoin="round"/>
+  <!-- 顔 -->
+  <path d="M32 96 Q32 48 100 48 Q168 48 168 96 Q168 168 100 168 Q32 168 32 96 Z"
+        fill="#9A6434" stroke="#3A2417" stroke-width="5"/>
+  <!-- 耳 -->
+  <path d="M34 60 Q24 38 44 32 Q56 30 58 44 Q44 50 40 62 Z" fill="#8A5A2E" stroke="#3A2417" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M166 60 Q176 38 156 32 Q144 30 142 44 Q156 50 160 62 Z" fill="#8A5A2E" stroke="#3A2417" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- ハチマキ（黄色・右に結び目） -->
+  <path d="M34 78 Q100 62 166 78 L166 96 Q100 80 34 96 Z" fill="#FFD23E" stroke="#3A2417" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M166 82 Q184 74 190 86 Q182 88 178 96 Q188 98 184 108 Q172 106 166 96 Z" fill="#FFD23E" stroke="#3A2417" stroke-width="4" stroke-linejoin="round"/>
+  <!-- 目（ぎゅっと食いしばり ＞＜） -->
+  <path d="M60 104 L78 110 L60 118" fill="none" stroke="#1C1C1C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M140 104 L122 110 L140 118" fill="none" stroke="#1C1C1C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 眉（力み） -->
+  <path d="M56 94 L82 99" stroke="#3A2417" stroke-width="5" stroke-linecap="round"/>
+  <path d="M144 94 L118 99" stroke="#3A2417" stroke-width="5" stroke-linecap="round"/>
+  <!-- ほっぺ -->
+  <circle cx="48" cy="126" r="9" fill="#E5766A" opacity="0.85"/>
+  <circle cx="152" cy="126" r="9" fill="#E5766A" opacity="0.85"/>
+  <!-- 鼻（ピンクの豚鼻） -->
+  <ellipse cx="100" cy="128" rx="27" ry="17" fill="#EE9180" stroke="#3A2417" stroke-width="4.5"/>
+  <ellipse cx="91" cy="128" rx="4.5" ry="6" fill="#5A2418"/>
+  <ellipse cx="109" cy="128" rx="4.5" ry="6" fill="#5A2418"/>
+  <!-- 食いしばった歯 -->
+  <path d="M64 148 Q100 142 136 148 L134 162 Q100 156 66 162 Z" fill="#FDF6EC" stroke="#3A2417" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M78 146 L78 159 M92 145 L92 157 M108 145 L108 157 M122 146 L122 159" stroke="#3A2417" stroke-width="2.5"/>
+  <!-- 牙（左右・上向き） -->
+  <path d="M58 150 Q50 138 56 128 Q64 136 68 148 Z" fill="#FFFFFF" stroke="#3A2417" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M142 150 Q150 138 144 128 Q136 136 132 148 Z" fill="#FFFFFF" stroke="#3A2417" stroke-width="4" stroke-linejoin="round"/>
+  <!-- 汗 -->
+  <path d="M26 74 Q22 82 26 86 Q32 84 30 76 Q28 72 26 74 Z" fill="#4FC3F7"/>
+  <path d="M176 62 Q172 70 176 74 Q182 72 180 64 Q178 60 176 62 Z" fill="#4FC3F7"/>
+  <path d="M186 118 Q182 126 186 130 Q192 128 190 120 Q188 116 186 118 Z" fill="#4FC3F7"/>
 </svg>
