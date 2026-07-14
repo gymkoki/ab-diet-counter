@@ -35,6 +35,9 @@
 
     /* ── ヘッダー ── */
     header { background: linear-gradient(165deg, #FF7A47 0%, #F1500E 100%); color: white; padding: 12px 16px 0; text-align: center; }
+    /* 履歴・キャラ・設定ではB合計などの中身を隠し、上部に細いオレンジのラインだけ残す */
+    header.compact { padding: 0; height: 14px; }
+    header.compact > * { display: none; }
     .header-title { font-size:18px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; padding-bottom: 10px; opacity: 0.95; }
 
     /* ── Bカウント合計バー ── */
@@ -457,8 +460,6 @@
         border-radius: 0 0 22px 22px;
       }
       #view-history, #view-chara, #view-settings { min-height: 60vh; }
-      /* 履歴・設定はヘッダー非表示のため単独カードとして全周を角丸に */
-      #view-history, #view-settings { border-radius: 22px; margin-top: 24px; }
       /* 運動ビューは記録ビューの直下に続けて表示されるため、
          上に少し重ねてつなぎ目（角丸のすき間）を隠し、1枚のカードに見せる */
       #view-exercise { margin-top: -24px; padding-top: 24px; }
@@ -2587,10 +2588,10 @@ function switchView(view) {
     const btn = document.getElementById('nav-' + v);
     if (btn) btn.classList.toggle('active', v === view);
   });
-  // オレンジのヘッダー（今日のB合計〜推定野菜）は記録タブのみ表示。
-  // 履歴・設定・キャラでは非表示にし、キャラは「今日のダイエット進捗」から始まる。
+  // 履歴・キャラ・設定ではヘッダーの中身（今日のB合計〜推定野菜）を隠し、
+  // 細いオレンジのラインだけ残してアプリの体裁を保つ
   const hdr = document.querySelector('header');
-  if (hdr) hdr.style.display = (view === 'main') ? '' : 'none';
+  if (hdr) hdr.classList.toggle('compact', view !== 'main');
   if (view === 'main') {
     showRecordSub(_recordSub);
   } else {
