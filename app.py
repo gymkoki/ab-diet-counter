@@ -1652,12 +1652,11 @@ def status():
 
 @app.route("/ping")
 def ping():
-    """Render無料プランのスリープ防止用エンドポイント。毎朝8時にレポートメール、
-    1日1回データバックアップメールを送信する。"""
+    """Render無料プランのスリープ防止用エンドポイント。1日1回データバックアップメールを送信する。
+
+    ※ 毎朝8時のアプリ内デイリーレポート（表形式・グラフなしの簡易版）は廃止した。
+    　 デイリーレポートは GitHub Actions（report/send_report.py・グラフ付きの詳細版）に一本化する。"""
     now = datetime.datetime.now(JST)
-    if now.hour == 8 and _last_report_sent.get("date") != now.date():
-        _last_report_sent["date"] = now.date()
-        threading.Thread(target=_send_daily_report, daemon=True).start()
     # 1日1回、全データのバックアップをメール送信（多重送信は関数内で抑止）
     if _backup_check.get("date") != now.date():
         _backup_check["date"] = now.date()
