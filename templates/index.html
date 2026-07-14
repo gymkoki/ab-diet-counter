@@ -151,6 +151,10 @@
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-btn { width:100%; margin:8px 0 4px; padding:12px; border:1px dashed #CFC9C2; border-radius:var(--radius-md); background:var(--surface); font-size:17px; font-weight:700; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
     .text-entry-btn:active { border-color:var(--indigo); color:var(--indigo); background:var(--indigo-soft); }
+    .add-menu { display:flex; gap:8px; margin:8px 0 4px; }
+    .add-menu-opt { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:16px 8px; border:1.5px solid var(--border); border-radius:var(--radius-md); background:var(--surface); font-size:17px; font-weight:700; color:#5C564F; cursor:pointer; transition:all 0.15s; box-shadow:var(--shadow-sm); }
+    .add-menu-opt:active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
+    .add-menu-ic { font-size:24px; line-height:1; }
     .text-entry-form { margin:4px 0 8px; padding:14px; background:var(--indigo-soft); border:1px solid var(--indigo-line); border-radius:var(--radius-md); }
     .text-entry-textarea { width:100%; min-height:84px; padding:11px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; resize:vertical; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
     .text-entry-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
@@ -159,6 +163,7 @@
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:var(--indigo-soft); border-radius:var(--radius-sm); padding:12px 14px; font-size:17px; line-height:1.6; color:#44449B; margin-bottom:12px; }
     .oil-btn { display:block; margin:8px auto 2px; padding:10px 20px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-size:17px; font-weight:700; color:#5C564F; cursor:pointer; transition:all 0.15s; box-shadow:var(--shadow-sm); }
+    .oil-btn-inline { width:100%; margin-top:12px; }
     .food-action-row { display:flex; gap:8px; margin:8px 0 2px; }
     .food-action-row .oil-btn { flex:1; margin:0; padding:11px 8px; font-size:17px; }
     .copy-item { display:flex; align-items:center; gap:10px; padding:9px; border:1px solid var(--border); border-radius:var(--radius-md); margin-bottom:8px; cursor:pointer; background:var(--surface); text-align:left; width:100%; transition:all 0.15s; }
@@ -449,17 +454,6 @@
 <!-- コピーご飯 追加用の隠しファイル入力 -->
 <input type="file" id="copy-file-input" accept="image/*" style="display:none" onchange="onCopyFileChange(this)">
 
-<!-- 写真への補足入力モーダル（解析前に任意で補足を付ける） -->
-<div id="photo-note-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px" onclick="confirmPhotoNote(false)">
-  <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:360px;text-align:left">
-    <h3 style="text-align:center">📝 写真に補足しますか？（任意）</h3>
-    <img id="photo-note-img" alt="" style="width:100%;max-height:150px;object-fit:cover;border-radius:12px;margin-bottom:12px">
-    <p style="font-size:14px;color:var(--text-muted);line-height:1.7;margin-bottom:10px">写真だけでは分かりにくい食材名や量があれば入力してください。補足を最優先してAIが計算します。</p>
-    <textarea id="photo-note-text" maxlength="500" placeholder="例：これは鶏むね肉です／ご飯は少なめ（100g）／ドレッシングはノンオイル" style="width:100%;min-height:84px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;font-size:16px;font-family:inherit;resize:vertical;outline:none"></textarea>
-    <button class="weight-save-btn" onclick="confirmPhotoNote(true)">補足を付けて解析する</button>
-    <button class="weight-cancel" onclick="confirmPhotoNote(false)">補足なしでそのまま解析</button>
-  </div>
-</div>
 
 <!-- 運動ビュー -->
 <div id="view-exercise" style="display:none;padding-bottom:80px">
@@ -646,11 +640,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.16</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.17</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">✉️</span>
-        <span>「修正希望・ご要望」を送れるようになりました。設定の一番下の欄から、アプリへのご要望や「この食材のB判定を直してほしい」などを運営に送信できます。ぜひお聞かせください！</span>
+        <span style="font-size:20px;flex-shrink:0">🛠️</span>
+        <span><b>ただいまABダイエットアプリの「修正強化キャンペーン」中です！</b><br>設定の一番下にメッセージ欄がありますので、「この食材のB判定を直してほしい」などの修正希望やご要望がありましたら、ご遠慮なくお知らせください。いただいたご意見をもとにアプリをどんどん改善していきます！</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">📝</span>
+        <span>食事写真に手動で文章を入力できるようになりました。写真を撮った後の補足画面で「これは鶏むね肉です」などを入力すると、食材の判定がより正確になります。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -682,6 +680,27 @@ let _photoMealId = null;
 function openFileInput(mealId) {
   _photoMealId = mealId;
   document.getElementById('input-file').click();
+}
+
+// 「写真/文章を追加」を押すと、写真か文章かを選べるメニューを開閉する
+function toggleAddMenu(mealId) {
+  const menu = document.getElementById(`addmenu-${mealId}`);
+  if (!menu) return;
+  const opening = getComputedStyle(menu).display === 'none';
+  menu.style.display = opening ? 'flex' : 'none';
+  // メニューを開くときは文章入力フォームは閉じておく
+  if (opening) { const f = document.getElementById(`textform-${mealId}`); if (f) f.style.display = 'none'; }
+}
+function chooseAddPhoto(mealId) {
+  const menu = document.getElementById(`addmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  openFileInput(mealId);
+}
+function chooseAddText(mealId) {
+  const menu = document.getElementById(`addmenu-${mealId}`);
+  if (menu) menu.style.display = 'none';
+  const f = document.getElementById(`textform-${mealId}`);
+  if (f) { f.style.display = 'block'; document.getElementById(`textinput-${mealId}`)?.focus(); }
 }
 function onHiddenInputChange(input) {
   const files = [...input.files];
@@ -1072,27 +1091,30 @@ function buildPanel(m) {
   panel.innerHTML = `
     <div class="container">
       <div id="strip-${m.id}" class="meal-strip"></div>
-      <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
-        <div class="meal-add-icon">📷</div>
-        <h3>写真を追加</h3>
+      <div class="meal-add" id="add-${m.id}" onclick="toggleAddMenu('${m.id}')">
+        <div class="meal-add-icon">📷✏️</div>
+        <h3>写真/文章を追加</h3>
       </div>
-      <button class="text-entry-btn" onclick="toggleTextForm('${m.id}')">✏️ 文章で入力</button>
+      <div class="add-menu" id="addmenu-${m.id}" style="display:none">
+        <button class="add-menu-opt" onclick="chooseAddText('${m.id}')"><span class="add-menu-ic">✏️</span>文章で入力</button>
+        <button class="add-menu-opt" onclick="chooseAddPhoto('${m.id}')"><span class="add-menu-ic">📷</span>写真を追加</button>
+      </div>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
+        <button class="oil-btn oil-btn-inline" onclick="toggleOilMenu('${m.id}')">${onigiriIcon(18)} Bを手動追加（任意）</button>
+        <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
+          <div class="oil-menu-row">
+            <button class="oil-opt" id="oilopt-${m.id}-0" onclick="selectOil('${m.id}',0)">B0.5</button>
+            <button class="oil-opt" id="oilopt-${m.id}-1" onclick="selectOil('${m.id}',1)">B1</button>
+            <button class="oil-opt" id="oilopt-${m.id}-2" onclick="selectOil('${m.id}',2)">B2</button>
+          </div>
+          <input type="text" class="oil-note-input" id="oilnote-${m.id}" placeholder="内訳（任意）例：おにぎり1個" maxlength="60">
+          <button class="btn-oil-save" id="oilsave-${m.id}" onclick="saveOil('${m.id}')" disabled>保存</button>
+        </div>
       </div>
       <div class="food-action-row">
-        <button class="oil-btn" onclick="toggleOilMenu('${m.id}')">${onigiriIcon(18)} Bを手動追加</button>
         <button class="oil-btn" onclick="openCopyPicker('${m.id}')">🍚 コピーご飯を追加</button>
-      </div>
-      <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
-        <div class="oil-menu-row">
-          <button class="oil-opt" id="oilopt-${m.id}-0" onclick="selectOil('${m.id}',0)">B0.5</button>
-          <button class="oil-opt" id="oilopt-${m.id}-1" onclick="selectOil('${m.id}',1)">B1</button>
-          <button class="oil-opt" id="oilopt-${m.id}-2" onclick="selectOil('${m.id}',2)">B2</button>
-        </div>
-        <input type="text" class="oil-note-input" id="oilnote-${m.id}" placeholder="内訳（任意）例：おにぎり1個" maxlength="60">
-        <button class="btn-oil-save" id="oilsave-${m.id}" onclick="saveOil('${m.id}')" disabled>保存</button>
       </div>
       <div class="meal-error" id="err-${m.id}"></div>
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
@@ -1305,25 +1327,6 @@ async function doReset() {
 // ═══════════════════════════════════════════
 //  File handling
 // ═══════════════════════════════════════════
-// 写真への補足入力（解析前・任意）。入力文字列を resolve で返す（スキップ時は空文字）
-let _photoNoteResolve = null;
-function askPhotoNote(thumbSrc) {
-  return new Promise(resolve => {
-    _photoNoteResolve = resolve;
-    const img = document.getElementById('photo-note-img');
-    if (thumbSrc) { img.src = thumbSrc; img.style.display = ''; } else { img.style.display = 'none'; }
-    document.getElementById('photo-note-text').value = '';
-    document.getElementById('photo-note-overlay').style.display = 'flex';
-  });
-}
-function confirmPhotoNote(withNote) {
-  const t = withNote ? (document.getElementById('photo-note-text').value || '').trim() : '';
-  document.getElementById('photo-note-overlay').style.display = 'none';
-  const r = _photoNoteResolve;
-  _photoNoteResolve = null;
-  if (r) r(t);
-}
-
 async function addFiles(mealId, files) {
   for (const file of files) {
     const id = nextItemId();
@@ -1335,12 +1338,7 @@ async function addFiles(mealId, files) {
     item.previewSrc = thumb;
     renderStrip(mealId);
     saveState();   // 解析前にサムネを保存（計算中に再読み込みされても写真が消えないように）
-    // 1枚だけ追加したときは、解析前に任意の補足を入力できるようにする
-    if (files.length === 1) {
-      item.note = await askPhotoNote(thumb);
-      saveState();   // 補足も保存
-    }
-    analyzeItem(mealId, id);
+    analyzeItem(mealId, id);   // 撮影したらそのまま解析する
   }
 }
 
@@ -1418,33 +1416,7 @@ function saveOil(mealId) {
   renderResults(mealId);
   updateDailyTotal();
   saveState();
-  // 内訳メモがあれば、その文章から推定タンパク質・野菜を裏で見積もって付与する
-  // （Bカウントはユーザーが選んだ値のまま維持する）
-  if (note) _estimateMacrosForManual(mealId, item, note);
-}
-
-// 手動追加の内訳メモから推定タンパク質(g)・野菜(g)を見積もり、その項目に付与する。
-// Bカウントは変更しない。失敗しても無視（手動追加はそのまま残る）。
-async function _estimateMacrosForManual(mealId, item, note) {
-  try {
-    const fd = new FormData();
-    fd.append('text', note);
-    fd.append('user_id', USER_ID);
-    const p = getProfile();
-    if (p) { if (p.gender) fd.append('gender', p.gender); if (p.goal) fd.append('goal', p.goal); }
-    const res = await fetch('/analyze-text', { method:'POST', body:fd });
-    const data = await res.json();
-    if (!data || data.error || !item.result) return;
-    const pr = (typeof data.total_protein_g === 'number')
-      ? data.total_protein_g : (data.foods||[]).reduce((s,f)=>s+(f.protein_g||0),0);
-    const vg = (typeof data.total_veg_g === 'number')
-      ? data.total_veg_g : (data.foods||[]).reduce((s,f)=>s+(f.veg_g||0),0);
-    item.result.total_protein_g = pr;
-    item.result.total_veg_g = vg;
-    renderResults(mealId);
-    updateDailyTotal();
-    saveState();
-  } catch(e) {}
+  // 手動でBを選んだときは栄養計算（AI解析）は行わず、選んだBをそのまま反映する。
 }
 
 // ═══════════════════════════════════════════
@@ -1753,7 +1725,7 @@ function renderResults(mealId) {
         <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
         <div class="recalc-form" id="recalc-form-${mealId}-${item.id}">
           <label>気になる点・訂正を入力（より高精度なAIで計算し直します）</label>
-          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：このヨーグルトは無脂肪ヨーグルトなのでA食材です。"></textarea>
+          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：これは小鉢の中は豆腐ではなくヨーグルトです"></textarea>
           <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
       </div>
@@ -1961,6 +1933,8 @@ async function reanalyzeItem(mealId, itemId) {
   const formData = new FormData();
   formData.append('image', blob, 'image.jpg');
   formData.append('correction', correction);
+  // 前回の解析結果を渡し、指摘された食材だけを直して他はそのまま維持させる
+  if (item.result) formData.append('previous', JSON.stringify(item.result));
   formData.append('user_id', USER_ID);
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
@@ -3204,7 +3178,7 @@ function maybeShowHomeBanner() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v18';
+const NOTICE_KEY = 'ab-diet-notice-v19';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
