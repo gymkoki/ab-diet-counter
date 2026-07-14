@@ -1088,9 +1088,9 @@ function buildPanel(m) {
       <div id="strip-${m.id}" class="meal-strip"></div>
       <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
         <div class="meal-add-icon">📷</div>
-        <h3>写真を撮影して追加</h3>
+        <h3>写真を追加</h3>
       </div>
-      <button class="text-add-btn" onclick="toggleTextForm('${m.id}')"><span class="add-menu-ic">✏️</span>文章で入力・Bを手動追加</button>
+      <button class="text-add-btn" onclick="toggleTextForm('${m.id}')"><span class="add-menu-ic">✏️</span>手動追加</button>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
