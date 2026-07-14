@@ -352,6 +352,63 @@
     #lightbox.show { display:flex; }
     #lightbox img { max-width:96vw; max-height:92vh; object-fit:contain; border-radius:8px; cursor:default; }
     #lightbox-close { position:absolute; top:16px; right:16px; width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.14); color:white; border:none; font-size:19px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+
+    /* ── パソコン（ワイド画面）用レイアウト ──
+       スマホ向けの1カラムUIが画面いっぱいに引き伸ばされると見にくいため、
+       広い画面では中央の適度な幅のカラムにアプリ全体を収める。 */
+    @media (min-width: 900px) {
+      body {
+        background: #EDE8E2 radial-gradient(1100px 500px at 50% -180px, #FFE3D2 0%, #EDE8E2 65%);
+        padding-bottom: 96px;
+      }
+      /* アプリ本体を中央カラムに（ヘッダー・各画面・お知らせバナー） */
+      header,
+      #warmup-banner,
+      #view-main, #view-history, #view-exercise, #view-settings {
+        max-width: 720px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      header {
+        margin-top: 24px;
+        border-radius: 22px 22px 0 0;
+      }
+      #view-main, #view-history, #view-exercise, #view-settings {
+        background: var(--bg);
+        box-shadow: 0 24px 60px rgba(33,29,26,0.10);
+        border-radius: 0 0 22px 22px;
+      }
+      #view-history, #view-settings { min-height: 60vh; }
+      /* 運動ビューは記録ビューの直下に続けて表示されるため、
+         上に少し重ねてつなぎ目（角丸のすき間）を隠し、1枚のカードに見せる */
+      #view-exercise { margin-top: -24px; padding-top: 24px; }
+      /* 下部ナビも中央カラム幅に合わせる */
+      .bnav {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        width: 100%;
+        max-width: 720px;
+        border: 1px solid var(--border);
+        border-bottom: none;
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -6px 24px rgba(33,29,26,0.08);
+      }
+      .bnav-btn { padding: 11px 0 9px; }
+      /* ホーム画面追加バナーも中央に */
+      #home-banner {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        width: calc(100% - 24px);
+        max-width: 696px;
+        bottom: 88px;
+      }
+      /* 運動種目はスペースを活かして3列に */
+      .chip-grid { grid-template-columns: repeat(3, 1fr); }
+      /* 写真サムネ・食事写真はほどよいサイズに */
+      .result-photo { max-width: 340px; }
+    }
   </style>
 </head>
 <body>
