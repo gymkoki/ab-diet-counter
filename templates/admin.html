@@ -231,10 +231,10 @@
       <div class="kpi-sub">累計</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-icon">📅</div>
-      <div class="kpi-label">月間アクティブ</div>
-      <div class="kpi-value" id="kpi-mau">-</div>
-      <div class="kpi-sub">直近30日</div>
+      <div class="kpi-icon">👤</div>
+      <div class="kpi-label">今日のアクティブ</div>
+      <div class="kpi-value" id="kpi-active-today">-</div>
+      <div class="kpi-sub" id="kpi-active-yesterday">前日 -</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-icon">📸</div>
@@ -337,7 +337,8 @@
     if (!r.ok) throw new Error('overview');
     const d = await r.json();
     document.getElementById('kpi-total').textContent = d.total_users ?? '-';
-    document.getElementById('kpi-mau').textContent   = d.mau ?? '-';
+    document.getElementById('kpi-active-today').textContent = d.today_active ?? '-';
+    document.getElementById('kpi-active-yesterday').textContent = `前日 ${d.yesterday_active ?? '-'}人`;
     document.getElementById('kpi-today').textContent = d.today_analyses ?? '-';
     document.getElementById('kpi-cost').textContent  =
       d.est_cost_today_jpy != null ? `¥${d.est_cost_today_jpy.toLocaleString()}` : '-';

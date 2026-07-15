@@ -1027,7 +1027,7 @@ def admin_auth_check():
 def admin_overview():
     now = datetime.datetime.now(JST)
     today_start = now.strftime("%Y-%m-%dT00:00:00")
-    month_start_ts = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%dT00:00:00")
+    yesterday_start = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
     month_start_dt = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
 
     conn = _get_conn()
@@ -1036,11 +1036,18 @@ def admin_overview():
         cur.execute("SELECT COUNT(DISTINCT user_id) FROM usage_log")
         total_users = cur.fetchone()[0] or 0
 
+        # 今日・前日のアクティブユーザー数（その日に1回でも解析した人数）
         cur.execute(
             f"SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at >= {PH}",
-            (month_start_ts,),
+            (today_start,),
         )
-        mau = cur.fetchone()[0] or 0
+        today_active = cur.fetchone()[0] or 0
+
+        cur.execute(
+            f"SELECT COUNT(DISTINCT user_id) FROM usage_log WHERE created_at >= {PH} AND created_at < {PH}",
+            (yesterday_start, today_start),
+        )
+        yesterday_active = cur.fetchone()[0] or 0
 
         cur.execute(
             f"SELECT COUNT(*) FROM usage_log WHERE created_at >= {PH}",
@@ -1058,7 +1065,8 @@ def admin_overview():
 
     return jsonify({
         "total_users": total_users,
-        "mau": mau,
+        "today_active": today_active,
+        "yesterday_active": yesterday_active,
         "today_analyses": today_analyses,
         "avg_b_count": round(float(avg_b_row), 2) if avg_b_row is not None else None,
         "cost_per_analysis_jpy": COST_PER_ANALYSIS_JPY,
