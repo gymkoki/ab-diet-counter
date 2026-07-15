@@ -1494,8 +1494,10 @@ def admin_weight_insights():
         else:
             goals[key] = {"users": 0, "avg_change": None, "lost": 0}
 
-    # Bカウント×体重変化の相関（ピアソンのr）。両方のデータがある会員のみ。
-    pts = [u for u in users if u["avg_b"] is not None]
+    # Bカウント×体重変化の相関（ピアソンのr）。
+    # 減量目的の会員だけを対象にする（維持・増量の人は体重を減らす意図がなく、
+    # 相関を薄めてしまうため、散布図からも除外する）。
+    pts = [u for u in users if u["avg_b"] is not None and u["goal"] == "cut"]
     corr = None
     if len(pts) >= 3:
         xs = [u["avg_b"] for u in pts]
