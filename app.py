@@ -531,6 +531,7 @@ def _save_user_goal(uid, gender, goal):
 
 
 _backfill_done = False
+_backfill_started = False  # バックグラウンド復元を二重起動しないためのフラグ
 
 
 def _parse_meal_payload_total(payload):
@@ -3123,9 +3124,13 @@ def get_monthly_b():
     if not uid:
         return jsonify({"total": 0, "days_count": 0, "daily": [], "date_start": "", "date_end": ""})
 
-    # 起動時にPostgreSQLへ繋がっていなかった場合でも、履歴表示時に一度だけ復元を試みる
-    if not _backfill_done and USE_PG:
-        backfill_bcount_from_meals()
+    # 起動時にPostgreSQLへ繋がっていなかった場合の復元（全ユーザー分の重い処理）は
+    # リクエストをブロックせず、バックグラウンドで一度だけ実行する。
+    # （同期実行すると、ワーカー再起動直後の初回履歴表示が数秒固まる原因になる）
+    global _backfill_started
+    if USE_PG and not _backfill_done and not _backfill_started:
+        _backfill_started = True
+        threading.Thread(target=backfill_bcount_from_meals, daemon=True).start()
 
     now = datetime.datetime.now(JST)
     date_end = now.strftime("%Y-%m-%d")
