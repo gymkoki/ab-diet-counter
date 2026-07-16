@@ -2,6 +2,12 @@ services:
   - type: web
     name: ab-diet-counter
     runtime: python
+    # インスタンスのメモリ増強：Standard = 2GB RAM / 1 CPU（約$25/月）。
+    # 512MBではメモリ上限超過による自動再起動が繰り返し発生していたため引き上げる。
+    # ※このplan指定は、サービスがこのBlueprint(render.yaml)と連携している場合に
+    #   デプロイ時へ反映される。手動作成のサービスの場合はダッシュボードの
+    #   Settings → Instance Type から Standard を選ぶ必要がある。
+    plan: standard
     buildCommand: pip install -r requirements.txt
     # メモリ対策：
     #  --workers 1 …… プロセスは1つに保ち基礎メモリを最小化（512MB枠向け）
