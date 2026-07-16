@@ -1778,17 +1778,22 @@ function scoreFromTotals(foodTotal, protein, veg, exBc) {
   // 野菜：350gに対する充足率
   const vPct = Math.min(100, Math.round(veg / VEG_TARGET_G * 100));
 
-  // Bカウント：目標内なら100%、1回オーバーするごとに−20%。
+  // Bカウント：3項目の中で最重要の指標。目標内なら100%、
+  // 1回でも目標を超えたら50%に落とす。
   // ただしタンパク質・野菜がどちらも0%のうちは0%扱いにする
   // （何も食べていない日にB0回だけで100%が付くのを防ぐ）。
   const tgt  = getGoalTarget(getProfile());
   const bMax = tgt ? tgt.max : 8;
-  let bPct = (!isFinite(bMax) || net <= bMax) ? 100 : Math.max(0, Math.round(100 - (net - bMax) * 20));
+  const bOver = isFinite(bMax) && net > bMax;
+  let bPct = bOver ? 50 : 100;
   const bLocked = (pPct <= 0 && vPct <= 0);
   if (bLocked) bPct = 0;
 
-  const score = Math.round((bPct + pPct + vPct) / 3);
-  return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked };
+  let score = Math.round((bPct + pPct + vPct) / 3);
+  // Bカウントが目標オーバーの日は、タンパク質・野菜が満点でも
+  // キーラン君（80点〜）は登場しない＝79点を上限にする。
+  if (bOver) score = Math.min(score, 79);
+  return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked, bOver };
 }
 
 function calcCharaScore() {
@@ -1813,8 +1818,8 @@ function charaAdvice(s) {
   if (s.bLocked) {
     return 'タンパク質と野菜がまだ0%です。どちらかが増えるまでBカウントの達成率は加点されません。まずはタンパク質か野菜を1品プラスしましょう🥩🥗';
   }
-  if (s.bPct < 100) {
-    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています。次の食事はA食材中心にして、運動でBを取り返すと最大＋${Math.round((100 - s.bPct) / 3)}点です🏃`;
+  if (s.bOver) {
+    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています（Bは最重要項目なので達成率は50%扱い）。次の食事はA食材中心にして、運動でBを取り返しましょう🏃`;
   }
   const pLack = Math.max(0, s.pGoal - s.protein);
   const vLack = Math.max(0, VEG_TARGET_G - s.veg);
