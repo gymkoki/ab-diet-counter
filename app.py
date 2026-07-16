@@ -431,6 +431,34 @@ def init_db():
                 PRIMARY KEY (user_id, date)
             )
         """)
+        # 修正希望・ご要望の受信箱（管理ダッシュボードから送信者本人へ個別に返信できる）
+        # reply_text=管理者からの返信 / replied_at=返信日時 / read_at=本人がアプリで読んだ日時
+        if USE_PG:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT NOT NULL,
+                    name       TEXT,
+                    text       TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    reply_text TEXT,
+                    replied_at TEXT,
+                    read_at    TEXT
+                )
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT NOT NULL,
+                    name       TEXT,
+                    text       TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    reply_text TEXT,
+                    replied_at TEXT,
+                    read_at    TEXT
+                )
+            """)
         conn.commit()
         # 既存DBへの列追加（デイリーレポートの目的別集計用）。列が既にあれば無視。
         for col in ("gender", "goal"):
@@ -1980,7 +2008,8 @@ FEEDBACK_TO = "reallgym.tokyo@gmail.com"
 
 @app.route("/api/feedback", methods=["POST"])
 def submit_feedback():
-    """利用者からの修正希望・ご要望をメールで運営へ転送する。"""
+    """利用者からの修正希望・ご要望を受信箱（DB）に保存し、メールでも運営へ転送する。
+    ダッシュボードの受信箱が主経路のため、メール送信に失敗しても受付は成功扱いにする。"""
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     uid = (data.get("user_id") or "").strip()
@@ -1988,13 +2017,6 @@ def submit_feedback():
         return jsonify({"error": "内容を入力してください"}), 400
     if len(text) > 5000:
         text = text[:5000]
-
-    # 認証情報に混入しがちな空白（半角/全角/ノーブレークスペース\xa0等）を除去する。
-    # 貼り付け時に紛れ込むと smtplib のASCIIエンコードで送信に失敗するため。
-    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
-    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
-    if not gmail_user or not gmail_pass:
-        return jsonify({"error": "メール送信の設定が未登録のため送信できません。運営にお問い合わせください。"}), 500
 
     # 表示名を取得（分かれば件名・本文に添える）
     name = ""
@@ -2009,6 +2031,33 @@ def submit_feedback():
             conn.close()
     except Exception:
         pass
+
+    # まず受信箱（DB）へ保存する。ここが管理ダッシュボードの返信機能の元データになる。
+    ts = datetime.datetime.now(JST).isoformat()
+    saved = False
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO feedback (user_id, name, text, created_at) VALUES ({PH}, {PH}, {PH}, {PH})",
+                    (uid, name, text, ts)
+                )
+                conn.commit()
+                saved = True
+            finally:
+                conn.close()
+    except Exception as e:
+        print(f"[FEEDBACK][WARN] DB保存に失敗: {e}")
+
+    # メール転送（ベストエフォート。設定が無い・失敗しても受信箱に残っていれば受付成功）
+    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
+    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
+    if not gmail_user or not gmail_pass:
+        if saved:
+            return jsonify({"ok": True})
+        return jsonify({"error": "メール送信の設定が未登録のため送信できません。運営にお問い合わせください。"}), 500
 
     now = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M")
     body = (
@@ -2030,7 +2079,118 @@ def submit_feedback():
             smtp.login(gmail_user, gmail_pass)
             smtp.sendmail(gmail_user, [FEEDBACK_TO], msg.as_bytes())
     except Exception as e:
-        return jsonify({"error": f"送信に失敗しました。時間をおいて再度お試しください。({e})"}), 500
+        if not saved:
+            return jsonify({"error": f"送信に失敗しました。時間をおいて再度お試しください。({e})"}), 500
+        print(f"[FEEDBACK][WARN] メール転送に失敗（受信箱には保存済み）: {e}")
+    return jsonify({"ok": True})
+
+
+# ── 修正希望・ご要望：管理ダッシュボードの受信箱と個別返信 ──────────────
+
+
+@app.route("/api/admin/feedback")
+@_admin_required
+def admin_feedback_list():
+    """受信箱の一覧（新しい順・最大200件）。返信状況（未返信/未読/既読）も返す。"""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, user_id, name, text, created_at, reply_text, replied_at, read_at
+               FROM feedback ORDER BY created_at DESC LIMIT 200"""
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    items = [
+        {"id": r[0], "user_id": r[1], "name": r[2] or "", "text": r[3],
+         "created_at": r[4], "reply_text": r[5], "replied_at": r[6], "read_at": r[7]}
+        for r in rows
+    ]
+    return jsonify({"items": items})
+
+
+@app.route("/api/admin/feedback/<int:fid>/reply", methods=["POST"])
+@_admin_required
+def admin_feedback_reply(fid):
+    """個別返信を保存する。再送信（上書き）すると未読に戻る。空文字で返信の取り消し。"""
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if len(text) > 5000:
+        text = text[:5000]
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if text:
+                cur.execute(
+                    f"UPDATE feedback SET reply_text={PH}, replied_at={PH}, read_at=NULL WHERE id={PH}",
+                    (text, ts, fid)
+                )
+            else:
+                cur.execute(
+                    f"UPDATE feedback SET reply_text=NULL, replied_at=NULL, read_at=NULL WHERE id={PH}",
+                    (fid,)
+                )
+            updated = cur.rowcount
+            conn.commit()
+        finally:
+            conn.close()
+    if not updated:
+        return jsonify({"error": "対象が見つかりません"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/feedback-replies")
+def get_feedback_replies():
+    """送信者本人向け：自分の問い合わせへの運営からの返信一覧（返信済みのものだけ）。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"items": []})
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT id, text, reply_text, replied_at, read_at FROM feedback
+               WHERE user_id={PH} AND reply_text IS NOT NULL
+               ORDER BY replied_at DESC LIMIT 50""",
+            (uid,)
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    items = [
+        {"id": r[0], "text": r[1], "reply_text": r[2], "replied_at": r[3], "read": bool(r[4])}
+        for r in rows
+    ]
+    return jsonify({"items": items})
+
+
+@app.route("/api/feedback-replies/read", methods=["POST"])
+def mark_feedback_replies_read():
+    """送信者本人が返信を読んだ印を付ける（本人のuser_idと一致する項目のみ）。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    ids = data.get("ids") or []
+    if not uid or not isinstance(ids, list) or not ids:
+        return jsonify({"ok": True})
+    ids = [int(i) for i in ids if isinstance(i, (int, float, str)) and str(i).lstrip('-').isdigit()][:50]
+    if not ids:
+        return jsonify({"ok": True})
+    ts = datetime.datetime.now(JST).isoformat()
+    ph_list = ",".join([PH] * len(ids))
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"UPDATE feedback SET read_at={PH} WHERE user_id={PH} AND read_at IS NULL AND id IN ({ph_list})",
+                tuple([ts, uid] + ids)
+            )
+            conn.commit()
+        finally:
+            conn.close()
     return jsonify({"ok": True})
 
 
