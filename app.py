@@ -1157,6 +1157,17 @@ def admin_daily_trend():
             (start_str,),
         )
         b_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
+
+        # 減量メンバーだけの日別平均Bカウント（ダッシュボードのグラフ用）
+        cur.execute(
+            f"""SELECT b.date, AVG(b.b_count)
+               FROM daily_b_count b
+               JOIN user_profile p ON p.user_id = b.user_id AND p.goal = 'cut'
+               WHERE b.date >= {PH}
+               GROUP BY b.date ORDER BY b.date""",
+            (start_str,),
+        )
+        cut_b_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
     finally:
         conn.close()
 
@@ -1173,6 +1184,7 @@ def admin_daily_trend():
         "analyses": [analyses_by_day.get(dt, 0) for dt in all_dates],
         "est_costs_jpy": [round(analyses_by_day.get(dt, 0) * COST_PER_ANALYSIS_JPY) for dt in all_dates],
         "avg_b_counts": [b_by_day.get(dt) for dt in all_dates],
+        "cut_avg_b_counts": [cut_b_by_day.get(dt) for dt in all_dates],
     })
 
 
