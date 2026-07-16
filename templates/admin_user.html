@@ -106,6 +106,9 @@
     .meal-item .cap .food-name { display:block; }
     .meal-item .cap .cat-a { color:#059669; }
     .meal-item .cap .cat-b { color:#DC2626; }
+    .meals-more { padding:10px 22px; border:1.5px solid #E5E7EB; border-radius:10px; background:#fff; color:#374151; font-size:13px; font-weight:800; cursor:pointer; }
+    .meals-more:hover { border-color:#FF6B35; color:#FF6B35; }
+    .meals-more:disabled { opacity:0.6; cursor:default; }
 
     /* ── コメント ── */
     .comment-form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -232,20 +235,65 @@
     });
   }
 
-  function renderMeals(meals) {
-    const wrap = document.getElementById('meals-wrap');
-    if (!meals || meals.length === 0) {
-      wrap.innerHTML = '<div class="no-data">写真の記録がありません</div>';
-      return;
-    }
-    wrap.innerHTML = meals.map(day => `
+  // 食事写真は重い（base64サムネ）ため、詳細本体とは別に日付新しい順で分割取得する。
+  const MEALS_PAGE = 20;
+  let _mealsOffset = 0;
+  let _mealsLoading = false;
+
+  function mealDayHtml(day) {
+    return `
       <div class="meal-day">
         <div class="meal-day-title">${escapeHtml(day.date)}</div>
         <div class="meal-grid">
           ${day.items.map(item => renderMealItem(item)).join('')}
         </div>
-      </div>
-    `).join('');
+      </div>`;
+  }
+
+  async function loadMoreMeals() {
+    if (_mealsLoading) return;
+    _mealsLoading = true;
+    const wrap = document.getElementById('meals-wrap');
+    const moreBtn = document.getElementById('meals-more-btn');
+    if (moreBtn) { moreBtn.disabled = true; moreBtn.textContent = '読み込み中…'; }
+    try {
+      const r = await fetch(`/api/admin/user/${encodeURIComponent(USER_ID)}/meals?limit=${MEALS_PAGE}&offset=${_mealsOffset}`);
+      const d = await r.json();
+      const meals = d.meals || [];
+      // 初回のスピナー／プレースホルダを消す
+      const spinner = wrap.querySelector('.spinner, .no-data');
+      if (spinner) spinner.remove();
+      if (_mealsOffset === 0 && meals.length === 0) {
+        wrap.innerHTML = '<div class="no-data">写真の記録がありません</div>';
+        return;
+      }
+      const listEl = document.getElementById('meals-list');
+      listEl.insertAdjacentHTML('beforeend', meals.map(mealDayHtml).join(''));
+      _mealsOffset += meals.length;
+      // 「もっと見る」ボタンの制御
+      const footer = document.getElementById('meals-footer');
+      if (d.has_more) {
+        footer.innerHTML = `<button id="meals-more-btn" class="meals-more" onclick="loadMoreMeals()">さらに読み込む（${_mealsOffset}日分表示中）</button>`;
+      } else {
+        footer.innerHTML = _mealsOffset > 0 ? `<div class="no-data" style="padding:12px 0">全${_mealsOffset}日分を表示しました</div>` : '';
+      }
+    } catch (e) {
+      const footer = document.getElementById('meals-footer');
+      if (footer) footer.innerHTML = `<button id="meals-more-btn" class="meals-more" onclick="loadMoreMeals()">読み込みに失敗しました。再試行</button>`;
+    } finally {
+      _mealsLoading = false;
+    }
+  }
+
+  function initMeals(mealDays) {
+    const wrap = document.getElementById('meals-wrap');
+    if (!mealDays) {
+      wrap.innerHTML = '<div class="no-data">写真の記録がありません</div>';
+      return;
+    }
+    wrap.innerHTML = '<div id="meals-list"></div><div id="meals-footer" style="text-align:center;margin-top:10px"><div class="spinner"></div></div>';
+    _mealsOffset = 0;
+    loadMoreMeals();
   }
 
   function renderMealItem(item) {
@@ -358,6 +406,18 @@
       </div>`;
   }
 
+  // グラフ描画は個別にtry/catchで囲む。1つが失敗（例：Chart.js未読込）しても
+  // 他のグラフ・コメント・食事写真の読み込みが止まらないようにする。
+  function safeChart(destroyRef, canvasId, dates, values, label, color) {
+    try {
+      if (destroyRef && destroyRef.destroy) destroyRef.destroy();
+      return buildLineChart(canvasId, dates, values, label, color);
+    } catch (e) {
+      console.error('chart failed:', canvasId, e);
+      return null;
+    }
+  }
+
   async function load() {
     const r = await fetch(`/api/admin/user/${encodeURIComponent(USER_ID)}/detail`);
     const d = await r.json();
@@ -366,18 +426,14 @@
     currentIsVip = !!d.is_vip;
     updateVipUi();
 
-    if (chartWeight) chartWeight.destroy();
-    chartWeight = buildLineChart('chart-weight', d.weight.map(x => x.date), d.weight.map(x => x.weight), '体重(kg)', 'rgb(99,102,241)');
-
-    if (chartB) chartB.destroy();
-    chartB = buildLineChart('chart-b', d.b_count.map(x => x.date), d.b_count.map(x => x.b_count), 'Bカウント', 'rgb(255,107,53)');
+    chartWeight = safeChart(chartWeight, 'chart-weight', d.weight.map(x => x.date), d.weight.map(x => x.weight), '体重(kg)', 'rgb(99,102,241)');
+    chartB = safeChart(chartB, 'chart-b', d.b_count.map(x => x.date), d.b_count.map(x => x.b_count), 'Bカウント', 'rgb(255,107,53)');
     renderBCountList(d.b_count);
+    chartExercise = safeChart(chartExercise, 'chart-exercise', d.exercise.map(x => x.date), d.exercise.map(x => x.ex_b_count), '運動Bカウント消費', 'rgb(5,150,105)');
 
-    if (chartExercise) chartExercise.destroy();
-    chartExercise = buildLineChart('chart-exercise', d.exercise.map(x => x.date), d.exercise.map(x => x.ex_b_count), '運動Bカウント消費', 'rgb(5,150,105)');
-
-    renderMeals(d.meals);
     renderComments(d.comments);
+    // 食事写真（重いbase64サムネ）は詳細本体の描画後に別途分割ロードする
+    initMeals(d.meal_days);
   }
 
   document.getElementById('comment-date').value = new Date().toLocaleDateString('sv-SE');
