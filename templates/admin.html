@@ -306,6 +306,15 @@
     </div>
   </div>
 
+  <!-- 修正希望・ご要望の受信箱（個別返信） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>✉️ 修正希望・ご要望（受信箱）<span id="fb-unreplied-badge" style="display:none;margin-left:8px;background:#DC2626;color:#fff;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800;vertical-align:1px"></span></h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      アプリの「設定 → 修正希望・ご要望」から届いたメッセージです。返信を書いて送信すると、<b>送ってくれた本人のアプリにだけ</b>「運営からの返信」として表示されます（他の利用者には見えません）。
+    </div>
+    <div id="fb-list"><div class="spinner"></div></div>
+  </div>
+
   <!-- API Key Setup -->
   <div class="card apikey-card">
     <h2>🔑 APIキー設定</h2>
@@ -621,9 +630,88 @@
     msgEl.style.display = 'block';
   }
 
+  // ── 修正希望・ご要望の受信箱（個別返信） ──
+  function fmtDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return iso.slice(0, 16).replace('T', ' ');
+    return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  async function loadFeedback() {
+    const r = await fetch('/api/admin/feedback');
+    if (!r.ok) throw new Error('feedback');
+    const d = await r.json();
+    const items = d.items || [];
+    const box = document.getElementById('fb-list');
+    const badge = document.getElementById('fb-unreplied-badge');
+    const unreplied = items.filter(i => !i.reply_text).length;
+    if (unreplied > 0) { badge.textContent = `未返信 ${unreplied}件`; badge.style.display = ''; }
+    else badge.style.display = 'none';
+
+    if (!items.length) {
+      box.innerHTML = '<div style="color:#9CA3AF;font-size:13px;padding:8px 0">まだメッセージはありません。</div>';
+      return;
+    }
+    box.innerHTML = items.map(i => {
+      const status = !i.reply_text
+        ? '<span style="background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800">未返信</span>'
+        : (i.read_at
+          ? '<span style="background:#F0FDF4;color:#16A34A;border:1px solid #BBF7D0;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800">返信済み・既読</span>'
+          : '<span style="background:#FFF7ED;color:#EA580C;border:1px solid #FED7AA;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800">返信済み・未読</span>');
+      const who = i.user_id
+        ? `<a href="${ADMIN_BASE}/user/${encodeURIComponent(i.user_id)}" style="color:#FF6B35;font-weight:700;text-decoration:none">${escapeHtml(i.name || '(名前未設定)')}</a> <span style="color:#9CA3AF">(${escapeHtml(i.user_id.slice(0, 8))}…)</span>`
+        : `${escapeHtml(i.name || '(名前未設定)')} <span style="color:#DC2626;font-size:11px">user_id不明のため返信できません</span>`;
+      const replyBlock = i.reply_text
+        ? `<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7;white-space:pre-wrap">↩️ ${escapeHtml(i.reply_text)}<div style="color:#9CA3AF;font-size:11px;margin-top:4px">返信日時: ${fmtDateTime(i.replied_at)}</div></div>`
+        : '';
+      const replyUi = i.user_id ? `
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-start">
+          <textarea id="fb-reply-${i.id}" placeholder="${i.reply_text ? '返信を書き直して再送信（本人には未読として再表示されます）' : 'この人への返信を書く…'}"
+            style="flex:1;min-height:52px;padding:8px 10px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+          <button onclick="sendFeedbackReply(${i.id})" id="fb-send-${i.id}"
+            style="padding:10px 18px;border:none;border-radius:10px;background:linear-gradient(135deg,#FF6B35,#e55a25);color:#fff;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">送信</button>
+        </div>` : '';
+      return `
+        <div style="border:1px solid #E5E7EB;border-radius:12px;padding:12px 14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <div style="font-size:13px">${who}</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:#9CA3AF;font-size:11px">${fmtDateTime(i.created_at)}</span>
+              ${status}
+            </div>
+          </div>
+          <div style="background:#F9FAFB;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7;white-space:pre-wrap">${escapeHtml(i.text)}</div>
+          ${replyBlock}
+          ${replyUi}
+        </div>`;
+    }).join('');
+  }
+
+  async function sendFeedbackReply(id) {
+    const ta = document.getElementById(`fb-reply-${id}`);
+    const btn = document.getElementById(`fb-send-${id}`);
+    const text = (ta.value || '').trim();
+    if (!text) { ta.focus(); return; }
+    btn.disabled = true;
+    btn.textContent = '送信中…';
+    try {
+      const r = await fetch(`/api/admin/feedback/${id}/reply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!r.ok) throw new Error('reply');
+      await loadFeedback();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = '送信';
+      alert('返信の送信に失敗しました。再度お試しください。');
+    }
+  }
+
   async function refresh() {
     try {
-      await Promise.all([loadOverview(), loadTrend(), loadUsers(), loadApiStatus(), loadWeightInsights()]);
+      await Promise.all([loadOverview(), loadTrend(), loadUsers(), loadApiStatus(), loadWeightInsights(), loadFeedback()]);
       const now = new Date();
       document.getElementById('last-updated').textContent =
         `最終更新: ${now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;

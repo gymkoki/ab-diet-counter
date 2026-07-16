@@ -1146,6 +1146,15 @@
   </div>
 </div>
 
+<!-- 運営からの返信（修正希望・ご要望を送った本人にだけ表示される） -->
+<div id="reply-notice-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
+  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">MESSAGE</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">✉️ 運営からの返信が届いています</div>
+    <div id="reply-notice-body" style="font-size:17px;line-height:1.8;color:#44403B;margin-bottom:22px"></div>
+    <button onclick="closeReplyNotice()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
+  </div>
+</div>
 
 <!-- 目標達成！リオールジムのマスコット猫「キーラン君」が2〜3秒踊る演出 -->
 <div id="goal-celebrate" onclick="hideGoalCelebrate()">
@@ -4511,6 +4520,41 @@ function maybeShowHomeBanner() {
 }
 
 // ═══════════════════════════════════════════
+//  運営からの返信（修正希望・ご要望を送った本人にだけ届く）
+//  未読の返信があればモーダルで表示し、OKで既読にする。
+// ═══════════════════════════════════════════
+let _unreadReplyIds = [];
+
+async function checkFeedbackReplies() {
+  try {
+    const r = await fetch(`/api/feedback-replies?user_id=${encodeURIComponent(USER_ID)}`);
+    const d = await r.json();
+    const unread = (d.items || []).filter(i => !i.read && i.reply_text);
+    if (!unread.length) return;
+    _unreadReplyIds = unread.map(i => i.id);
+    const body = document.getElementById('reply-notice-body');
+    body.innerHTML = unread.map(i => `
+      <div style="margin-bottom:16px">
+        <div style="background:#F5F4F2;border-radius:10px;padding:9px 12px;font-size:14px;color:#85807A;line-height:1.6;white-space:pre-wrap">📝 あなたのメッセージ：${esc(i.text.length > 120 ? i.text.slice(0, 120) + '…' : i.text)}</div>
+        <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:10px;padding:10px 12px;margin-top:6px;line-height:1.8;white-space:pre-wrap">${esc(i.reply_text)}</div>
+        <div style="font-size:13px;color:#A8A29B;text-align:right;margin-top:4px">${esc((i.replied_at || '').slice(0, 10))}　リオールジム運営</div>
+      </div>`).join('');
+    document.getElementById('reply-notice-overlay').style.display = 'flex';
+  } catch(e) {}
+}
+
+function closeReplyNotice() {
+  document.getElementById('reply-notice-overlay').style.display = 'none';
+  const ids = _unreadReplyIds;
+  _unreadReplyIds = [];
+  if (!ids.length) return;
+  fetch('/api/feedback-replies/read', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: USER_ID, ids })
+  }).catch(() => {});
+}
+
+// ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
 const NOTICE_KEY = 'ab-diet-notice-v23';
@@ -4532,6 +4576,7 @@ resumePendingAnalyses();   // 中断された解析（写真・文章）を復�
 syncTodayMealsFromServer();   // 他の端末で記録された今日の食事を取り込む
 syncHistoryFromServer()       // 他の端末の履歴（体重・Bカウント・運動）を取り込む
   .then(backfillCharaLog);    // → 取り込み後、キャラカレンダーの抜けた過去日を食事明細から復元
+checkFeedbackReplies();       // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
 
 // 画面に戻ってきたとき（スマホでアプリを開き直したとき等）にもサーバーと同期し、
 // デスクトップ⇔スマホの表示が揃うようにする。
@@ -4539,6 +4584,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !_editingDate) {
     syncTodayMealsFromServer();
     syncHistoryFromServer();
+    checkFeedbackReplies();
   }
 });
 if (!localStorage.getItem(NOTICE_KEY)) {
