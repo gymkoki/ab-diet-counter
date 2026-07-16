@@ -3,7 +3,13 @@ services:
     name: ab-diet-counter
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --timeout 120
+    # メモリ対策：
+    #  --workers 1 …… プロセスは1つに保ち基礎メモリを最小化（512MB枠向け）
+    #  --threads 4 …… 1プロセス内でスレッド並行。AI解析の待ち時間中も他の人が
+    #                  使えるようにし「一部の人が使えない」状態を防ぐ（メモリは共有で安価）
+    #  --max-requests / jitter …… 一定リクエストごとにワーカーを緩やかに再起動し、
+    #                  じわじわ増えるメモリ（リーク）を定期的に解放してOOM再起動を防ぐ
+    startCommand: gunicorn app:app --timeout 120 --workers 1 --threads 4 --max-requests 300 --max-requests-jitter 60
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false

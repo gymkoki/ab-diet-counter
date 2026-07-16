@@ -1,5 +1,6 @@
 import os
 import io
+import gc
 import re
 import gzip
 import base64
@@ -28,13 +29,21 @@ ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(ENV_PATH, override=True)
 app = Flask(__name__)
 
-# ── 画像の縮小・圧縮（AI分析の高速化）────────────────────
+# アップロード上限（メモリ保護）。巨大ファイルはここで413にして受け付けない。
+# フロントは画像を圧縮して送るため通常は1MB未満。16MBは十分な余裕。
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+# ── 画像の縮小・圧縮（AI分析の高速化＋メモリ保護）──────────
 # Claude Visionは画像サイズが大きいほど処理（トークン化）に時間がかかるため、
 # 分析前に長辺を最大1024pxへ縮小し、JPEGで圧縮してから送信する。
 # ※ 512pxでは「エクレアとアンパン」のような見た目が似た食品の細部が潰れ
 #   誤認識が増えるため、1024pxへ引き上げて認識精度を優先する。
 MAX_IMAGE_DIMENSION = 1024
 JPEG_QUALITY = 85
+
+# 復号時のメモリ暴走（画像爆弾）対策：この画素数を超える画像は展開しない。
+if Image is not None:
+    Image.MAX_IMAGE_PIXELS = 50_000_000  # 5000万画素（一般的なスマホ写真は十分収まる）
 
 
 def repair_json(text: str) -> str:
@@ -140,26 +149,43 @@ def create_and_parse(client, **kwargs):
 
 
 def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
-    """画像を縮小・圧縮し、(base64文字列, media_type) を返す。"""
+    """画像を縮小・圧縮し、(base64文字列, media_type) を返す。
+    大きな写真でもメモリを使いすぎないよう、JPEGは復号時点で目標サイズ付近まで
+    間引き（draft）、処理後は画像・バッファを明示的に解放する。"""
     if Image is None:
         return base64.standard_b64encode(image_data).decode("utf-8"), fallback_media_type
 
+    src = img = None
     try:
-        img = Image.open(io.BytesIO(image_data))
-        img = img.convert("RGB")  # EXIF回転やCMYK/PNG透過を正規化
+        src = Image.open(io.BytesIO(image_data))
+        # JPEGは復号する時点で長辺 MAX_IMAGE_DIMENSION 付近まで間引く。
+        # これで巨大写真でも全画素を展開せずに済み、メモリ急増を防ぐ。
+        try:
+            src.draft("RGB", (MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION))
+        except Exception:
+            pass
+        img = src.convert("RGB")  # EXIF回転やCMYK/PNG透過を正規化
 
-        w, h = img.size
-        longest = max(w, h)
-        if longest > MAX_IMAGE_DIMENSION:
-            scale = MAX_IMAGE_DIMENSION / longest
-            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+        if max(img.size) > MAX_IMAGE_DIMENSION:
+            # thumbnail は元画像を破棄しながら縮小するため resize より省メモリ
+            img.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION), Image.LANCZOS)
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
-        return base64.standard_b64encode(buf.getvalue()).decode("utf-8"), "image/jpeg"
+        data = buf.getvalue()
+        buf.close()
+        return base64.standard_b64encode(data).decode("utf-8"), "image/jpeg"
     except Exception:
         # 万が一画像処理に失敗した場合は元画像をそのまま使う
         return base64.standard_b64encode(image_data).decode("utf-8"), fallback_media_type
+    finally:
+        for _im in (img, src):
+            try:
+                if _im is not None:
+                    _im.close()
+            except Exception:
+                pass
+        gc.collect()  # 大きなビットマップを即解放してメモリ上限超過を防ぐ
 
 # ── 利用ログDB（PostgreSQL 優先、なければ SQLite）──────────
 _db_lock = threading.Lock()
