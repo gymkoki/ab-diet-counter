@@ -117,6 +117,16 @@
       background: #FEF3C7;
       color: #92400E;
     }
+    /* 目標バッジ */
+    .goal-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
+    .goal-cut      { background:#FEE2E2; color:#B91C1C; }   /* 減量希望 */
+    .goal-maintain { background:#DBEAFE; color:#1D4ED8; }   /* 体重維持 */
+    .goal-bulk     { background:#DCFCE7; color:#15803D; }   /* 増量希望 */
+    .goal-none     { background:#F3F4F6; color:#9CA3AF; }   /* 未設定 */
+    /* 体重変化の色（減量希望の人が痩せていない＝赤で目立たせる） */
+    .wchg-down { color:#15803D; font-weight:800; }  /* 減った＝良い（緑） */
+    .wchg-up   { color:#B91C1C; font-weight:800; }  /* 増えた＝注意（赤） */
+    .wchg-flat { color:#6B7280; font-weight:700; }
     .vip-btn, .detail-link {
       padding: 5px 12px;
       border-radius: 8px;
@@ -302,17 +312,18 @@
         <thead>
           <tr>
             <th>表示名</th>
-            <th>ユーザーID（先頭8文字）</th>
+            <th>目標</th>
+            <th>体重（開始→最新）</th>
+            <th>体重変化</th>
             <th style="cursor:pointer;user-select:none" onclick="toggleSort('days_recorded')">B記録日数 <span class="sort-arrow" data-col="days_recorded"></span></th>
             <th>平均Bカウント / 日</th>
             <th style="cursor:pointer;user-select:none" onclick="toggleSort('analyses_count')">食事分析回数 <span class="sort-arrow" data-col="analyses_count"></span></th>
-            <th>最終利用日</th>
             <th>VIP</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="users-tbody">
-          <tr><td colspan="8"><div class="spinner"></div></td></tr>
+          <tr><td colspan="9"><div class="spinner"></div></td></tr>
         </tbody>
       </table>
     </div>
@@ -626,7 +637,7 @@
     });
 
     if (!usersData || usersData.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="no-data">データがまだありません</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="no-data">データがまだありません</td></tr>';
       if (toggleBtn) toggleBtn.style.display = 'none';
       return;
     }
@@ -645,16 +656,38 @@
     const inactive = rows.filter(u => !isActive(u));
     const shown = showInactive ? [...active, ...inactive] : active;
 
+    const goalCell = (u) => {
+      const cls = u.goal === 'cut' ? 'goal-cut'
+                : u.goal === 'maintain' ? 'goal-maintain'
+                : u.goal === 'bulk' ? 'goal-bulk' : 'goal-none';
+      return `<span class="goal-badge ${cls}">${escapeHtml(u.goal_label || '未設定')}</span>`;
+    };
+    const weightCell = (u) => {
+      if (u.initial_weight == null || u.latest_weight == null) {
+        return '<span style="color:#9CA3AF">-</span>';
+      }
+      const sd = u.weight_start_date ? `<div style="font-size:10px;color:#9CA3AF">${u.weight_start_date}〜</div>` : '';
+      return `<div>${u.initial_weight.toFixed(1)} → <b>${u.latest_weight.toFixed(1)}</b> kg</div>${sd}`;
+    };
+    const changeCell = (u) => {
+      const ch = u.weight_change;
+      if (ch == null) return '<span style="color:#9CA3AF">-</span>';
+      if (ch < 0)  return `<span class="wchg-down">▼ ${Math.abs(ch).toFixed(1)} kg</span>`;
+      if (ch > 0)  return `<span class="wchg-up">▲ ${ch.toFixed(1)} kg</span>`;
+      return `<span class="wchg-flat">±0 kg</span>`;
+    };
+
     const rowHtml = (u, dim) => `
       <tr${dim ? ' style="opacity:0.55;background:#FAFAFA"' : ''}>
         <td>${u.display_name ? escapeHtml(u.display_name) : '<span style="color:#9CA3AF">-</span>'}</td>
-        <td class="uid">${u.user_id_short}</td>
+        <td>${goalCell(u)}</td>
+        <td>${weightCell(u)}</td>
+        <td>${changeCell(u)}</td>
         <td>${u.days_recorded} 日</td>
         <td>${u.avg_b_count != null
           ? `<span class="badge">${u.avg_b_count.toFixed(1)} B</span>`
           : '<span style="color:#9CA3AF">-</span>'}</td>
         <td>${u.analyses_count} 回</td>
-        <td style="color:#6B7280">${u.last_active || '-'}</td>
         <td>${u.is_vip ? '<span class="vip-badge">★ VIP</span>' : ''}</td>
         <td style="display:flex;gap:6px">
           <button class="vip-btn${u.is_vip ? ' is-vip' : ''}" onclick="toggleVip('${u.user_id}', ${u.is_vip})">${u.is_vip ? 'VIP解除' : 'VIPにする'}</button>
@@ -664,7 +697,7 @@
 
     tbody.innerHTML = shown.length
       ? shown.map(u => rowHtml(u, !isActive(u))).join('')
-      : '<tr><td colspan="8" class="no-data">直近3日間に記録した会員がいません</td></tr>';
+      : '<tr><td colspan="9" class="no-data">直近3日間に記録した会員がいません</td></tr>';
 
     if (toggleBtn) {
       if (inactive.length === 0) {
