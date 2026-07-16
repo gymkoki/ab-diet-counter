@@ -4186,70 +4186,72 @@ function getTodayExBCount() {
 
 const WEEKDAY_JA = ['日','月','火','水','木','金','土'];
 
-async function loadHistory() {
+// サーバー履歴（任意）と端末ローカルの記録を統合して、日付降順の配列にする。
+// serverData が null のときはローカルだけで組み立てる（初回の即表示用）。
+function _composeHistoryDaily(serverData) {
+  const byDate = {};
+  ((serverData && serverData.daily) || []).forEach(d => {
+    byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight, diary:d.diary };
+    if (d.ex_b_count != null) _serverExByDate[d.date] = d.ex_b_count;
+  });
+  const wlog = getWeightLog();
+  Object.keys(wlog).forEach(date => {
+    if (!byDate[date]) byDate[date] = { date, b_count:null, weight:wlog[date] };
+    else if (byDate[date].weight == null) byDate[date].weight = wlog[date];
+  });
+  const blog = getBCountLog();
+  Object.keys(blog).forEach(date => {
+    if (!byDate[date]) byDate[date] = { date, b_count:blog[date], weight:null };
+    else if (byDate[date].b_count == null) byDate[date].b_count = blog[date];
+  });
+  const dlog = getDiaryLog();
+  Object.keys(dlog).forEach(date => {
+    if (!byDate[date]) byDate[date] = { date, b_count:null, weight:null, diary:dlog[date] };
+    else if (byDate[date].diary == null) byDate[date].diary = dlog[date];
+  });
+  return Object.values(byDate).sort((a,b) => b.date.localeCompare(a.date));
+}
+
+function _paintHistory(daily) {
   const listEl  = document.getElementById('history-list');
   const totalEl = document.getElementById('history-total');
   const totalCountEl = document.getElementById('history-total-count');
-  listEl.innerHTML = '<div class="history-empty">読み込み中…</div>';
-  totalEl.style.display = 'none';
-  try {
-    const res  = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(USER_ID)}`);
-    const data = await res.json();
-    const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
-    const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
+  const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
+  const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
 
-    // サーバーの履歴に、端末ローカルの体重・Bカウント・日記も重ねる（当日分やDBリセット時の復元用）
-    const byDate = {};
-    (data.daily||[]).forEach(d => {
-      byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight, diary:d.diary };
-      if (d.ex_b_count != null) _serverExByDate[d.date] = d.ex_b_count;   // 他の端末の運動も反映
-    });
-    const wlog = getWeightLog();
-    Object.keys(wlog).forEach(date => {
-      if (!byDate[date]) byDate[date] = { date, b_count:null, weight:wlog[date] };
-      else if (byDate[date].weight == null) byDate[date].weight = wlog[date];
-    });
-    const blog = getBCountLog();
-    Object.keys(blog).forEach(date => {
-      if (!byDate[date]) byDate[date] = { date, b_count:blog[date], weight:null };
-      else if (byDate[date].b_count == null) byDate[date].b_count = blog[date];
-    });
-    const dlog = getDiaryLog();
-    Object.keys(dlog).forEach(date => {
-      if (!byDate[date]) byDate[date] = { date, b_count:null, weight:null, diary:dlog[date] };
-      else if (byDate[date].diary == null) byDate[date].diary = dlog[date];
-    });
-    const daily = Object.values(byDate).sort((a,b) => b.date.localeCompare(a.date));
+  // 平均（上部）— 表示中のデータから算出
+  const withB = daily.filter(d => d.b_count != null);
+  if (withB.length > 0) {
+    const sum = withB.reduce((s,d) => s + d.b_count, 0);
+    totalCountEl.textContent = `${Math.round(sum / withB.length)}回/日`;
+    totalEl.style.display = 'flex';
+  } else {
+    totalEl.style.display = 'none';
+  }
 
-    // 平均（上部）
-    if (data.days_count > 0) {
-      totalCountEl.textContent = `${Math.round(data.total / data.days_count)}回/日`;
-      totalEl.style.display = 'flex';
-    }
+  // 体重の折れ線グラフ（描画は直近50日分のみ。履歴データ自体は全期間保持）
+  const chartCutoff = (() => { const d = new Date(getTodayJST()+'T00:00:00'); d.setDate(d.getDate()-49); return d.toLocaleDateString('sv-SE'); })();
+  renderWeightChart(daily.filter(x => x.date >= chartCutoff));
 
-    // 体重の折れ線グラフ（見やすさのため描画は直近50日分のみ。履歴データ自体は全期間保持）
-    const chartCutoff = (() => { const d = new Date(getTodayJST()+'T00:00:00'); d.setDate(d.getDate()-49); return d.toLocaleDateString('sv-SE'); })();
-    renderWeightChart(daily.filter(x => x.date >= chartCutoff));
+  // 編集用に保持
+  _histDaily = {};
+  daily.forEach(d => { _histDaily[d.date] = d; });
 
-    // 編集用に保持
-    _histDaily = {};
-    daily.forEach(d => { _histDaily[d.date] = d; });
-
-    if (daily.length === 0) {
-      listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
-      return;
-    }
-    const rowHtml = d => {
-      const countHtml = (d.b_count != null)
-        ? `<span class="history-count">B${fmtCount(d.b_count)}</span>`
-        : `<span class="history-unit">記録なし</span>`;
-      const weightHtml = (d.weight != null)
-        ? `<div class="history-weight">⚖️ ${d.weight} kg</div>`
-        : '';
-      const diaryHtml = d.diary
-        ? `<div class="history-diary">📝 ${esc(d.diary)}</div>`
-        : '';
-      return `
+  if (daily.length === 0) {
+    listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
+    return;
+  }
+  const rowHtml = d => {
+    const countHtml = (d.b_count != null)
+      ? `<span class="history-count">B${fmtCount(d.b_count)}</span>`
+      : `<span class="history-unit">記録なし</span>`;
+    const weightHtml = (d.weight != null)
+      ? `<div class="history-weight">⚖️ ${d.weight} kg</div>`
+      : '';
+    const diaryHtml = d.diary
+      ? `<div class="history-diary">📝 ${esc(d.diary)}</div>`
+      : '';
+    return `
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
         <div style="display:flex;align-items:center">
@@ -4257,28 +4259,50 @@ async function loadHistory() {
           <button class="hist-edit-btn" onclick="openHistEdit('${d.date}')" title="この日の記録を編集">✏️</button>
         </div>
       </div>`;
-    };
+  };
 
-    // 今月はそのまま表示し、先月以前は「◯月」のアコーディオンにまとめる（タップで展開）
-    const todayStr = getTodayJST();
-    const curMonth = todayStr.slice(0, 7);
-    const curYear  = todayStr.slice(0, 4);
-    const groups = {};
-    daily.forEach(d => { const mk = d.date.slice(0, 7); (groups[mk] = groups[mk] || []).push(d); });
-    const monthKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
-    listEl.innerHTML = monthKeys.map(mk => {
-      const rows = groups[mk].map(rowHtml).join('');
-      if (mk === curMonth) return rows;
-      const [y, m] = mk.split('-');
-      const label = (y === curYear) ? `${parseInt(m)}月` : `${y}年${parseInt(m)}月`;
-      return `
+  // 今月はそのまま表示し、先月以前は「◯月」のアコーディオンにまとめる（タップで展開）
+  const todayStr = getTodayJST();
+  const curMonth = todayStr.slice(0, 7);
+  const curYear  = todayStr.slice(0, 4);
+  const groups = {};
+  daily.forEach(d => { const mk = d.date.slice(0, 7); (groups[mk] = groups[mk] || []).push(d); });
+  const monthKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+  listEl.innerHTML = monthKeys.map(mk => {
+    const rows = groups[mk].map(rowHtml).join('');
+    if (mk === curMonth) return rows;
+    const [y, m] = mk.split('-');
+    const label = (y === curYear) ? `${parseInt(m)}月` : `${y}年${parseInt(m)}月`;
+    return `
       <details class="month-acc">
         <summary><span>📁 ${label}</span><span class="month-acc-count">${groups[mk].length}日分</span></summary>
         ${rows}
       </details>`;
-    }).join('');
+  }).join('');
+}
+
+async function loadHistory() {
+  const listEl = document.getElementById('history-list');
+
+  // 1) まず端末ローカルの記録だけで即描画（サーバー応答を待たず白画面をなくす）
+  const localDaily = _composeHistoryDaily(null);
+  if (localDaily.length > 0) {
+    _paintHistory(localDaily);
+  } else {
+    listEl.innerHTML = '<div class="history-empty">読み込み中…</div>';
+    document.getElementById('history-total').style.display = 'none';
+  }
+
+  // 2) サーバーの全期間履歴を取得し、マージして描画し直す（他端末・過去分・DB復元を反映）
+  try {
+    const res  = await fetch(`/api/monthly-b?user_id=${encodeURIComponent(USER_ID)}`);
+    const data = await res.json();
+    _paintHistory(_composeHistoryDaily(data));
   } catch(e) {
-    listEl.innerHTML = '<div class="history-empty">読み込みに失敗しました</div>';
+    if (localDaily.length === 0) {
+      listEl.innerHTML = '<div class="history-empty">読み込みに失敗しました</div>';
+    }
+    // ローカル描画済みの場合はそのまま残す（オフラインでも履歴が見える）
   }
 }
 
