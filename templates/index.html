@@ -2818,8 +2818,8 @@ function renderStrip(mealId) {
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? onigiriIcon(34) : item.isCopy ? '✏️' : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
-          <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
-          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
+          <div class="th-pct">${fmtPct(item.loadingPct)}%</div>
+          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${item.loadingPct||0}%"></div></div>
         </div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
       </div>`;
@@ -2893,18 +2893,25 @@ function resetMeal(mealId) {
   saveState();
 }
 
+// 進捗率をなめらかに進める共通処理。
+// 残り％の一定割合ずつ99%へ近づき続けるので、途中（88%など）で止まって
+// 見えることがなく、解析が終わるまで数字がずっと動き続ける（完了時に100%）。
+function _advanceProgress(item) {
+  const p = item.loadingPct || 0;
+  if (p < 99) item.loadingPct = Math.min(99, p + Math.max(0.05, (99 - p) * 0.012));
+}
+// 表示用：小数1桁まで出して、終盤でも数字が動いているのが分かるようにする
+function fmtPct(p) { return (p || 0).toFixed(1); }
+
 function _startProgress(mealId, itemId) {
   const key = `${mealId}-${itemId}`;
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
   item.loadingPct = 0;
   _progressTimers[key] = setInterval(() => {
-    const p = item.loadingPct || 0;
-    if (p < 40)      item.loadingPct = Math.min(40,  p + 5);
-    else if (p < 70) item.loadingPct = Math.min(70,  p + 2);
-    else if (p < 88) item.loadingPct = Math.min(88,  p + 0.8);
+    _advanceProgress(item);
     renderStrip(mealId);
-  }, 400);
+  }, 200);
 }
 
 function _stopProgress(mealId, itemId) {
@@ -3064,13 +3071,10 @@ async function reanalyzeItem(mealId, itemId) {
   renderStrip(mealId);
   if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0%'; }
   const timer = setInterval(() => {
-    const p = item.loadingPct || 0;
-    if (p < 40)      item.loadingPct = Math.min(40, p + 5);
-    else if (p < 70) item.loadingPct = Math.min(70, p + 2);
-    else if (p < 88) item.loadingPct = Math.min(88, p + 0.8);
-    if (btn) btn.textContent = `🔄 再計算中… ${Math.round(item.loadingPct)}%`;
+    _advanceProgress(item);
+    if (btn) btn.textContent = `🔄 再計算中… ${fmtPct(item.loadingPct)}%`;
     renderStrip(mealId);
-  }, 400);
+  }, 200);
 
   const blob = dataURLtoBlob(item.previewSrc);
   const formData = new FormData();
