@@ -1936,6 +1936,9 @@ def admin_user_page(user_id):
 @app.route("/api/admin/user/<user_id>/detail")
 @_admin_required
 def admin_user_detail(user_id):
+    """ユーザー詳細のうち“軽い”データ（プロフィール・体重/Bカウント/運動グラフ・
+    コメント）を返す。食事写真（base64サムネで重い）は含めず、別APIで遅延取得する。
+    これでページ上部のグラフが即表示され、写真の読み込みを待たずに済む。"""
     conn = _get_conn()
     try:
         cur = conn.cursor()
@@ -1964,12 +1967,6 @@ def admin_user_detail(user_id):
         exercise = [{"date": r[0], "ex_b_count": r[1]} for r in cur.fetchall()]
 
         cur.execute(
-            f"SELECT date, payload FROM daily_meals WHERE user_id={PH} ORDER BY date DESC",
-            (user_id,),
-        )
-        meal_rows = cur.fetchall()
-
-        cur.execute(
             f"SELECT id, date, comment, created_at FROM staff_comments WHERE user_id={PH} ORDER BY date DESC, created_at DESC",
             (user_id,),
         )
@@ -1977,6 +1974,50 @@ def admin_user_detail(user_id):
             {"id": r[0], "date": r[1], "comment": r[2], "created_at": r[3]}
             for r in cur.fetchall()
         ]
+
+        # 食事写真は別APIで取得するが、フロントが枠を用意できるよう「記録のある日数」だけ先に返す。
+        cur.execute(
+            f"SELECT COUNT(*) FROM daily_meals WHERE user_id={PH}",
+            (user_id,),
+        )
+        meal_days = cur.fetchone()[0] or 0
+    finally:
+        conn.close()
+
+    return jsonify({
+        "display_name": display_name,
+        "is_vip": is_vip,
+        "weight": weight,
+        "b_count": b_count,
+        "exercise": exercise,
+        "comments": comments,
+        "meal_days": meal_days,
+    })
+
+
+@app.route("/api/admin/user/<user_id>/meals")
+@_admin_required
+def admin_user_meals(user_id):
+    """食事写真（base64サムネを含む重いデータ）を日付の新しい順に返す。
+    ?limit=N&offset=M で分割取得でき、詳細ページの写真セクションを遅延ロードする。"""
+    try:
+        limit = min(60, max(1, int(request.args.get("limit", 30))))
+    except (TypeError, ValueError):
+        limit = 30
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT date, payload FROM daily_meals WHERE user_id={PH}
+               ORDER BY date DESC LIMIT {PH} OFFSET {PH}""",
+            (user_id, limit, offset),
+        )
+        meal_rows = cur.fetchall()
     finally:
         conn.close()
 
@@ -2001,15 +2042,7 @@ def admin_user_detail(user_id):
         if items:
             meals.append({"date": dt, "items": items})
 
-    return jsonify({
-        "display_name": display_name,
-        "is_vip": is_vip,
-        "weight": weight,
-        "b_count": b_count,
-        "exercise": exercise,
-        "meals": meals,
-        "comments": comments,
-    })
+    return jsonify({"meals": meals, "limit": limit, "offset": offset, "has_more": len(meal_rows) == limit})
 
 
 @app.route("/api/admin/user/<user_id>/comment", methods=["POST"])
