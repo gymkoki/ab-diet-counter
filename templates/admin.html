@@ -264,7 +264,7 @@
   </div>
 
   <div class="card" style="margin-bottom:20px">
-    <h2>🍽️ 日別平均Bカウント（直近30日）</h2>
+    <h2>🔥 減量メンバーの日別平均Bカウント（直近30日）</h2>
     <canvas id="chart-b" height="120"></canvas>
   </div>
 
@@ -304,6 +304,7 @@
         </tbody>
       </table>
     </div>
+    <button id="inactive-toggle" style="display:none;margin-top:12px;width:100%;padding:10px;border:1px dashed #D1D5DB;border-radius:10px;background:#FAFAFA;color:#6B7280;font-size:13px;font-weight:700;cursor:pointer" onclick="toggleInactiveUsers()"></button>
   </div>
 
   <!-- 修正希望・ご要望の受信箱（個別返信） -->
@@ -421,10 +422,10 @@
       data: {
         labels,
         datasets: [{
-          label: '平均Bカウント',
-          data: d.avg_b_counts,
-          borderColor: '#6366F1',
-          backgroundColor: 'rgba(99,102,241,0.1)',
+          label: '減量メンバーの平均Bカウント',
+          data: d.cut_avg_b_counts,
+          borderColor: '#FF6B35',
+          backgroundColor: 'rgba(255,107,53,0.1)',
           fill: true,
           tension: 0.35,
           pointRadius: 3,
@@ -539,8 +540,18 @@
     renderUsers();
   }
 
+  // 直近3日間（今日を含む）に食事のB記録がない会員は、通常は一覧に表示しない。
+  // 「表示する」ボタンで切り替えられる。
+  let showInactive = false;
+  function toggleInactiveUsers() { showInactive = !showInactive; renderUsers(); }
+  function _activeCutoffStr() {
+    const d = new Date(Date.now() - 2 * 86400000);
+    return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+  }
+
   function renderUsers() {
     const tbody = document.getElementById('users-tbody');
+    const toggleBtn = document.getElementById('inactive-toggle');
     document.querySelectorAll('.sort-arrow').forEach(el => {
       el.textContent = el.dataset.col === sortCol
         ? (sortDir === 'asc' ? '▲' : '▼')
@@ -549,6 +560,7 @@
 
     if (!usersData || usersData.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="no-data">データがまだありません</td></tr>';
+      if (toggleBtn) toggleBtn.style.display = 'none';
       return;
     }
 
@@ -560,8 +572,14 @@
       });
     }
 
-    tbody.innerHTML = rows.map(u => `
-      <tr>
+    const cutoff = _activeCutoffStr();
+    const isActive = u => (u.last_active || '') >= cutoff;
+    const active   = rows.filter(isActive);
+    const inactive = rows.filter(u => !isActive(u));
+    const shown = showInactive ? [...active, ...inactive] : active;
+
+    const rowHtml = (u, dim) => `
+      <tr${dim ? ' style="opacity:0.55;background:#FAFAFA"' : ''}>
         <td>${u.display_name ? escapeHtml(u.display_name) : '<span style="color:#9CA3AF">-</span>'}</td>
         <td class="uid">${u.user_id_short}</td>
         <td>${u.days_recorded} 日</td>
@@ -575,8 +593,22 @@
           <button class="vip-btn${u.is_vip ? ' is-vip' : ''}" onclick="toggleVip('${u.user_id}', ${u.is_vip})">${u.is_vip ? 'VIP解除' : 'VIPにする'}</button>
           <a class="detail-link" href="${ADMIN_BASE}/user/${encodeURIComponent(u.user_id)}">詳細</a>
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+
+    tbody.innerHTML = shown.length
+      ? shown.map(u => rowHtml(u, !isActive(u))).join('')
+      : '<tr><td colspan="8" class="no-data">直近3日間に記録した会員がいません</td></tr>';
+
+    if (toggleBtn) {
+      if (inactive.length === 0) {
+        toggleBtn.style.display = 'none';
+      } else {
+        toggleBtn.style.display = '';
+        toggleBtn.textContent = showInactive
+          ? `△ 3日以上記録がない会員（${inactive.length}名）を隠す`
+          : `▽ 3日以上記録がない会員（${inactive.length}名）も表示する`;
+      }
+    }
   }
 
   async function toggleVip(userId, currentIsVip) {
