@@ -282,6 +282,18 @@
     </div>
   </div>
 
+  <!-- 減量メンバーの詳細（日別Bカウント・記録状況・食事へのリンク） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🔥 減量メンバーの詳細</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      減量目的の会員の「直近7日の日別Bカウント」と記録状況の一覧です。記録が途絶えている人が上に表示されます。「食事を見る」でその人の食事写真・体重推移・スタッフコメントを開けます。
+    </div>
+    <button id="cut-detail-btn" class="apikey-save" style="width:auto" onclick="toggleCutDetail()">🔍 詳細を表示する</button>
+    <div id="cut-detail-wrap" style="display:none;margin-top:14px">
+      <div class="table-wrap" id="cut-detail-table"><div class="spinner"></div></div>
+    </div>
+  </div>
+
   <!-- Users Table -->
   <div class="card users-card">
     <h2>👤 ユーザー別統計</h2>
@@ -451,6 +463,61 @@
   let chartCorr = null;
   const GOAL_LABEL = { cut: '🔥 減量', maintain: '⚖️ 維持', bulk: '💪 増量', none: '❔ 未設定' };
   const GOAL_COLOR = { cut: '#FF6B35', maintain: '#6366F1', bulk: '#059669', none: '#9CA3AF' };
+
+  // ── 減量メンバーの詳細（直近7日の日別Bカウント・記録状況）──
+  let _cutDetailOpen = false, _cutDetailLoaded = false;
+
+  async function toggleCutDetail() {
+    _cutDetailOpen = !_cutDetailOpen;
+    document.getElementById('cut-detail-wrap').style.display = _cutDetailOpen ? '' : 'none';
+    document.getElementById('cut-detail-btn').textContent = _cutDetailOpen ? '△ 詳細を閉じる' : '🔍 詳細を表示する';
+    if (_cutDetailOpen && !_cutDetailLoaded) await loadCutDetail();
+  }
+
+  async function loadCutDetail() {
+    const host = document.getElementById('cut-detail-table');
+    host.innerHTML = '<div class="spinner"></div>';
+    const r = await fetch('/api/admin/cut-members');
+    if (!r.ok) { host.innerHTML = '<div class="no-data">読み込みに失敗しました</div>'; return; }
+    const d = await r.json();
+    _cutDetailLoaded = true;
+    if (!d.members.length) {
+      host.innerHTML = '<div class="no-data">減量目的の会員がまだいません</div>';
+      return;
+    }
+    const md = s => { const dt = new Date(s + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; };
+    const dayHead = d.dates.map(s => `<th style="text-align:center">${md(s)}</th>`).join('');
+    const rows = d.members.map(m => {
+      const state = m.days_since == null
+        ? '<span style="color:#DC2626;font-weight:800">記録なし</span>'
+        : m.days_since >= 3
+          ? `<span style="color:#DC2626;font-weight:800">⚠️ ${m.days_since}日記録なし</span>`
+          : m.days_since >= 1
+            ? `<span style="color:#B45309;font-weight:700">${m.days_since}日前が最後</span>`
+            : '<span style="color:#059669;font-weight:700">✓ 今日記録済み</span>';
+      const cells = d.dates.map(dt => {
+        const v = m.daily_b[dt];
+        return v == null
+          ? '<td style="text-align:center;color:#D1D5DB">－</td>'
+          : `<td style="text-align:center;font-weight:800;color:${v > 8 ? '#DC2626' : '#FF6B35'}">${(Math.round(v*10)/10)}</td>`;
+      }).join('');
+      return `
+        <tr${(m.days_since == null || m.days_since >= 3) ? ' style="background:#FEF2F2"' : ''}>
+          <td>${m.name ? escapeHtml(m.name) : `<span class="uid">${m.user_id_short}…</span>`}</td>
+          <td style="white-space:nowrap">${state}</td>
+          ${cells}
+          <td style="text-align:center">${m.avg_b_7d != null ? `<span class="badge">${m.avg_b_7d} B</span>` : '<span style="color:#9CA3AF">-</span>'}</td>
+          <td><a class="detail-link" href="${ADMIN_BASE}/user/${encodeURIComponent(m.user_id)}">🍽️ 食事を見る</a></td>
+        </tr>`;
+    }).join('');
+    host.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>名前</th><th>記録状況</th>${dayHead}<th style="text-align:center">平均B/日<br>(記録日のみ)</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
 
   async function loadWeightInsights() {
     const r = await fetch('/api/admin/weight-insights');
@@ -743,7 +810,9 @@
 
   async function refresh() {
     try {
-      await Promise.all([loadOverview(), loadTrend(), loadUsers(), loadApiStatus(), loadWeightInsights(), loadFeedback()]);
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadApiStatus(), loadWeightInsights(), loadFeedback()];
+      if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
+      await Promise.all(jobs);
       const now = new Date();
       document.getElementById('last-updated').textContent =
         `最終更新: ${now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;

@@ -1497,6 +1497,63 @@ def admin_report_data():
     })
 
 
+@app.route("/api/admin/cut-members")
+@_admin_required
+def admin_cut_members():
+    """ダッシュボード用：減量メンバーの詳細（直近7日の日別Bカウント・最終記録日）。
+    誰が記録をサボっているか・毎日どれくらいBを摂っているかを一覧で確認する。"""
+    days = 7
+    now = datetime.datetime.now(JST)
+    dates = [(now.date() - datetime.timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
+    date_start = dates[0]
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, display_name, is_vip FROM user_profile WHERE goal = 'cut'")
+        cut_users = {r[0]: {"name": r[1], "is_vip": bool(r[2])} for r in cur.fetchall()}
+        if not cut_users:
+            return jsonify({"dates": dates, "members": []})
+
+        cur.execute(
+            f"""SELECT user_id, date, b_count FROM daily_b_count
+               WHERE date >= {PH} ORDER BY date""",
+            (date_start,)
+        )
+        recent = {}
+        for uid, date, bc in cur.fetchall():
+            if uid in cut_users:
+                recent.setdefault(uid, {})[date] = float(bc)
+
+        cur.execute("SELECT user_id, MAX(date) FROM daily_b_count GROUP BY user_id")
+        last_by_uid = {r[0]: r[1] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    today = now.date()
+    members = []
+    for uid, prof in cut_users.items():
+        daily = recent.get(uid, {})
+        vals = list(daily.values())
+        last = last_by_uid.get(uid)
+        days_since = (today - datetime.date.fromisoformat(last)).days if last else None
+        members.append({
+            "user_id":       uid,
+            "user_id_short": uid[:8],
+            "name":          prof["name"] or None,
+            "is_vip":        prof["is_vip"],
+            "daily_b":       {d: daily.get(d) for d in dates},
+            "avg_b_7d":      round(sum(vals) / len(vals), 1) if vals else None,
+            "recorded_days_7d": len(vals),
+            "last_record":   last,
+            "days_since":    days_since,
+        })
+    # 記録が途絶えている人が上に来るように並べる（未記録→日数が長い順）
+    members.sort(key=lambda m: (-(m["days_since"] if m["days_since"] is not None else 9999),
+                                m["name"] or "zzz"))
+    return jsonify({"dates": dates, "members": members})
+
+
 @app.route("/api/admin/weight-insights")
 @_admin_required
 def admin_weight_insights():
