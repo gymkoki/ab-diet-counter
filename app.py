@@ -1675,30 +1675,83 @@ def admin_users():
         )
         analysis_counts = {row[0]: row[1] for row in cur.fetchall()}
 
-        cur.execute("SELECT user_id, display_name, is_vip FROM user_profile")
-        profiles = {
-            row[0]: {"display_name": row[1], "is_vip": bool(row[2])}
-            for row in cur.fetchall()
-        }
+        # 目標(goal)も取得（旧スキーマにgoal列が無い場合に備えて分岐）
+        try:
+            cur.execute("SELECT user_id, display_name, is_vip, goal FROM user_profile")
+            profiles = {
+                row[0]: {"display_name": row[1], "is_vip": bool(row[2]), "goal": row[3]}
+                for row in cur.fetchall()
+            }
+        except Exception:
+            cur.execute("SELECT user_id, display_name, is_vip FROM user_profile")
+            profiles = {
+                row[0]: {"display_name": row[1], "is_vip": bool(row[2]), "goal": None}
+                for row in cur.fetchall()
+            }
+
+        # 各会員の「開始時期の体重」と「最新の体重」を集計（daily_weightの最古・最新）
+        cur.execute("SELECT user_id, date, weight FROM daily_weight ORDER BY user_id, date")
+        weight_by_user: dict = {}
+        for uid_w, dt_w, wt_w in cur.fetchall():
+            rec = weight_by_user.setdefault(uid_w, {})
+            if "initial" not in rec:
+                rec["initial"] = float(wt_w)
+                rec["start_date"] = dt_w
+            rec["latest"] = float(wt_w)
     finally:
         conn.close()
+
+    GOAL_LABELS = {"cut": "減量希望", "maintain": "体重維持", "bulk": "増量希望"}
 
     all_ids = set(b_stats.keys()) | set(analysis_counts.keys()) | set(profiles.keys())
     users = []
     for uid in all_ids:
         bs = b_stats.get(uid, {})
         pf = profiles.get(uid, {})
+        wr = weight_by_user.get(uid, {})
+        initial_w = wr.get("initial")
+        latest_w  = wr.get("latest")
+        change = round(latest_w - initial_w, 1) if (initial_w is not None and latest_w is not None) else None
+        goal = pf.get("goal")
         users.append({
             "user_id": uid,
             "user_id_short": uid[:8] + "…",
             "display_name": pf.get("display_name"),
             "is_vip": pf.get("is_vip", False),
+            "goal": goal,
+            "goal_label": GOAL_LABELS.get(goal, "未設定"),
             "days_recorded": bs.get("days", 0),
             "avg_b_count": bs.get("avg_b"),
             "analyses_count": analysis_counts.get(uid, 0),
             "last_active": bs.get("last_active", ""),
+            "initial_weight": initial_w,
+            "latest_weight": latest_w,
+            "weight_start_date": wr.get("start_date"),
+            "weight_change": change,
         })
+
+    # 並び順：減量希望なのに痩せていない人（体重が減っていない）を最上位にする。
+    #  tier 0 … 減量希望 かつ 体重変化が判明していて 0以上（増えた/変わらない）＝要注目
+    #  tier 1 … 減量希望 かつ 体重が減っている（変化<0）
+    #  tier 2 … 減量希望 だが体重データがまだ無い
+    #  tier 3 … それ以外（体重維持・増量・目標未設定）
+    # 同tier内は、体重変化が大きい（増えている）順→記録が新しい順。
+    def _sort_key(u):
+        g = u["goal"]
+        ch = u["weight_change"]
+        if g == "cut" and ch is not None and ch >= 0:
+            tier = 0
+        elif g == "cut" and ch is not None and ch < 0:
+            tier = 1
+        elif g == "cut":
+            tier = 2
+        else:
+            tier = 3
+        change_rank = -(ch if ch is not None else -9999)  # 増えているほど上
+        return (tier, change_rank)
+    # 先に「最終利用が新しい順」で並べ、その後に安定ソートで tier / 体重変化を優先する
     users.sort(key=lambda x: x["last_active"] or "", reverse=True)
+    users.sort(key=_sort_key)
 
     return jsonify({"users": users})
 
