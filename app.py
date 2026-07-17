@@ -136,13 +136,40 @@ def parse_ai_result(response):
         return json.loads(repair_json(text))
 
 
+def _num(v):
+    """値を数値化。None・空文字・非数値は0として扱う。"""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def recompute_totals(result):
+    """total_* を必ず foods の合計に一致させる。
+    AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
+    表示・日次集計の基準になる合計は常にサーバー側で内訳から再計算して整合させる。
+    （例：白米B1＋温玉B0.5＋油B0.5 の内訳なのに total_b_count が3で返る、を防ぐ）"""
+    if not isinstance(result, dict):
+        return result
+    foods = result.get("foods")
+    if isinstance(foods, list):
+        # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
+        b_sum = sum(_num(f.get("b_count")) for f in foods)
+        result["total_b_count"] = round(b_sum * 2) / 2
+        result["total_protein_g"] = round(sum(_num(f.get("protein_g")) for f in foods))
+        result["total_veg_g"] = round(sum(_num(f.get("veg_g")) for f in foods))
+        result["total_fruit_g"] = round(sum(_num(f.get("fruit_g")) for f in foods))
+    return result
+
+
 def create_and_parse(client, **kwargs):
-    """messages.create を呼び、空応答なら一度だけ再試行してからJSONを返す。"""
+    """messages.create を呼び、空応答なら一度だけ再試行してからJSONを返す。
+    返却前に total_* を内訳(foods)の合計へ揃え、合計と明細の食い違いを防ぐ。"""
     detail = ""
     for _attempt in range(2):
         response = client.messages.create(**kwargs)
         try:
-            return parse_ai_result(response)
+            return recompute_totals(parse_ai_result(response))
         except EmptyAIResponse as e:
             detail = e.detail
     raise EmptyAIResponse(detail)
