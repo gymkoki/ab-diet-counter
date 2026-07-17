@@ -3037,14 +3037,26 @@ function _findStapleFallback(data) {
   return null;
 }
 
+// 大盛り確認を出す対象か。男性、または（性別を問わず）体重60kg以上の人だけに聞く。
+// それ以外（体重60kg未満の女性など）は大盛りを食べる可能性が低いため確認しない。
+function shouldAskLargePortion() {
+  const p = getProfile() || {};
+  if (p.gender === 'male') return true;
+  const w = (p.weight != null && p.weight !== '') ? parseFloat(p.weight) : NaN;
+  return !isNaN(w) && w >= 60;
+}
+
 // 解析結果に確認フラグ（clarify）があれば順番に質問し、回答の文章を集めて返す。
 // 「普通盛り（1人前）」はAIの標準推定と同じなので noop（再計算せずそのまま確定）。
 async function collectClarifyAnswers(data) {
   const c = (data && data.clarify) || {};
   const answers = [];
-  const stapleName = (c.staple && c.staple.needed)
-    ? (c.staple.food_name || 'ご飯・パン・麺').trim()
-    : _findStapleFallback(data);
+  // 大盛り確認は対象者（男性／体重60kg以上）のみに出す
+  const stapleName = shouldAskLargePortion()
+    ? ((c.staple && c.staple.needed)
+        ? (c.staple.food_name || 'ご飯・パン・麺').trim()
+        : _findStapleFallback(data))
+    : null;
   if (stapleName) {
     const name = stapleName;
     answers.push(await askClarify(
