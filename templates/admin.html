@@ -339,18 +339,7 @@
     <div id="fb-list"><div class="spinner"></div></div>
   </div>
 
-  <!-- API Key Setup -->
-  <div class="card apikey-card">
-    <h2>🔑 APIキー設定</h2>
-    <div id="api-status-badge" class="api-status">確認中…</div>
-    <div class="apikey-row">
-      <input type="password" id="key-input" class="apikey-input"
-             placeholder="sk-ant-…" autocomplete="off"
-             onkeydown="if(event.key==='Enter') saveKey()">
-      <button id="save-btn" class="apikey-save" onclick="saveKey()">保存する</button>
-    </div>
-    <div id="api-msg" class="api-msg" style="display:none"></div>
-  </div>
+  <!-- API Key Setup は Render の環境変数 ANTHROPIC_API_KEY で管理するため画面からは非表示 -->
 </main>
 
 <script>
@@ -720,47 +709,7 @@
     loadUsers();
   }
 
-  async function loadApiStatus() {
-    const r = await fetch('/api/status');
-    const d = await r.json();
-    const badge = document.getElementById('api-status-badge');
-    if (d.configured) {
-      badge.textContent = '✓ APIキー設定済み';
-      badge.className = 'api-status status-ok';
-    } else {
-      badge.textContent = '✗ APIキー未設定';
-      badge.className = 'api-status status-ng';
-    }
-  }
-
-  async function saveKey() {
-    const key = document.getElementById('key-input').value.trim();
-    const msgEl = document.getElementById('api-msg');
-    const btn = document.getElementById('save-btn');
-    msgEl.style.display = 'none';
-    btn.disabled = true;
-    btn.textContent = '保存中…';
-
-    const r = await fetch('/api/setup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key }),
-    });
-    const d = await r.json();
-    btn.disabled = false;
-    btn.textContent = '保存する';
-
-    if (d.error) {
-      msgEl.textContent = d.error;
-      msgEl.className = 'api-msg err';
-    } else {
-      msgEl.textContent = '✓ 保存しました。';
-      msgEl.className = 'api-msg ok';
-      document.getElementById('key-input').value = '';
-      loadApiStatus();
-    }
-    msgEl.style.display = 'block';
-  }
+  // APIキー設定UIは廃止（Renderの環境変数で管理）。/api/setup・/api/status は互換のため残置。
 
   // ── 修正希望・ご要望の受信箱（個別返信） ──
   function fmtDateTime(iso) {
@@ -843,7 +792,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadApiStatus(), loadWeightInsights(), loadFeedback()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
