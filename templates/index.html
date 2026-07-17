@@ -268,8 +268,16 @@
     .chara-bubble { display:inline-block; background:#fff; border:2px solid rgba(0,0,0,0.08); border-radius:16px; padding:10px 16px; font-size:18px; font-weight:800; box-shadow:var(--shadow-sm); margin-bottom:14px; }
     .tier-kiki .chara-bubble { color:#C62828; border-color:#EF9A9A; animation:ch-bubble-flash 0.8s steps(2) infinite; }
     @keyframes ch-bubble-flash { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
-    .chara-img-wrap { position:relative; display:flex; align-items:flex-end; justify-content:center; }
-    .chara-img { width:100%; max-width:300px; height:auto; transform-origin:50% 100%; }
+    /* キャラは少し小さめ＋下に余白を取り、踊って動いても名札や下の文字に重ならないようにする */
+    .chara-img-wrap { position:relative; display:flex; align-items:flex-end; justify-content:center; margin-bottom:24px; }
+    .chara-img { width:100%; max-width:230px; height:auto; transform-origin:50% 100%; }
+    /* 名札（キャラ名）：万一キャラの足が近づいても前面に出て読めるようにする */
+    .chara-name-tag { position:relative; z-index:2; display:inline-block; background:rgba(255,255,255,0.92); border-radius:999px; padding:5px 14px; font-size:15px; font-weight:800; color:#5C564F; box-shadow:var(--shadow-sm); }
+    /* 「点数を上げるには」カード（ステージの外の独立カード。キャラはステージ内で
+       overflow:hidden によりクリップされるため、ここに重なることはない） */
+    .chara-advice-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; }
+    .chara-advice-title { font-size:15px; font-weight:800; color:#374151; margin-bottom:6px; }
+    .chara-advice-card p { font-size:17px; line-height:1.7; color:#44403B; }
     /* ── キャラのダンス：世界の有名ダンス50種＋ミームダンス30種＝計80種 ──
        表示のたびランダムで1つ再生。キャラごとのテンポは --tempo で調整
        （イラストに文字が入っているため、左右反転 scaleX(-1) は不使用）──*/
