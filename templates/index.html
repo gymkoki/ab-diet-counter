@@ -2710,7 +2710,7 @@ async function onCopyFileChange(input) {
     formData.append('user_id', USER_ID);
     { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
     const res = await fetchAnalyze('/analyze', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
     let name = prompt('この食事の名前を入力してください（例：いつもの朝食）');
     if (name === null) { status.style.display = 'none'; return; }  // キャンセル
@@ -2785,7 +2785,7 @@ async function submitTextEntry(mealId) {
 
   try {
     const res  = await fetchAnalyze('/analyze-text', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, id);
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
@@ -2944,6 +2944,20 @@ function _waitUntilVisible() {
   });
 }
 
+// レスポンスを安全にJSON化する。サーバーがHTML（502/504等のゲートウェイエラーや
+// タイムアウト）を返した場合でも res.json() の例外で「通信エラー」にせず、
+// 分かりやすいメッセージの {error} を返す。
+async function parseAnalyzeResponse(res) {
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (data && typeof data === 'object') return data;
+  if (res.status === 413) return { error: '画像のサイズが大きすぎます。もう一度撮影し直してお試しください。' };
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    return { error: 'サーバーが混み合っているか応答に時間がかかっています。少し待ってからもう一度お試しください。' };
+  }
+  return { error: `解析に失敗しました（エラーコード ${res.status}）。もう一度お試しください。` };
+}
+
 async function fetchAnalyze(url, formData, maxRetries = 2) {
   let sawHidden = document.hidden;
   const onVis = () => { if (document.hidden) sawHidden = true; };
@@ -2988,7 +3002,7 @@ async function analyzeItem(mealId, itemId) {
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res  = await fetchAnalyze('/analyze', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, itemId);
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
@@ -3018,7 +3032,7 @@ async function resumeTextItem(mealId, item) {
   { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
   try {
     const res = await fetchAnalyze('/analyze-text', fd);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, item.id);
     item.loading = false;
     if (data.error) {
@@ -3094,7 +3108,7 @@ async function reanalyzeItem(mealId, itemId) {
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res = await fetchAnalyze('/reanalyze', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     clearInterval(timer);
     item.loadingPct = 100;
     if (btn) btn.textContent = '🔄 再計算中… 100%';
