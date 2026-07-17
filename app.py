@@ -151,16 +151,65 @@ def parse_ai_result(response):
         return json.loads(repair_json(text))
 
 
+def _num(v):
+    """値を数値化。None・空文字・非数値は0として扱う。"""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def recompute_totals(result):
+    """total_* を必ず foods の合計に一致させる。
+    AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
+    表示・日次集計の基準になる合計は常にサーバー側で内訳から再計算して整合させる。
+    （例：白米B1＋温玉B0.5＋油B0.5 の内訳なのに total_b_count が3で返る、を防ぐ）"""
+    if not isinstance(result, dict):
+        return result
+    foods = result.get("foods")
+    if isinstance(foods, list):
+        # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
+        b_sum = sum(_num(f.get("b_count")) for f in foods)
+        result["total_b_count"] = round(b_sum * 2) / 2
+        result["total_protein_g"] = round(sum(_num(f.get("protein_g")) for f in foods))
+        result["total_veg_g"] = round(sum(_num(f.get("veg_g")) for f in foods))
+        result["total_fruit_g"] = round(sum(_num(f.get("fruit_g")) for f in foods))
+    return result
+
+
 def create_and_parse(client, **kwargs):
-    """messages.create を呼び、空応答なら一度だけ再試行してからJSONを返す。"""
+    """messages.create を呼び、失敗しても数回まで自動リトライしてからJSONを返す。
+    ・空応答／JSONが壊れていた場合は生成し直す（AIの一時的なブレ対策）
+    ・レート制限・過負荷(529)・一時的なサーバーエラーは少し待って再試行
+    返却前に total_* を内訳(foods)の合計へ揃え、合計と明細の食い違いを防ぐ。"""
     detail = ""
-    for _attempt in range(2):
-        response = client.messages.create(**kwargs)
+    last_json_err = None
+    attempts = 3
+    for attempt in range(attempts):
         try:
-            return parse_ai_result(response)
+            response = client.messages.create(**kwargs)
+            result = recompute_totals(parse_ai_result(response))
+            # foods が無い等、想定外の形なら生成し直す
+            if not isinstance(result, dict) or "foods" not in result:
+                raise EmptyAIResponse("no-foods")
+            return result
         except EmptyAIResponse as e:
             detail = e.detail
-    raise EmptyAIResponse(detail)
+        except json.JSONDecodeError as e:
+            last_json_err = e   # JSONが壊れていた → もう一度生成し直す
+        except (anthropic.RateLimitError, anthropic.InternalServerError,
+                anthropic.APITimeoutError, anthropic.APIConnectionError):
+            pass  # 一時的なAPIエラーは待って再試行
+        except anthropic.APIStatusError as e:
+            # 529(過負荷) や 5xx など一時的なものだけ再試行。その他は即失敗させる。
+            if getattr(e, "status_code", None) not in (429, 500, 502, 503, 529):
+                raise
+        if attempt < attempts - 1:
+            time.sleep(0.7 * (attempt + 1))  # 0.7s, 1.4s のバックオフ
+    # リトライしても駄目だった場合は、呼び出し側でエラー表示できるよう送出する
+    if last_json_err is not None:
+        raise last_json_err
+    raise EmptyAIResponse(detail or "retry-exhausted")
 
 
 def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
@@ -749,7 +798,13 @@ ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて�
 - 納豆（100gあたり約190〜200kcal）← 【例外的にB食材】として扱う
 
 ※【卵の特例】卵（鶏卵・全卵・ゆで卵・目玉焼き・卵焼き・スクランブルエッグ等）は、カロリー密度が200kcal以下でも必ずB食材として扱う。A食材にはしないこと。
-  卵1個（約50g・約75kcal）を基準に、実際に食べた個数・量でSTEP2を適用する。
+  卵1個（約50g・約75kcal）を基準に、【食べた個数ぶんを必ず合算した合計kcal】でSTEP2を適用する。
+  1個ずつ別々に判定して各120kcal未満→B0にしてはいけない（過小評価になる）。複数個は必ず1品にまとめて合計で判定する。
+  ・1個（約75kcal）→ 120kcal未満 → B0
+  ・2個（約150kcal）→ 120〜200kcal → B0.5
+  ・3個（約225kcal）→ 200kcal超 → B1
+  ・卵焼き・厚焼き（卵2〜3個分＋砂糖・油）→ 約150〜250kcal → B0.5〜B1
+  例）目玉焼き2個なら「50g×2＝100g × 約150kcal/100g ＝ 約150kcal → 120〜200 → B0.5」と計算してから判定する。
 
 ※【納豆の特例】納豆は必ずB食材として扱う（A食材にしない）。1パック（約40〜50g・約80〜100kcal）を基準に、実際に食べた量の実kcalでSTEP2を適用する（1パックのみなら120kcal未満でB0、複数パックで120kcal以上ならB0.5〜）。
 
@@ -759,7 +814,10 @@ ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて�
 
 A食材例：
 - 野菜全般（生・加熱・炒め・茹でいずれも）、きのこ類、海藻類
-- 果物（1人前が120kcal未満のもの。ただしバナナは本数の実kcalでSTEP2判定するB食材扱いとする）
+- 果物のほとんど（りんご・キウイ・みかん・オレンジ・いちご・ぶどう・なし・もも・すいか・メロン・ベリー類など）
+  → 通常量では1人前120kcal未満のためA食材＝Bカウント0。
+  【唯一の例外】バナナだけはB食材として扱い、食べた本数の実kcalでSTEP2判定する（下記B食材例を参照）。
+  ※アボカドは果物ではなく高脂質のため別扱い（1個約250kcal → B食材寄り。量で判定）。
 - お茶・ブラックコーヒー・水
 - 調味料少量（塩・醤油・酢・ハーブ・スパイスなど）
 - プロテインパウダー単体（牛乳で割らないもの）
@@ -770,7 +828,11 @@ B食材例：
 - パン全般（食パン・全粒粉パンなど）
 - 麺類（そば・うどん・ラーメン・パスタなど、1人前≒270〜350kcal）
 - 芋類（さつまいも・じゃがいもなど、100g≒100〜130kcal）
-- バナナ（果物だが必ずB食材として扱う。1本約80〜100kcal。食べた本数の実kcalでSTEP2判定：120kcal未満→B0／120〜200→B0.5／200超→B1。例：2本で約160〜200kcalなら約B0.5〜B1）
+- バナナ（果物だが必ずB食材として扱う。1本約80〜100kcal。食べた本数の実kcalでSTEP2判定する）
+  ・1本（約80〜100kcal）→ 120kcal未満 → B0
+  ・大きめ1本や1.5本（約120〜200kcal）→ B0.5
+  ・2本以上（約200kcal超）→ B1
+  ※他のB食材と同じ「120未満→0／120〜200→0.5／200超→1」を、必ず実際の本数・kcalで計算してから適用する。
 - オートミール（30〜40g≒120〜150kcal）
 - スイーツ・お菓子・チョコレート（1人前120kcal以上のもの）
 - 清涼飲料水・ジュース・アルコール（1人前120kcal以上）
@@ -801,6 +863,16 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 4. 各食材について必ず「推定グラム数 → 推定kcal」を明示し、その実kcalでSTEP2を適用する。
    amount欄とreason欄に推定グラム数と推定kcalを必ず書くこと。
 5. 量が少ないときは遠慮なく少量と判定してよい（0カウント・0.5カウント・A食材化を恐れない）。
+6.【主食（ご飯・麺・パン）は逆に過小評価しないこと・最重要】
+   白米・雑穀米・丼・麺・パンなどの主食は、量の見誤りがBカウントを大きく左右する（並盛B1 ↔ 半人前B0.5/B0）。
+   「なんとなく半人前」で片付けず、器の満たされ具合から実量を必ず計算すること：
+   - 茶碗（直径11〜12cm）に普通によそった量＝並盛 ≒ 150g（約250kcal）→ 200kcal超 → B1
+   - 茶碗の半分程度＝半膳 ≒ 75g（約125kcal）→ 120〜200kcal → B0.5
+   - 器の底に少しだけ ≒ 50g（約83kcal）→ 120kcal未満 → B0
+   - 大盛り・丼によそった量 ≒ 200〜250g（約330〜420kcal）→ B1〜B1.5
+   ※ 器の縁近くまで、または山盛りに見えるなら並盛以上（＝最低B1）。安易に0.5人前へ丸めない。
+   ※ 麺類（うどん・そば・ラーメン・パスタ）は1人前でも約270〜350kcalあり、丼・皿に普通に入っていれば最低B1。
+   ※ 迷ったら「半分」ではなく「並盛」を基準にし、明らかに少ないときだけ半膳以下へ下げる。
 
 【ベーコンの量別の判定例】
 - ベーコン1枚（約10g・約18kcal）→ 120kcal未満 → 0カウント
@@ -856,10 +928,10 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 ■ 具体例
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-【白米】
+【白米】※器の満たされ具合で必ず実量を見積もる。並盛を安易に半人前へ丸めないこと
 ・少量（50g、約83kcal）→ 120kcal未満 → 0カウント
 ・半膳（75g、約125kcal）→ 120〜200kcal → 0.5カウント
-・1杯（150g、約250kcal）→ 200kcal超 → 1カウント
+・並盛1杯＝茶碗に普通によそった量（150g、約250kcal）→ 200kcal超 → 1カウント
 ・大盛り（200g以上、約333kcal）→ 200kcal超 → 1カウント
 
 【コカ・コーラ（B食材：100mlあたり約43kcal）】
@@ -1030,6 +1102,15 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 分量の目安：バナナ1本≒100g、りんご1個≒250g、みかん1個≒80g、いちご5粒≒75g、キウイ1個≒85g、ぶどう1房≒150g。
 全食材の合計を total_fruit_g に整数で入れる。
 
+━━━━━━━━━━━━━━━━━━━━━━━
+■ 確認質問（clarify）— 量が写真から判定しにくいときのフラグ
+━━━━━━━━━━━━━━━━━━━━━━━
+写真だけでは量の判定が難しい場合、JSONの clarify フィールドで「ユーザーに確認したい」ことを伝える：
+1. staple.needed=true にする条件：白米・ご飯・パン・麺類などの主食が写っていて、「やや大盛り以上」（＝普通盛り〔1人前〕より明らかに多い）に見え、2人前（その主食だけで約400kcal超）に達するか写真だけでは判断しづらいとき。普通盛りにしか見えない場合は needed=false。food_name にはその主食名（例：「白米」「パスタ」「うどん」）を入れ、その主食の amount 欄には「やや大盛り」等の見た目の量も書くこと。
+2. oil.needed=true にする条件：炒め物・揚げ物・アヒージョ・オイル系ドレッシングなど、調理油が大さじ0.5以上使われている可能性があるが、油の量が写真から読み取れないとき。
+3. どちらも該当しない場合は needed=false にする。明らかに量が分かる場合（コンビニ商品・栄養成分表示が見える等）は聞かない。
+4. clarify を出す場合でも、foods には現時点で最も妥当な推定（標準的な盛り・標準的な油量）で必ず計上しておくこと。
+
 必ず以下のJSON形式のみで回答してください。JSONの前後に説明文やコードブロックは不要です：
 【重要】categoryフィールドは "A" または "B" のみ使用すること。"Good B"・"グッドB" は使用禁止。
 {
@@ -1083,7 +1164,11 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
   "total_protein_g": 全食材の推定タンパク質の合計（g・整数）,
   "total_veg_g": 全食材の野菜の合計（g・整数）,
   "total_fruit_g": 全食材の果物の合計（g・整数）,
-  "advice": "このメニューをABダイエット観点でのワンポイントアドバイス（1〜2文）"
+  "advice": "このメニューをABダイエット観点でのワンポイントアドバイス（1〜2文）",
+  "clarify": {
+    "staple": { "needed": trueまたはfalse, "food_name": "主食名（neededがtrueのときのみ）" },
+    "oil": { "needed": trueまたはfalse }
+  }
 }"""
 
 
@@ -1091,7 +1176,12 @@ def get_client():
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
         return None
-    return anthropic.Anthropic(api_key=key)
+    # タイムアウトとリトライを明示する：
+    #  - timeout=90秒 …… gunicornの --timeout（後述で240秒に延長）より十分短くし、
+    #    AI応答が遅い時はワーカーが強制終了される前にクライアント側で打ち切って
+    #    「通信エラー」ではなく分かりやすいJSONエラーを返せるようにする。
+    #  - max_retries=2 …… 一時的な過負荷・接続エラーはSDKが自動で再試行する。
+    return anthropic.Anthropic(api_key=key, timeout=90.0, max_retries=2)
 
 
 @app.route("/")
@@ -1974,6 +2064,9 @@ def admin_user_page(user_id):
 @app.route("/api/admin/user/<user_id>/detail")
 @_admin_required
 def admin_user_detail(user_id):
+    """ユーザー詳細のうち“軽い”データ（プロフィール・体重/Bカウント/運動グラフ・
+    コメント）を返す。食事写真（base64サムネで重い）は含めず、別APIで遅延取得する。
+    これでページ上部のグラフが即表示され、写真の読み込みを待たずに済む。"""
     conn = _get_conn()
     try:
         cur = conn.cursor()
@@ -2002,12 +2095,6 @@ def admin_user_detail(user_id):
         exercise = [{"date": r[0], "ex_b_count": r[1]} for r in cur.fetchall()]
 
         cur.execute(
-            f"SELECT date, payload FROM daily_meals WHERE user_id={PH} ORDER BY date DESC",
-            (user_id,),
-        )
-        meal_rows = cur.fetchall()
-
-        cur.execute(
             f"SELECT id, date, comment, created_at FROM staff_comments WHERE user_id={PH} ORDER BY date DESC, created_at DESC",
             (user_id,),
         )
@@ -2015,6 +2102,50 @@ def admin_user_detail(user_id):
             {"id": r[0], "date": r[1], "comment": r[2], "created_at": r[3]}
             for r in cur.fetchall()
         ]
+
+        # 食事写真は別APIで取得するが、フロントが枠を用意できるよう「記録のある日数」だけ先に返す。
+        cur.execute(
+            f"SELECT COUNT(*) FROM daily_meals WHERE user_id={PH}",
+            (user_id,),
+        )
+        meal_days = cur.fetchone()[0] or 0
+    finally:
+        conn.close()
+
+    return jsonify({
+        "display_name": display_name,
+        "is_vip": is_vip,
+        "weight": weight,
+        "b_count": b_count,
+        "exercise": exercise,
+        "comments": comments,
+        "meal_days": meal_days,
+    })
+
+
+@app.route("/api/admin/user/<user_id>/meals")
+@_admin_required
+def admin_user_meals(user_id):
+    """食事写真（base64サムネを含む重いデータ）を日付の新しい順に返す。
+    ?limit=N&offset=M で分割取得でき、詳細ページの写真セクションを遅延ロードする。"""
+    try:
+        limit = min(60, max(1, int(request.args.get("limit", 30))))
+    except (TypeError, ValueError):
+        limit = 30
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT date, payload FROM daily_meals WHERE user_id={PH}
+               ORDER BY date DESC LIMIT {PH} OFFSET {PH}""",
+            (user_id, limit, offset),
+        )
+        meal_rows = cur.fetchall()
     finally:
         conn.close()
 
@@ -2039,15 +2170,7 @@ def admin_user_detail(user_id):
         if items:
             meals.append({"date": dt, "items": items})
 
-    return jsonify({
-        "display_name": display_name,
-        "is_vip": is_vip,
-        "weight": weight,
-        "b_count": b_count,
-        "exercise": exercise,
-        "meals": meals,
-        "comments": comments,
-    })
+    return jsonify({"meals": meals, "limit": limit, "offset": offset, "has_more": len(meal_rows) == limit})
 
 
 @app.route("/api/admin/user/<user_id>/comment", methods=["POST"])
@@ -3377,8 +3500,15 @@ def analyze():
         return jsonify({"error": f"分析結果の解析に失敗しました。写真をもう一度撮り直してお試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
+        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+    except Exception as e:
+        # 想定外の例外でもHTMLの500を返さない（フロントの res.json() が壊れ「通信エラー」に
+        # なるのを防ぐ）。必ずJSONで返し、原因はログに残す。
+        print(f"[ANALYZE][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "画像の解析中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
 @app.route("/reanalyze", methods=["POST"])
@@ -3485,8 +3615,13 @@ def reanalyze():
         return jsonify({"error": f"分析結果の解析に失敗しました。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。"}), 401
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
+        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+    except Exception as e:
+        print(f"[REANALYZE][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "再計算中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
 @app.route("/analyze-text", methods=["POST"])
@@ -3547,8 +3682,13 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
+        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+    except Exception as e:
+        print(f"[ANALYZE-TEXT][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "解析中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
 if __name__ == "__main__":

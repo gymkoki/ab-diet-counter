@@ -164,6 +164,9 @@
     .text-entry-textarea { width:100%; min-height:84px; padding:11px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; resize:vertical; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
     .text-entry-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
     .btn-text-submit { width:100%; margin-top:10px; padding:13px; border-radius:var(--radius-md); border:none; background:var(--indigo); color:white; font-size:18px; font-weight:700; cursor:pointer; transition:transform 0.1s; }
+    /* 解析後の確認質問（大盛り・油の量）ボタン */
+    .btn-clarify { width:100%; padding:14px 10px; border-radius:var(--radius-md); border:1.5px solid var(--primary-line); background:var(--primary-soft); color:var(--primary-dark); font-size:17px; font-weight:800; cursor:pointer; }
+    .btn-clarify:active { background:var(--primary); color:#fff; }
     .btn-text-submit:active { transform:scale(0.985); }
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:var(--indigo-soft); border-radius:var(--radius-sm); padding:12px 14px; font-size:17px; line-height:1.6; color:#44449B; margin-bottom:12px; }
@@ -268,8 +271,16 @@
     .chara-bubble { display:inline-block; background:#fff; border:2px solid rgba(0,0,0,0.08); border-radius:16px; padding:10px 16px; font-size:18px; font-weight:800; box-shadow:var(--shadow-sm); margin-bottom:14px; }
     .tier-kiki .chara-bubble { color:#C62828; border-color:#EF9A9A; animation:ch-bubble-flash 0.8s steps(2) infinite; }
     @keyframes ch-bubble-flash { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
-    .chara-img-wrap { position:relative; display:flex; align-items:flex-end; justify-content:center; }
-    .chara-img { width:100%; max-width:300px; height:auto; transform-origin:50% 100%; }
+    /* キャラは少し小さめ＋下に余白を取り、踊って動いても名札や下の文字に重ならないようにする */
+    .chara-img-wrap { position:relative; display:flex; align-items:flex-end; justify-content:center; margin-bottom:24px; }
+    .chara-img { width:100%; max-width:230px; height:auto; transform-origin:50% 100%; }
+    /* 名札（キャラ名）：万一キャラの足が近づいても前面に出て読めるようにする */
+    .chara-name-tag { position:relative; z-index:2; display:inline-block; background:rgba(255,255,255,0.92); border-radius:999px; padding:5px 14px; font-size:15px; font-weight:800; color:#5C564F; box-shadow:var(--shadow-sm); }
+    /* 「点数を上げるには」カード（ステージの外の独立カード。キャラはステージ内で
+       overflow:hidden によりクリップされるため、ここに重なることはない） */
+    .chara-advice-card { background:var(--surface); margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px 18px; }
+    .chara-advice-title { font-size:15px; font-weight:800; color:#374151; margin-bottom:6px; }
+    .chara-advice-card p { font-size:17px; line-height:1.7; color:#44403B; }
     /* ── キャラのダンス：世界の有名ダンス50種＋ミームダンス30種＝計80種 ──
        表示のたびランダムで1つ再生。キャラごとのテンポは --tempo で調整
        （イラストに文字が入っているため、左右反転 scaleX(-1) は不使用）──*/
@@ -765,13 +776,13 @@
     </div>
   </div>
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
-    🏃 運動でマイナス <span id="ex-deduct-num" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span> カウント
+    🏃 運動で －<span id="ex-deduct-num" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span> カウント
   </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
-    🥩 推定タンパク質 <span id="protein-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="protein-target-text" style="opacity:0.85"></span>
+    🥩 タンパク質 <span id="protein-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="protein-target-text" style="opacity:0.85"></span>
   </div>
   <div id="veg-bar" style="display:none;text-align:center;padding:6px 20px 10px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
-    🥗 推定野菜 <span id="veg-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="veg-target-text" style="opacity:0.85"></span>
+    🥗 野菜 <span id="veg-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="veg-target-text" style="opacity:0.85"></span>
   </div>
 </header>
 
@@ -1102,6 +1113,17 @@
 </div>
 
 <input type="file" id="input-file" accept="image/*" multiple style="display:none" onchange="onHiddenInputChange(this)">
+
+<!-- 解析後の確認質問（大盛り・油の量）：回答すると最終結果が表示される -->
+<div id="clarify-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
+  <div style="background:white;border-radius:20px;padding:24px 20px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18);text-align:center">
+    <div style="font-size:15px;font-weight:700;color:var(--primary);letter-spacing:0.1em;margin-bottom:8px">🔍 かんたん確認</div>
+    <div id="clarify-question" style="font-size:18px;font-weight:800;line-height:1.6;margin-bottom:6px"></div>
+    <div id="clarify-note" style="font-size:14px;color:var(--text-muted);line-height:1.6;margin-bottom:16px"></div>
+    <div id="clarify-buttons" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div style="font-size:14px;color:var(--text-muted);margin-top:12px">選ぶと最終の計算結果が表示されます</div>
+  </div>
+</div>
 
 <div id="lightbox" onclick="closeLightbox()">
   <button id="lightbox-close" onclick="closeLightbox()">✕</button>
@@ -2702,7 +2724,7 @@ async function onCopyFileChange(input) {
     formData.append('user_id', USER_ID);
     { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
     const res = await fetchAnalyze('/analyze', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     if (data.error) { status.textContent = '⚠️ ' + data.error; return; }
     let name = prompt('この食事の名前を入力してください（例：いつもの朝食）');
     if (name === null) { status.style.display = 'none'; return; }  // キャンセル
@@ -2777,7 +2799,7 @@ async function submitTextEntry(mealId) {
 
   try {
     const res  = await fetchAnalyze('/analyze-text', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, id);
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
@@ -2818,8 +2840,8 @@ function renderStrip(mealId) {
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? onigiriIcon(34) : item.isCopy ? '✏️' : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
-          <div class="th-pct">${Math.round(item.loadingPct||0)}%</div>
-          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${Math.round(item.loadingPct||0)}%"></div></div>
+          <div class="th-pct">${fmtPct(item.loadingPct)}%</div>
+          <div class="th-pbar-wrap"><div class="th-pbar" style="width:${item.loadingPct||0}%"></div></div>
         </div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
       </div>`;
@@ -2893,18 +2915,25 @@ function resetMeal(mealId) {
   saveState();
 }
 
+// 進捗率をなめらかに進める共通処理。
+// 残り％の一定割合ずつ99%へ近づき続けるので、途中（88%など）で止まって
+// 見えることがなく、解析が終わるまで数字がずっと動き続ける（完了時に100%）。
+function _advanceProgress(item) {
+  const p = item.loadingPct || 0;
+  if (p < 99) item.loadingPct = Math.min(99, p + Math.max(0.05, (99 - p) * 0.012));
+}
+// 表示用：小数1桁まで出して、終盤でも数字が動いているのが分かるようにする
+function fmtPct(p) { return (p || 0).toFixed(1); }
+
 function _startProgress(mealId, itemId) {
   const key = `${mealId}-${itemId}`;
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
   item.loadingPct = 0;
   _progressTimers[key] = setInterval(() => {
-    const p = item.loadingPct || 0;
-    if (p < 40)      item.loadingPct = Math.min(40,  p + 5);
-    else if (p < 70) item.loadingPct = Math.min(70,  p + 2);
-    else if (p < 88) item.loadingPct = Math.min(88,  p + 0.8);
+    _advanceProgress(item);
     renderStrip(mealId);
-  }, 400);
+  }, 200);
 }
 
 function _stopProgress(mealId, itemId) {
@@ -2927,6 +2956,20 @@ function _waitUntilVisible() {
     const h = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', h); resolve(); } };
     document.addEventListener('visibilitychange', h);
   });
+}
+
+// レスポンスを安全にJSON化する。サーバーがHTML（502/504等のゲートウェイエラーや
+// タイムアウト）を返した場合でも res.json() の例外で「通信エラー」にせず、
+// 分かりやすいメッセージの {error} を返す。
+async function parseAnalyzeResponse(res) {
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (data && typeof data === 'object') return data;
+  if (res.status === 413) return { error: '画像のサイズが大きすぎます。もう一度撮影し直してお試しください。' };
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    return { error: 'サーバーが混み合っているか応答に時間がかかっています。少し待ってからもう一度お試しください。' };
+  }
+  return { error: `解析に失敗しました（エラーコード ${res.status}）。もう一度お試しください。` };
 }
 
 async function fetchAnalyze(url, formData, maxRetries = 2) {
@@ -2954,6 +2997,78 @@ async function fetchAnalyze(url, formData, maxRetries = 2) {
   }
 }
 
+// ═══════════════════════════════════════════
+//  解析後の確認質問（大盛り・油の量）
+//  写真から量が判定しにくいとAIが判断したとき、最終表示の前に
+//  ボタン選択で確認し、回答を反映して再計算する。
+// ═══════════════════════════════════════════
+let _clarifyResolve = null, _clarifyOptions = null;
+
+function askClarify(question, options, note) {
+  return new Promise(resolve => {
+    _clarifyResolve = resolve;
+    _clarifyOptions = options;
+    document.getElementById('clarify-question').textContent = question;
+    const noteEl = document.getElementById('clarify-note');
+    if (noteEl) { noteEl.textContent = note || ''; noteEl.style.display = note ? '' : 'none'; }
+    document.getElementById('clarify-buttons').innerHTML = options.map((o, i) =>
+      `<button class="btn-clarify" onclick="answerClarify(${i})">${esc(o.label)}</button>`).join('');
+    document.getElementById('clarify-overlay').style.display = 'flex';
+  });
+}
+
+function answerClarify(idx) {
+  document.getElementById('clarify-overlay').style.display = 'none';
+  const r = _clarifyResolve; _clarifyResolve = null;
+  if (r) r(_clarifyOptions[idx].text);
+}
+
+// 解析結果に確認フラグ（clarify）があれば順番に質問し、回答の文章を集めて返す
+async function collectClarifyAnswers(data) {
+  const c = (data && data.clarify) || {};
+  const answers = [];
+  if (c.staple && c.staple.needed) {
+    const name = (c.staple.food_name || 'ご飯・パン・麺').trim();
+    answers.push(await askClarify(
+      `${name}は「やや大盛り」に見えます。実際の量はどれくらいですか？`,
+      [
+        { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です` },
+        { label: 'やや大盛り（1.5人前くらい）',   text: `${name}は1.5人前ほどのやや大盛りです` },
+        { label: '結構大盛り（2人前以上）',       text: `${name}は2人前以上の結構大盛りです` },
+      ],
+      '栄養の状況をより正確に調べたいので、量を教えてください。（やや大盛り以上だと2人前で400kcalを超えることがあります）'
+    ));
+  }
+  if (c.oil && c.oil.needed) {
+    answers.push(await askClarify('調理に使った油の量はどれぐらいですか？', [
+      { label: 'ほぼ使っていない',   text: '調理油はほとんど使っていません' },
+      { label: '大さじ0.5くらい',    text: '調理油は大さじ0.5程度です' },
+      { label: '大さじ1くらい',      text: '調理油は大さじ1程度です' },
+      { label: '大さじ2以上',        text: '調理油は大さじ2以上使っています' },
+    ]));
+  }
+  return answers.filter(Boolean);
+}
+
+// 確認の回答を反映して再計算した最終結果を返す（失敗したときは元の結果のまま）
+async function reanalyzeWithAnswers(item, draft, answers) {
+  let imageBlob = item.file;
+  if (!imageBlob && item.previewSrc) { try { imageBlob = dataURLtoBlob(item.previewSrc); } catch(e) {} }
+  if (!imageBlob) return draft;
+  const fd = new FormData();
+  fd.append('image', imageBlob, 'image.jpg');
+  fd.append('correction', answers.join('。'));
+  fd.append('previous', JSON.stringify(draft));
+  fd.append('user_id', USER_ID);
+  { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
+  try {
+    const res = await fetchAnalyze('/reanalyze', fd);
+    const data = await res.json();
+    if (data && !data.error) return data;
+  } catch(e) {}
+  return draft;
+}
+
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
@@ -2973,13 +3088,36 @@ async function analyzeItem(mealId, itemId) {
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res  = await fetchAnalyze('/analyze', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, itemId);
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
     item.loading = false;
-    if (data.error) { item.error = data.error; showError(mealId, data.error); }
-    else { item.result = data; }
+    if (data.error) {
+      // 一時的な失敗（サーバー混雑・AIのブレ等）は、写真を消さず自動で1回だけ再解析する
+      if (!item._retried) {
+        item._retried = true;
+        await new Promise(r => setTimeout(r, 1200));
+        return analyzeItem(mealId, itemId);
+      }
+      item.error = data.error; showError(mealId, data.error);
+    }
+    else {
+      item._retried = false;
+      // 大盛り・油の量の確認が必要なら、最終表示の前に質問してから再計算する
+      let finalData = data;
+      const answers = await collectClarifyAnswers(data);
+      if (answers.length) {
+        item.loading = true;
+        _startProgress(mealId, itemId);
+        renderStrip(mealId);
+        finalData = await reanalyzeWithAnswers(item, data, answers);
+        _stopProgress(mealId, itemId);
+        item.loading = false;
+      }
+      delete finalData.clarify;   // 確認フラグは保存データに持ち越さない
+      item.result = finalData;
+    }
   } catch(e) {
     _stopProgress(mealId, itemId);
     item.loading = false;
@@ -3003,7 +3141,7 @@ async function resumeTextItem(mealId, item) {
   { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
   try {
     const res = await fetchAnalyze('/analyze-text', fd);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, item.id);
     item.loading = false;
     if (data.error) {
@@ -3064,13 +3202,10 @@ async function reanalyzeItem(mealId, itemId) {
   renderStrip(mealId);
   if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0%'; }
   const timer = setInterval(() => {
-    const p = item.loadingPct || 0;
-    if (p < 40)      item.loadingPct = Math.min(40, p + 5);
-    else if (p < 70) item.loadingPct = Math.min(70, p + 2);
-    else if (p < 88) item.loadingPct = Math.min(88, p + 0.8);
-    if (btn) btn.textContent = `🔄 再計算中… ${Math.round(item.loadingPct)}%`;
+    _advanceProgress(item);
+    if (btn) btn.textContent = `🔄 再計算中… ${fmtPct(item.loadingPct)}%`;
     renderStrip(mealId);
-  }, 400);
+  }, 200);
 
   const blob = dataURLtoBlob(item.previewSrc);
   const formData = new FormData();
@@ -3082,7 +3217,7 @@ async function reanalyzeItem(mealId, itemId) {
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res = await fetchAnalyze('/reanalyze', formData);
-    const data = await res.json();
+    const data = await parseAnalyzeResponse(res);
     clearInterval(timer);
     item.loadingPct = 100;
     if (btn) btn.textContent = '🔄 再計算中… 100%';
