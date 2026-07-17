@@ -3093,8 +3093,17 @@ async function analyzeItem(mealId, itemId) {
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
     item.loading = false;
-    if (data.error) { item.error = data.error; showError(mealId, data.error); }
+    if (data.error) {
+      // 一時的な失敗（サーバー混雑・AIのブレ等）は、写真を消さず自動で1回だけ再解析する
+      if (!item._retried) {
+        item._retried = true;
+        await new Promise(r => setTimeout(r, 1200));
+        return analyzeItem(mealId, itemId);
+      }
+      item.error = data.error; showError(mealId, data.error);
+    }
     else {
+      item._retried = false;
       // 大盛り・油の量の確認が必要なら、最終表示の前に質問してから再計算する
       let finalData = data;
       const answers = await collectClarifyAnswers(data);
