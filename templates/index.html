@@ -2919,6 +2919,9 @@ function resetMeal(mealId) {
 // 残り％の一定割合ずつ99%へ近づき続けるので、途中（88%など）で止まって
 // 見えることがなく、解析が終わるまで数字がずっと動き続ける（完了時に100%）。
 function _advanceProgress(item) {
+  // 確認質問（大盛り・油）の表示中は回答待ちなので、進捗は進めない
+  const ov = document.getElementById('clarify-overlay');
+  if (ov && ov.style.display === 'flex') return;
   const p = item.loadingPct || 0;
   if (p < 99) item.loadingPct = Math.min(99, p + Math.max(0.05, (99 - p) * 0.012));
 }
@@ -3004,8 +3007,10 @@ async function fetchAnalyze(url, formData, maxRetries = 2) {
 // ═══════════════════════════════════════════
 let _clarifyResolve = null, _clarifyOptions = null;
 
+// 質問は1つずつ表示する（複数の写真を同時に解析しても衝突しないよう直列化）
+let _clarifyQueue = Promise.resolve();
 function askClarify(question, options, note) {
-  return new Promise(resolve => {
+  const show = () => new Promise(resolve => {
     _clarifyResolve = resolve;
     _clarifyOptions = options;
     document.getElementById('clarify-question').textContent = question;
@@ -3015,6 +3020,9 @@ function askClarify(question, options, note) {
       `<button class="btn-clarify" onclick="answerClarify(${i})">${esc(o.label)}</button>`).join('');
     document.getElementById('clarify-overlay').style.display = 'flex';
   });
+  const p = _clarifyQueue.then(show);
+  _clarifyQueue = p.catch(() => {});
+  return p;
 }
 
 function answerClarify(idx) {
@@ -3088,6 +3096,45 @@ async function reanalyzeWithAnswers(item, draft, answers) {
   return draft;
 }
 
+// 事前チェック（/precheck・低コストの高速AI）で大盛り・油の確認が必要かを判定し、
+// 必要なら先に質問して回答の文章を返す。返り値：回答の配列（質問なし＝[]）。
+// 事前チェック自体に失敗したときは null を返す（本解析後の確認でフォローする）。
+async function collectPrecheckAnswers(imageBlob) {
+  let pc;
+  try {
+    const fd = new FormData();
+    fd.append('image', imageBlob, 'image.jpg');
+    const res = await fetchAnalyze('/precheck', fd);
+    pc = await res.json();
+  } catch(e) { return null; }
+  if (!pc || pc.error) return null;
+
+  const answers = [];
+  const st = pc.staple || {};
+  if (st.present && !st.fixed_portion) {
+    const name = (st.food_name || 'ご飯・パン・麺').trim();
+    answers.push(await askClarify(
+      `${name}は2人前くらいの大盛りでしたか？`,
+      [
+        { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です` },
+        { label: 'やや大盛り（1.5人前くらい）',   text: `${name}は1.5人前ほどのやや大盛りです` },
+        { label: 'かなりの大盛り（2人前以上）',   text: `${name}は2人前以上のかなりの大盛りです` },
+      ],
+      '量を先に教えてもらうことで、1回の解析で正確に計算できます。'
+    ));
+  }
+  if (pc.oil && pc.oil.possible) {
+    answers.push(await askClarify('調理に使った油の量はどれぐらいですか？', [
+      { label: 'ほぼ使っていない',   text: '調理油はほとんど使っていません' },
+      { label: '大さじ0.5くらい',    text: '調理油は大さじ0.5程度です' },
+      { label: '大さじ1くらい',      text: '調理油は大さじ1程度です' },
+      { label: '大さじ2以上',        text: '調理油は大さじ2以上使っています' },
+    ]));
+  }
+  // 事前チェックの回答は本解析にそのまま含めるため、「普通盛り」等もすべて伝える（追加コストなし）
+  return answers.filter(a => a && a.text).map(a => a.text);
+}
+
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
@@ -3100,10 +3147,21 @@ async function analyzeItem(mealId, itemId) {
   item.loadingPct = 0;
   _startProgress(mealId, itemId);
   renderStrip(mealId);
+
+  // ① 事前チェック：大盛り・油の確認を「本解析の前に」済ませ、回答を補足として
+  //    本解析に含める。これでフル解析のコストは1回で済む（再計算しない）。
+  //    ※初回の解析時だけ行う（自動リトライ時は前回の回答を使い回す）
+  let preAnswers = item._preAnswers;
+  if (preAnswers === undefined) {
+    preAnswers = await collectPrecheckAnswers(imageBlob);
+    item._preAnswers = preAnswers;   // null=事前チェック失敗（本解析後の確認でフォロー）
+  }
+
   const formData = new FormData();
   formData.append('image', imageBlob, 'image.jpg');
   formData.append('user_id', USER_ID);
-  if (item.note) formData.append('note', item.note);   // 写真への補足（任意）
+  const noteParts = [item.note, ...(preAnswers || [])].filter(Boolean);
+  if (noteParts.length) formData.append('note', noteParts.join('。'));   // 補足＋確認の回答
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res  = await fetchAnalyze('/analyze', formData);
@@ -3123,18 +3181,22 @@ async function analyzeItem(mealId, itemId) {
     }
     else {
       item._retried = false;
-      // 大盛り・油の量の確認が必要なら、最終表示の前に質問してから再計算する
       let finalData = data;
-      const answers = await collectClarifyAnswers(data);
-      if (answers.length) {
-        item.loading = true;
-        _startProgress(mealId, itemId);
-        renderStrip(mealId);
-        finalData = await reanalyzeWithAnswers(item, data, answers);
-        _stopProgress(mealId, itemId);
-        item.loading = false;
+      // 事前チェックが失敗していたときだけ、従来どおり解析後に確認→再計算でフォローする
+      // （事前チェック済みなら回答は本解析に反映済みなので、二重に聞かない・再計算しない）
+      if (preAnswers === null) {
+        const answers = await collectClarifyAnswers(data);
+        if (answers.length) {
+          item.loading = true;
+          _startProgress(mealId, itemId);
+          renderStrip(mealId);
+          finalData = await reanalyzeWithAnswers(item, data, answers);
+          _stopProgress(mealId, itemId);
+          item.loading = false;
+        }
       }
       delete finalData.clarify;   // 確認フラグは保存データに持ち越さない
+      delete item._preAnswers;
       item.result = finalData;
     }
   } catch(e) {
