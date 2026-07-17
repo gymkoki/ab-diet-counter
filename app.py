@@ -9,6 +9,7 @@ import time
 import secrets
 import datetime
 import threading
+import traceback
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -32,6 +33,20 @@ app = Flask(__name__)
 # アップロード上限（メモリ保護）。巨大ファイルはここで413にして受け付けない。
 # フロントは画像を圧縮して送るため通常は1MB未満。16MBは十分な余裕。
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+
+@app.errorhandler(Exception)
+def _handle_uncaught_exception(e):
+    """想定外の例外でも、HTMLの500ではなく必ずJSONの{error}を返す。
+    フロントが `res.json()` でメッセージを読めるようにし、原因はログに残して後から追える。
+    （例：解析前のDB書き込みや外部APIが一時的に落ちても、汎用500で終わらせない）"""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e  # 404・405・413等はFlask標準の扱いのまま
+    app.logger.error("Unhandled exception:\n%s", traceback.format_exc())
+    return jsonify({
+        "error": "サーバー側で一時的なエラーが発生しました。少し時間をおいて、もう一度お試しください。"
+    }), 500
 
 # ── 画像の縮小・圧縮（AI分析の高速化＋メモリ保護）──────────
 # Claude Visionは画像サイズが大きいほど処理（トークン化）に時間がかかるため、
@@ -486,6 +501,29 @@ except Exception as _e:
 
 _VALID_GENDERS = ("male", "female")
 _VALID_GOALS   = ("cut", "maintain", "bulk")
+
+
+def _log_usage(uid):
+    """利用ログを1件記録する。DBが一時的に落ちていても解析本体は続行できるよう、
+    失敗しても例外を投げずに握りつぶす（記録はあくまで補助的な情報のため）。"""
+    uid = (uid or "").strip()
+    if not uid:
+        return
+    ts = datetime.datetime.now(JST).isoformat()
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO usage_log (user_id, created_at) VALUES ({PH}, {PH})",
+                    (uid, ts)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.warning("usage_log insert failed (non-fatal): %s", e)
 
 
 def _save_user_goal(uid, gender, goal):
@@ -3272,21 +3310,9 @@ def analyze():
     if file.filename == "":
         return jsonify({"error": "ファイルが選択されていません"}), 400
 
-    # 利用ログ記録
+    # 利用ログ記録（DB障害があっても解析は止めない）
     uid = request.form.get("user_id", "")
-    if uid:
-        ts = datetime.datetime.now(JST).isoformat()
-        with _db_lock:
-            conn = _get_conn()
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    f"INSERT INTO usage_log (user_id, created_at) VALUES ({PH}, {PH})",
-                    (uid, ts)
-                )
-                conn.commit()
-            finally:
-                conn.close()
+    _log_usage(uid)
     # 目的別レポート用に性別・目標を保存（毎回のリクエストに付いてくる）
     _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))
 
@@ -3474,21 +3500,9 @@ def analyze_text():
     if not text:
         return jsonify({"error": "食べた内容を入力してください"}), 400
 
-    # 利用ログ記録（写真分析と同じく1回としてカウント）
+    # 利用ログ記録（写真分析と同じく1回としてカウント。DB障害があっても解析は止めない）
     uid = request.form.get("user_id", "")
-    if uid:
-        ts = datetime.datetime.now(JST).isoformat()
-        with _db_lock:
-            conn = _get_conn()
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    f"INSERT INTO usage_log (user_id, created_at) VALUES ({PH}, {PH})",
-                    (uid, ts)
-                )
-                conn.commit()
-            finally:
-                conn.close()
+    _log_usage(uid)
     # 目的別レポート用に性別・目標を保存
     _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))
 
