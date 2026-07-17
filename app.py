@@ -163,16 +163,38 @@ def recompute_totals(result):
 
 
 def create_and_parse(client, **kwargs):
-    """messages.create を呼び、空応答なら一度だけ再試行してからJSONを返す。
+    """messages.create を呼び、失敗しても数回まで自動リトライしてからJSONを返す。
+    ・空応答／JSONが壊れていた場合は生成し直す（AIの一時的なブレ対策）
+    ・レート制限・過負荷(529)・一時的なサーバーエラーは少し待って再試行
     返却前に total_* を内訳(foods)の合計へ揃え、合計と明細の食い違いを防ぐ。"""
     detail = ""
-    for _attempt in range(2):
-        response = client.messages.create(**kwargs)
+    last_json_err = None
+    attempts = 3
+    for attempt in range(attempts):
         try:
-            return recompute_totals(parse_ai_result(response))
+            response = client.messages.create(**kwargs)
+            result = recompute_totals(parse_ai_result(response))
+            # foods が無い等、想定外の形なら生成し直す
+            if not isinstance(result, dict) or "foods" not in result:
+                raise EmptyAIResponse("no-foods")
+            return result
         except EmptyAIResponse as e:
             detail = e.detail
-    raise EmptyAIResponse(detail)
+        except json.JSONDecodeError as e:
+            last_json_err = e   # JSONが壊れていた → もう一度生成し直す
+        except (anthropic.RateLimitError, anthropic.InternalServerError,
+                anthropic.APITimeoutError, anthropic.APIConnectionError):
+            pass  # 一時的なAPIエラーは待って再試行
+        except anthropic.APIStatusError as e:
+            # 529(過負荷) や 5xx など一時的なものだけ再試行。その他は即失敗させる。
+            if getattr(e, "status_code", None) not in (429, 500, 502, 503, 529):
+                raise
+        if attempt < attempts - 1:
+            time.sleep(0.7 * (attempt + 1))  # 0.7s, 1.4s のバックオフ
+    # リトライしても駄目だった場合は、呼び出し側でエラー表示できるよう送出する
+    if last_json_err is not None:
+        raise last_json_err
+    raise EmptyAIResponse(detail or "retry-exhausted")
 
 
 def prepare_image_for_api(image_data: bytes, fallback_media_type: str):
