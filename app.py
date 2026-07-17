@@ -711,7 +711,13 @@ ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて�
 - 納豆（100gあたり約190〜200kcal）← 【例外的にB食材】として扱う
 
 ※【卵の特例】卵（鶏卵・全卵・ゆで卵・目玉焼き・卵焼き・スクランブルエッグ等）は、カロリー密度が200kcal以下でも必ずB食材として扱う。A食材にはしないこと。
-  卵1個（約50g・約75kcal）を基準に、実際に食べた個数・量でSTEP2を適用する。
+  卵1個（約50g・約75kcal）を基準に、【食べた個数ぶんを必ず合算した合計kcal】でSTEP2を適用する。
+  1個ずつ別々に判定して各120kcal未満→B0にしてはいけない（過小評価になる）。複数個は必ず1品にまとめて合計で判定する。
+  ・1個（約75kcal）→ 120kcal未満 → B0
+  ・2個（約150kcal）→ 120〜200kcal → B0.5
+  ・3個（約225kcal）→ 200kcal超 → B1
+  ・卵焼き・厚焼き（卵2〜3個分＋砂糖・油）→ 約150〜250kcal → B0.5〜B1
+  例）目玉焼き2個なら「50g×2＝100g × 約150kcal/100g ＝ 約150kcal → 120〜200 → B0.5」と計算してから判定する。
 
 ※【納豆の特例】納豆は必ずB食材として扱う（A食材にしない）。1パック（約40〜50g・約80〜100kcal）を基準に、実際に食べた量の実kcalでSTEP2を適用する（1パックのみなら120kcal未満でB0、複数パックで120kcal以上ならB0.5〜）。
 
@@ -1070,7 +1076,12 @@ def get_client():
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
         return None
-    return anthropic.Anthropic(api_key=key)
+    # タイムアウトとリトライを明示する：
+    #  - timeout=90秒 …… gunicornの --timeout（後述で240秒に延長）より十分短くし、
+    #    AI応答が遅い時はワーカーが強制終了される前にクライアント側で打ち切って
+    #    「通信エラー」ではなく分かりやすいJSONエラーを返せるようにする。
+    #  - max_retries=2 …… 一時的な過負荷・接続エラーはSDKが自動で再試行する。
+    return anthropic.Anthropic(api_key=key, timeout=90.0, max_retries=2)
 
 
 @app.route("/")
@@ -3401,8 +3412,15 @@ def analyze():
         return jsonify({"error": f"分析結果の解析に失敗しました。写真をもう一度撮り直してお試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
+        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+    except Exception as e:
+        # 想定外の例外でもHTMLの500を返さない（フロントの res.json() が壊れ「通信エラー」に
+        # なるのを防ぐ）。必ずJSONで返し、原因はログに残す。
+        print(f"[ANALYZE][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "画像の解析中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
 @app.route("/reanalyze", methods=["POST"])
@@ -3509,8 +3527,13 @@ def reanalyze():
         return jsonify({"error": f"分析結果の解析に失敗しました。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。"}), 401
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
+        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+    except Exception as e:
+        print(f"[REANALYZE][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "再計算中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
 @app.route("/analyze-text", methods=["POST"])
@@ -3583,8 +3606,13 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
+    except (anthropic.APITimeoutError, anthropic.APIConnectionError):
+        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
         return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+    except Exception as e:
+        print(f"[ANALYZE-TEXT][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "解析中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
 if __name__ == "__main__":
