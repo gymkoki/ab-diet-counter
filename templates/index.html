@@ -3020,23 +3020,41 @@ function askClarify(question, options, note) {
 function answerClarify(idx) {
   document.getElementById('clarify-overlay').style.display = 'none';
   const r = _clarifyResolve; _clarifyResolve = null;
-  if (r) r(_clarifyOptions[idx].text);
+  if (r) r(_clarifyOptions[idx]);
 }
 
-// 解析結果に確認フラグ（clarify）があれば順番に質問し、回答の文章を集めて返す
+// アプリ側の保険：AIが確認不要と判断していても、食事量として意味のある主食
+// （ご飯・パン・麺で約180kcal以上）が含まれていれば必ず大盛り確認を出す。
+// （丼ものなどは具でご飯が隠れて、AIが「並盛」と思い込みやすいため）
+const _STAPLE_RE = /(白米|ごはん|ご飯|ライス|米飯|丼|チャーハン|炒飯|ピラフ|おかゆ|雑炊|パン|ベーグル|うどん|そば|蕎麦|パスタ|スパゲ|ラーメン|中華麺|焼きそば|そうめん|麺)/;
+function _findStapleFallback(data) {
+  for (const f of ((data && data.foods) || [])) {
+    const name = String(f.name || '');
+    if (!_STAPLE_RE.test(name)) continue;
+    const kcal = parseFloat(f.kcal_per_serving) || 0;
+    if (kcal >= 180 || (parseFloat(f.b_count) || 0) >= 1) return name;
+  }
+  return null;
+}
+
+// 解析結果に確認フラグ（clarify）があれば順番に質問し、回答の文章を集めて返す。
+// 「普通盛り（1人前）」はAIの標準推定と同じなので noop（再計算せずそのまま確定）。
 async function collectClarifyAnswers(data) {
   const c = (data && data.clarify) || {};
   const answers = [];
-  if (c.staple && c.staple.needed) {
-    const name = (c.staple.food_name || 'ご飯・パン・麺').trim();
+  const stapleName = (c.staple && c.staple.needed)
+    ? (c.staple.food_name || 'ご飯・パン・麺').trim()
+    : _findStapleFallback(data);
+  if (stapleName) {
+    const name = stapleName;
     answers.push(await askClarify(
-      `${name}は「やや大盛り」に見えます。実際の量はどれくらいですか？`,
+      `${name}は2人前くらいの大盛りでしたか？`,
       [
-        { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です` },
+        { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です`, noop: true },
         { label: 'やや大盛り（1.5人前くらい）',   text: `${name}は1.5人前ほどのやや大盛りです` },
-        { label: '結構大盛り（2人前以上）',       text: `${name}は2人前以上の結構大盛りです` },
+        { label: 'かなりの大盛り（2人前以上）',   text: `${name}は2人前以上のかなりの大盛りです` },
       ],
-      '栄養の状況をより正確に調べたいので、量を教えてください。（やや大盛り以上だと2人前で400kcalを超えることがあります）'
+      '写真だけでは主食の量を正確に判定しにくいため、確認しています。'
     ));
   }
   if (c.oil && c.oil.needed) {
@@ -3047,7 +3065,8 @@ async function collectClarifyAnswers(data) {
       { label: '大さじ2以上',        text: '調理油は大さじ2以上使っています' },
     ]));
   }
-  return answers.filter(Boolean);
+  // noop（AIの推定どおり）の回答は再計算に回さない
+  return answers.filter(a => a && a.text && !a.noop).map(a => a.text);
 }
 
 // 確認の回答を反映して再計算した最終結果を返す（失敗したときは元の結果のまま）
