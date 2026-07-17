@@ -3424,6 +3424,55 @@ def get_daily_meals():
         return jsonify({"payload": None})
 
 
+# 事前チェック用プロンプト：栄養計算はせず「確認質問が必要か」だけを判定する
+PRECHECK_PROMPT = """あなたは食事写真の事前チェック係です。栄養計算はせず、以下だけを判定して必ずJSONのみで回答してください（説明文・コードブロック不要）：
+{
+  "staple": { "present": trueまたはfalse, "food_name": "主食名（例：白米・パスタ・食パン）", "fixed_portion": trueまたはfalse },
+  "oil": { "possible": trueまたはfalse }
+}
+- staple.present：白米・ご飯・丼もののご飯・チャーハン・カレーのご飯・パン・麺類などの主食が写っているか。
+- staple.fixed_portion：量が確定できる場合のみtrue。おにぎり1個・食パン1枚など個数で分かる／栄養成分表示が写っている／主食が明らかに少量（100g未満）の場合。丼・皿盛りのご飯や麺は具や器で量が隠れるため必ずfalse。
+- oil.possible：炒め物・揚げ物・アヒージョ・オイル系ドレッシングなど、調理油を大さじ0.5以上使っていそうか。
+"""
+
+
+@app.route("/precheck", methods=["POST"])
+def precheck():
+    """本解析の前に「大盛り・油の確認質問が必要か」だけを高速・低コストで判定する。
+    ここで質問→回答を本解析のnote（補足）に含めることで、フル解析が1回で済む。"""
+    client = get_client()
+    if client is None:
+        return jsonify({"error": "APIキーが設定されていません。"}), 401
+    if "image" not in request.files:
+        return jsonify({"error": "画像が見つかりません"}), 400
+
+    file = request.files["image"]
+    image_data = file.read()
+    media_type = file.content_type
+    if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+        media_type = "image/jpeg"
+    base64_image, media_type = prepare_image_for_api(image_data, media_type)
+
+    try:
+        result = create_and_parse(
+            client,
+            model="claude-haiku-4-5-20251001",   # 事前チェックは高速・低コストのHaiku
+            max_tokens=300,
+            system=[{"type": "text", "text": PRECHECK_PROMPT}],
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64_image}},
+                    {"type": "text", "text": "この写真を判定してください。"},
+                ],
+            }],
+        )
+        return jsonify(result)
+    except Exception as e:
+        # 事前チェックの失敗は致命的ではない（本解析後の確認でフォローされる）
+        return jsonify({"error": f"事前チェックに失敗しました: {e}"}), 502
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     client = get_client()
@@ -3463,6 +3512,7 @@ def analyze():
         },
     ]
     # 写真への補足（任意）：食材名・量などユーザーの申告を最優先で反映する
+    # （事前チェックで確認した大盛り・油の量の回答もここに含まれて届く）
     note = (request.form.get("note") or "").strip()
     if note:
         user_content.append({
