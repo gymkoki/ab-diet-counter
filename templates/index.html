@@ -164,6 +164,9 @@
     .text-entry-textarea { width:100%; min-height:84px; padding:11px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; resize:vertical; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
     .text-entry-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
     .btn-text-submit { width:100%; margin-top:10px; padding:13px; border-radius:var(--radius-md); border:none; background:var(--indigo); color:white; font-size:18px; font-weight:700; cursor:pointer; transition:transform 0.1s; }
+    /* 解析後の確認質問（大盛り・油の量）ボタン */
+    .btn-clarify { width:100%; padding:14px 10px; border-radius:var(--radius-md); border:1.5px solid var(--primary-line); background:var(--primary-soft); color:var(--primary-dark); font-size:17px; font-weight:800; cursor:pointer; }
+    .btn-clarify:active { background:var(--primary); color:#fff; }
     .btn-text-submit:active { transform:scale(0.985); }
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:var(--indigo-soft); border-radius:var(--radius-sm); padding:12px 14px; font-size:17px; line-height:1.6; color:#44449B; margin-bottom:12px; }
@@ -1110,6 +1113,16 @@
 </div>
 
 <input type="file" id="input-file" accept="image/*" multiple style="display:none" onchange="onHiddenInputChange(this)">
+
+<!-- 解析後の確認質問（大盛り・油の量）：回答すると最終結果が表示される -->
+<div id="clarify-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
+  <div style="background:white;border-radius:20px;padding:24px 20px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18);text-align:center">
+    <div style="font-size:15px;font-weight:700;color:var(--primary);letter-spacing:0.1em;margin-bottom:8px">🔍 かんたん確認</div>
+    <div id="clarify-question" style="font-size:18px;font-weight:800;line-height:1.6;margin-bottom:16px"></div>
+    <div id="clarify-buttons" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div style="font-size:14px;color:var(--text-muted);margin-top:12px">選ぶと最終の計算結果が表示されます</div>
+  </div>
+</div>
 
 <div id="lightbox" onclick="closeLightbox()">
   <button id="lightbox-close" onclick="closeLightbox()">✕</button>
@@ -2983,6 +2996,72 @@ async function fetchAnalyze(url, formData, maxRetries = 2) {
   }
 }
 
+// ═══════════════════════════════════════════
+//  解析後の確認質問（大盛り・油の量）
+//  写真から量が判定しにくいとAIが判断したとき、最終表示の前に
+//  ボタン選択で確認し、回答を反映して再計算する。
+// ═══════════════════════════════════════════
+let _clarifyResolve = null, _clarifyOptions = null;
+
+function askClarify(question, options) {
+  return new Promise(resolve => {
+    _clarifyResolve = resolve;
+    _clarifyOptions = options;
+    document.getElementById('clarify-question').textContent = question;
+    document.getElementById('clarify-buttons').innerHTML = options.map((o, i) =>
+      `<button class="btn-clarify" onclick="answerClarify(${i})">${esc(o.label)}</button>`).join('');
+    document.getElementById('clarify-overlay').style.display = 'flex';
+  });
+}
+
+function answerClarify(idx) {
+  document.getElementById('clarify-overlay').style.display = 'none';
+  const r = _clarifyResolve; _clarifyResolve = null;
+  if (r) r(_clarifyOptions[idx].text);
+}
+
+// 解析結果に確認フラグ（clarify）があれば順番に質問し、回答の文章を集めて返す
+async function collectClarifyAnswers(data) {
+  const c = (data && data.clarify) || {};
+  const answers = [];
+  if (c.staple && c.staple.needed) {
+    const name = (c.staple.food_name || 'ご飯・パン・麺').trim();
+    answers.push(await askClarify(`${name}は2人前くらいの「かなりの大盛り」ですか？`, [
+      { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です` },
+      { label: '大盛り（1.5人前くらい）',       text: `${name}は1.5人前ほどの大盛りです` },
+      { label: 'かなりの大盛り（2人前以上）',    text: `${name}は2人前以上のかなりの大盛りです` },
+    ]));
+  }
+  if (c.oil && c.oil.needed) {
+    answers.push(await askClarify('調理に使った油の量はどれぐらいですか？', [
+      { label: 'ほぼ使っていない',   text: '調理油はほとんど使っていません' },
+      { label: '大さじ0.5くらい',    text: '調理油は大さじ0.5程度です' },
+      { label: '大さじ1くらい',      text: '調理油は大さじ1程度です' },
+      { label: '大さじ2以上',        text: '調理油は大さじ2以上使っています' },
+    ]));
+  }
+  return answers.filter(Boolean);
+}
+
+// 確認の回答を反映して再計算した最終結果を返す（失敗したときは元の結果のまま）
+async function reanalyzeWithAnswers(item, draft, answers) {
+  let imageBlob = item.file;
+  if (!imageBlob && item.previewSrc) { try { imageBlob = dataURLtoBlob(item.previewSrc); } catch(e) {} }
+  if (!imageBlob) return draft;
+  const fd = new FormData();
+  fd.append('image', imageBlob, 'image.jpg');
+  fd.append('correction', answers.join('。'));
+  fd.append('previous', JSON.stringify(draft));
+  fd.append('user_id', USER_ID);
+  { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
+  try {
+    const res = await fetchAnalyze('/reanalyze', fd);
+    const data = await res.json();
+    if (data && !data.error) return data;
+  } catch(e) {}
+  return draft;
+}
+
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
@@ -3008,7 +3087,21 @@ async function analyzeItem(mealId, itemId) {
     await new Promise(r => setTimeout(r, 300));
     item.loading = false;
     if (data.error) { item.error = data.error; showError(mealId, data.error); }
-    else { item.result = data; }
+    else {
+      // 大盛り・油の量の確認が必要なら、最終表示の前に質問してから再計算する
+      let finalData = data;
+      const answers = await collectClarifyAnswers(data);
+      if (answers.length) {
+        item.loading = true;
+        _startProgress(mealId, itemId);
+        renderStrip(mealId);
+        finalData = await reanalyzeWithAnswers(item, data, answers);
+        _stopProgress(mealId, itemId);
+        item.loading = false;
+      }
+      delete finalData.clarify;   // 確認フラグは保存データに持ち越さない
+      item.result = finalData;
+    }
   } catch(e) {
     _stopProgress(mealId, itemId);
     item.loading = false;
