@@ -1396,46 +1396,51 @@ def admin_report_data():
         }
 
         # ── 30日トレンド（集団平均） ──────────────────────────
+        # 【重要】上限は前日(target_date)まで。当日は朝だけの途中データで
+        # 棒グラフが極端に短くなり平均を乱すため、レポートには含めない。
         cur.execute(
             f"""SELECT date, AVG(b_count) FROM daily_b_count
-               WHERE date>={PH} GROUP BY date ORDER BY date""",
-            (start_30d,),
+               WHERE date>={PH} AND date<={PH} GROUP BY date ORDER BY date""",
+            (start_30d, target_date),
         )
         b_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
 
         cur.execute(
             f"""SELECT date, AVG(weight) FROM daily_weight
-               WHERE date>={PH} GROUP BY date ORDER BY date""",
-            (start_30d,),
+               WHERE date>={PH} AND date<={PH} GROUP BY date ORDER BY date""",
+            (start_30d, target_date),
         )
         w_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
 
         cur.execute(
             f"""SELECT date, AVG(ex_b_count) FROM daily_exercise
-               WHERE date>={PH} GROUP BY date ORDER BY date""",
-            (start_30d,),
+               WHERE date>={PH} AND date<={PH} GROUP BY date ORDER BY date""",
+            (start_30d, target_date),
         )
         ex_avg_by_day = {row[0]: round(float(row[1]), 2) for row in cur.fetchall()}
 
         # ── 個人別トレンド（スパゲッティプロット用） ──────────
         cur.execute(
-            f"SELECT user_id, date, b_count FROM daily_b_count WHERE date>={PH} ORDER BY user_id, date",
-            (start_30d,),
+            f"SELECT user_id, date, b_count FROM daily_b_count WHERE date>={PH} AND date<={PH} ORDER BY user_id, date",
+            (start_30d, target_date),
         )
         b_by_user: dict = {}
         for uid, dt, b in cur.fetchall():
             b_by_user.setdefault(uid, {})[dt] = b
 
         cur.execute(
-            f"SELECT user_id, date, weight FROM daily_weight WHERE date>={PH} ORDER BY user_id, date",
-            (start_30d,),
+            f"SELECT user_id, date, weight FROM daily_weight WHERE date>={PH} AND date<={PH} ORDER BY user_id, date",
+            (start_30d, target_date),
         )
         w_by_user: dict = {}
         for uid, dt, w in cur.fetchall():
             w_by_user.setdefault(uid, {})[dt] = w
 
-        # ── 減量実績（初回記録 vs 最新記録、全期間） ──────────
-        cur.execute("SELECT user_id, date, weight FROM daily_weight ORDER BY user_id, date")
+        # ── 減量実績（初回記録 vs 最新記録、全期間。ただし最新は前日まで） ──────────
+        cur.execute(
+            f"SELECT user_id, date, weight FROM daily_weight WHERE date<={PH} ORDER BY user_id, date",
+            (target_date,),
+        )
         all_w_by_user: dict = {}
         for uid, dt, w in cur.fetchall():
             all_w_by_user.setdefault(uid, []).append((dt, w))
@@ -1457,22 +1462,22 @@ def admin_report_data():
         )
         weight_loss_users = len(weight_loss_list)
 
-        # ── 日別利用推移 ──────────────────────────────────────
+        # ── 日別利用推移（前日まで） ──────────────────────────
         cur.execute(
             f"""SELECT SUBSTR(created_at,1,10) AS dt,
                        COUNT(DISTINCT user_id), COUNT(*)
-               FROM usage_log WHERE created_at>={PH}
+               FROM usage_log WHERE created_at>={PH} AND created_at<={PH}
                GROUP BY dt ORDER BY dt""",
-            (start_30d_ts,),
+            (start_30d_ts, target_end),
         )
         usage_by_day: dict = {}
         for dt, users, analyses in cur.fetchall():
             usage_by_day[dt] = {"users": users, "analyses": analyses}
 
-        # ── 全体平均Bカウント（直近30日・1人1日あたり） ──────
+        # ── 全体平均Bカウント（直近30日・前日まで・1人1日あたり） ──────
         cur.execute(
-            f"SELECT AVG(b_count) FROM daily_b_count WHERE date>={PH}",
-            (start_30d,),
+            f"SELECT AVG(b_count) FROM daily_b_count WHERE date>={PH} AND date<={PH}",
+            (start_30d, target_date),
         )
         row = cur.fetchone()
         b_overall_avg = round(float(row[0]), 2) if row and row[0] is not None else None
@@ -1485,20 +1490,21 @@ def admin_report_data():
         except Exception:
             pass  # goal列が無い旧スキーマでも動くように
 
-        # ── 栄養素集計用に直近30日の食事明細を取得 ────────────
+        # ── 栄養素集計用に直近30日の食事明細を取得（前日まで） ────────────
         cur.execute(
-            f"SELECT user_id, date, payload FROM daily_meals WHERE date>={PH}",
-            (start_30d,),
+            f"SELECT user_id, date, payload FROM daily_meals WHERE date>={PH} AND date<={PH}",
+            (start_30d, target_date),
         )
         nutrition_rows = cur.fetchall()
 
     finally:
         conn.close()
 
-    # 30日間の全日付リスト
+    # 30日間の全日付リスト（前日=target_dateまで。当日は途中データのため含めない）
     all_dates = []
     d = (now - datetime.timedelta(days=30)).date()
-    while d <= now.date():
+    end_d = (now - datetime.timedelta(days=1)).date()
+    while d <= end_d:
         all_dates.append(d.strftime("%Y-%m-%d"))
         d += datetime.timedelta(days=1)
 
