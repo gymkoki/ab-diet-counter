@@ -586,7 +586,6 @@
     .history-count { font-size:24px; font-weight:800; color:var(--b-color); font-variant-numeric:tabular-nums; }
     .history-unit { font-size:16px; font-weight:600; color:var(--text-muted); }
     .history-empty { text-align:center; padding:40px 16px; color:var(--text-muted); font-size:17px; line-height:1.9; }
-    .history-weight { font-size:17px; font-weight:700; color:#2563EB; margin-top:3px; font-variant-numeric:tabular-nums; }
     .month-acc { border-bottom:1px solid var(--border); }
     .month-acc summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 4px; font-size:17px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent; }
     .month-acc summary::-webkit-details-marker { display:none; }
@@ -4465,13 +4464,11 @@ function _paintHistory(daily) {
     listEl.innerHTML = '<div class="history-empty">まだ記録がありません。<br>食事を記録すると毎日24時に自動保存され、<br>ここにBカウントと体重が表示されます。</div>';
     return;
   }
+  // 一覧の各行はBカウントとひとこと日記のみ表示（体重はグラフと編集画面で確認できる）
   const rowHtml = d => {
     const countHtml = (d.b_count != null)
       ? `<span class="history-count">B${fmtCount(d.b_count)}</span>`
       : `<span class="history-unit">記録なし</span>`;
-    const weightHtml = (d.weight != null)
-      ? `<div class="history-weight">⚖️ ${d.weight} kg</div>`
-      : '';
     const diaryHtml = d.diary
       ? `<div class="history-diary">📝 ${esc(d.diary)}</div>`
       : '';
@@ -4479,7 +4476,7 @@ function _paintHistory(daily) {
       <div class="history-row">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
         <div style="display:flex;align-items:center">
-          <div style="text-align:right">${countHtml}${weightHtml}${diaryHtml}</div>
+          <div style="text-align:right">${countHtml}${diaryHtml}</div>
           <button class="hist-edit-btn" onclick="openHistEdit('${d.date}')" title="この日の記録を編集">編集</button>
         </div>
       </div>`;
