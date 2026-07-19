@@ -1820,9 +1820,9 @@ function scoreFromTotals(foodTotal, protein, veg, exBc) {
   if (bLocked) bPct = 0;
 
   let score = Math.round((bPct + pPct + vPct) / 3);
-  // Bカウントが目標オーバーの日は、タンパク質・野菜が満点でも
-  // キーラン君（80点〜）は登場しない＝79点を上限にする。
-  if (bOver) score = Math.min(score, 79);
+  // Bカウントは最重要指標：目標をオーバーした日は、タンパク質・野菜が
+  // 満点でも29点を上限にして、キャラが危機管鳥（〜29点）になるようにする。
+  if (bOver) score = Math.min(score, 29);
   return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked, bOver };
 }
 
