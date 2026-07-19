@@ -2885,11 +2885,11 @@ function renderResults(mealId) {
         <div class="food-list-wrap">
           ${buildFoodRows(item.result.foods)}
         </div>
-        ${item.previewSrc ? `
+        ${(item.previewSrc || (item.text && item.text.trim())) ? `
         <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
         <div class="recalc-form" id="recalc-form-${mealId}-${item.id}">
           <label>気になる点・訂正を入力（より高精度なAIで計算し直します）</label>
-          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：これは小鉢の中は豆腐ではなくヨーグルトです"></textarea>
+          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：シュークリームは1個ではなく2個です"></textarea>
           <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
       </div>
@@ -3303,9 +3303,14 @@ async function reanalyzeItem(mealId, itemId) {
     renderStrip(mealId);
   }, 200);
 
-  const blob = dataURLtoBlob(item.previewSrc);
   const formData = new FormData();
-  formData.append('image', blob, 'image.jpg');
+  // 写真がある食事は画像を、文章入力の食事は元の入力文を送る（画像は任意）
+  if (item.previewSrc) {
+    const blob = dataURLtoBlob(item.previewSrc);
+    formData.append('image', blob, 'image.jpg');
+  } else if (item.text) {
+    formData.append('text', item.text);
+  }
   formData.append('correction', correction);
   // 前回の解析結果を渡し、指摘された食材だけを直して他はそのまま維持させる
   if (item.result) formData.append('previous', JSON.stringify(item.result));
