@@ -986,8 +986,8 @@
     </div>
     <div class="chara-cal-grid" id="chara-cal-grid"></div>
     <div class="chara-cal-legend">
-      <div><img src="/static/chara-kieran.webp?v=1" alt="">よくできている日（80点〜）：キーラン君</div>
-      <div><img src="/static/chara-funba.webp?v=1" alt="">まあまあの日（30〜79点）：成果フンバ</div>
+      <div><img src="/static/chara-kieran.webp?v=1" alt="">よくできている日（90点〜）：キーラン君</div>
+      <div><img src="/static/chara-funba.webp?v=1" alt="">まあまあの日（30〜89点）：成果フンバ</div>
       <div><img src="/static/chara-kikikancho.webp?v=1" alt="">やばい日（〜29点）：危機管鳥</div>
     </div>
   </div>
@@ -1008,11 +1008,11 @@
       </div>
       <div style="display:flex;align-items:center;gap:12px;background:#F9ECDB;border-radius:14px;padding:8px 12px">
         <img src="/static/chara-funba.webp?v=1" alt="成果フンバ" style="width:56px;height:56px;object-fit:cover;border-radius:12px" draggable="false">
-        <div style="text-align:left"><div style="font-size:16px;font-weight:800">成果フンバ</div><div style="font-size:14px;color:#8A6A55;font-weight:700">30〜79点：一緒に踏ん張って応援</div></div>
+        <div style="text-align:left"><div style="font-size:16px;font-weight:800">成果フンバ</div><div style="font-size:14px;color:#8A6A55;font-weight:700">30〜89点：一緒に踏ん張って応援</div></div>
       </div>
       <div style="display:flex;align-items:center;gap:12px;background:#FDF4E7;border-radius:14px;padding:8px 12px">
         <img src="/static/chara-kieran.webp?v=1" alt="キーラン君" style="width:56px;height:56px;object-fit:cover;border-radius:12px" draggable="false">
-        <div style="text-align:left"><div style="font-size:16px;font-weight:800">キーラン君</div><div style="font-size:14px;color:#8A6A55;font-weight:700">80〜100点：合格ラインでお祝い</div></div>
+        <div style="text-align:left"><div style="font-size:16px;font-weight:800">キーラン君</div><div style="font-size:14px;color:#8A6A55;font-weight:700">90〜100点：合格ラインでお祝い</div></div>
       </div>
     </div>
     <button onclick="closeCharaIntro()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
@@ -2183,11 +2183,11 @@ const CHARA_PATTERNS = [
         '残りは全部ボーナスステージだブヒ！',
         '最後の一踏ん張り、地響き立てるブヒ！',
         '記録の抜けだけ確認して盤石だブヒ！',
-        '80点の花道が見えてきたブヒ！'
+        '80点台はもう目前だブヒ！'
     ] },
     { c:'funba', m:[
         '75点！おれからのバトンはもう目前だブヒ！',
-        '80点でキーランのやつが待ってるブヒ！',
+        '90点でキーランのやつが待ってるブヒ！',
         'ここまでの相撲、文句なしの熱戦だブヒ！',
         '最後の寄り、力を出し切るブヒ！',
         'タンパク質ひと押しで千秋楽だブヒ！',
@@ -2197,59 +2197,29 @@ const CHARA_PATTERNS = [
         '土俵際の魔術師と呼ばせてもらうブヒ！',
         '行けー！！突き抜けろー！！ブヒーー！！'
     ] },
-    { c:'cat', m:[
-        '80点おめでとうにゃ！ここからはぼくの出番にゃ！',
-        'すごいすごい！しっぽが勝手に踊ってるにゃ！',
-        'タンパク質の管理が見事すぎるにゃ〜！',
-        '野菜もちゃんと摂れてて感心しちゃうにゃ！',
-        '記録がきれいに揃ってて美しいにゃ〜！',
-        '80点台は優等生ゾーンにゃ！誇っていいにゃ！',
-        'ゴロゴロ喉が鳴っちゃう嬉しさにゃ！',
-        'Bカウントの抑え方がプロ級にゃ！',
-        'きみの頑張り、ちゃんと見てたにゃよ！',
-        '運動もこなしてえらいにゃ〜！尊敬にゃ！',
-        '90点も夢じゃないにゃ！このままにゃ！',
-        '今日のきみ、ひなたぼっこ級に輝いてるにゃ！',
-        '肉球スタンプ押してあげるにゃ！合格にゃ！',
-        'コツコツの積み重ねが花開いたにゃ！',
-        '見てるだけのぼくまで元気になるにゃ！',
-        'きみのグラフ、うっとりする形にゃ〜！',
-        '毎日の記録、習慣の勝利にゃ！',
-        '頑張り屋さんには特製の頭なでなでにゃ！',
-        '80点の壁を軽々越えたの、かっこいいにゃ！',
-        'ぼくのヒゲがピンと立つほど嬉しいにゃ！',
-        '心も体も整ってる感じがするにゃ〜！',
-        'この調子なら明日はもっとすごいにゃ！',
-        'きみと組めてぼくは幸せ者にゃ〜！',
-        'バランス感覚が名人芸にゃ！お見事にゃ！',
-        '85点まであとちょっと！楽しみにゃ〜！'
+    { c:'funba', m:[
+        '80点台に乗ったブヒ！大金星まであと少しだブヒ！',
+        'ここからが本当の勝負どころだブヒ！',
+        'タンパク質か野菜をもうひと押しだブヒ！',
+        '90点でキーランのやつが待ってるブヒ！',
+        '横綱相撲まであと10点だブヒ！',
+        'Bカウントの抑えは見事だブヒ！この調子だブヒ！',
+        '記録の抜けがないか最終確認だブヒ！',
+        '油断せず最後まで取り切るブヒ！',
+        'おれと一緒に90点へ突進だブヒ！',
+        '80点台で満足するなブヒ！上があるブヒ！'
     ] },
-    { c:'cat', m:[
-        '85点にゃ！！飛び上がって二回転しちゃったにゃ！',
-        'ここまで来たら90点も射程圏にゃ！',
-        'タンパク質の選び方が玄人にゃ〜！',
-        '野菜の量も質も申し分ないにゃ！',
-        '記録の丁寧さに感動して涙が出るにゃ…！',
-        'Bカウントほぼ完封！すごい集中力にゃ！',
-        '喉のゴロゴロが止まらないにゃ〜！',
-        'きみの努力は本物にゃ！保証するにゃ！',
-        '運動まで完璧とか、もう先生にゃ！',
-        'しっぽの振りすぎで風が起きてるにゃ！',
-        '85点台は達人の域にゃ〜！',
-        '今日のきみに金の肉球バッジ進呈にゃ！',
-        '続ける力こそ最強のスキルにゃ！',
-        'ぼく、きみの専属応援団長になるにゃ！',
-        'この安定感、招き猫もびっくりにゃ！',
-        'あと数点で90点！ワクワクが止まらんにゃ！',
-        'グラフの右肩上がりに惚れ惚れするにゃ〜！',
-        '自分をたくさん褒めていい日にゃよ！',
-        'きみの記録帳は宝物レベルにゃ！',
-        '毛づくろいも忘れる面白さで見てたにゃ！',
-        '89点の壁もするっと越えられるにゃ！',
-        '今日の主役は間違いなくきみにゃ！',
-        '丁寧な暮らしのお手本みたいにゃ〜！',
-        'ぼくの尊敬メーターが振り切れたにゃ！',
-        '次のステージへ、軽やかにジャンプにゃ！'
+    { c:'funba', m:[
+        '85点超え！あと一歩で合格ラインだブヒ！',
+        '90点まで残りわずか！寄り切るブヒ！',
+        'ここで踏ん張れば千秋楽は大勝利だブヒ！',
+        'タンパク質ひと口分で90点が見えるブヒ！',
+        '野菜をもう一皿で優勝インタビューだブヒ！',
+        'キーランのやつがそわそわし始めてるブヒ！',
+        '85点台は関脇クラスだブヒ！あと少しで横綱だブヒ！',
+        '最後の詰めを丁寧にいくブヒ！',
+        '90点の壁、おれの突進力で一緒に破るブヒ！',
+        'ここまで来たら絶対に取りこぼすなブヒ！'
     ] },
     { c:'cat', m:[
         '90点突破にゃ！！お祝いの宙返りするにゃ！',
