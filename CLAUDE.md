@@ -39,6 +39,22 @@
   - 状態は localStorage に保存し、サーバーにも日別同期。
   - アプリ内「アップデートお知らせ」は `NOTICE_KEY`（`ab-diet-notice-vNN`）を更新すると既存端末にも再表示される。
 
+## 回帰テスト（必ず実行してからマージする）
+
+- `tests/` に回帰テストがある（AIはモックするのでAPIキー不要・数秒で終わる）：
+
+```bash
+pip install pytest && python3 -m pytest tests/ -q
+```
+
+- GitHub Actions（`.github/workflows/test.yml`）でも全PR・main pushで自動実行される。
+- 経緯：2026-07 に「文章で入力すると通信エラー」障害が発生。原因は、前面のままの
+  通信断で `fetchAnalyze` が再送せず即エラーにしていたこと。対策として
+  ①前面でも自動再送、②`/analyze-text` のAI試行を60秒/回に制限、
+  ③通信エラーと画面側バグのメッセージを区別、④このテスト群を追加した。
+- **フロントは1ファイル（index.html）に全JSが入っているため、構文エラー1つで
+  アプリ全体が止まる**。テストが `node --check` で検知するので、マージ前に必ず通すこと。
+
 ## ローカル動作確認
 
 ```bash

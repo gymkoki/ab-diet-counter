@@ -3762,6 +3762,10 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         result = create_and_parse(
             client,
             model="claude-sonnet-4-6",   # 文章入力も精度重視でSonnet
+            # 文章入力は出力が小さく通常10〜30秒で終わる。1回の試行を60秒で打ち切ることで、
+            # AI側が固まった場合でもリクエスト全体が長引かず、スマホのブラウザが持つ
+            # 通信タイムアウト（約60〜100秒）を超えて「通信エラー」になるのを防ぐ。
+            timeout=60.0,
             max_tokens=16000,
             system=[
                 {

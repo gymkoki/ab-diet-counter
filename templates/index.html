@@ -2783,7 +2783,7 @@ async function submitTextEntry(mealId) {
     _stopProgress(mealId, id);
     item.loading = false;
     state[mealId].items = state[mealId].items.filter(i => i.id !== id);
-    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+    showError(mealId, _analyzeFailureMessage(e, 'text-input'));
   }
   renderStrip(mealId);
   renderResults(mealId);
@@ -2957,20 +2957,34 @@ async function fetchAnalyze(url, formData, maxRetries = 2) {
       try {
         return await fetch(url, { method: 'POST', body: formData });
       } catch (e) {
-        // バックグラウンドが絡む失敗で再試行の余地があれば、
-        // 画面に戻ってから少し待って再送する（それ以外は従来どおりエラー）。
-        if ((sawHidden || document.hidden) && attempt < maxRetries) {
-          await _waitUntilVisible();
-          await new Promise(r => setTimeout(r, 600));
-          sawHidden = false;
-          continue;
+        if (attempt >= maxRetries) {
+          console.error(`[fetchAnalyze] ${url} 通信失敗（自動再送${maxRetries}回でも回復せず）:`, e);
+          throw e;
         }
-        throw e;
+        // 他アプリを見ていた（バックグラウンド）せいで切れた場合は、画面に戻るまで待つ
+        if (sawHidden || document.hidden) {
+          await _waitUntilVisible();
+          sawHidden = false;
+        }
+        // 前面のままでも、電波の揺らぎ・回線の切り替わり・長時間リクエストの切断などで
+        // fetchは失敗する。どの解析（写真・文章）でも少し待って自動で再送する。
+        await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
       }
     }
   } finally {
     document.removeEventListener('visibilitychange', onVis);
   }
+}
+
+// 解析系のcatchで使う共通メッセージ。通信の失敗（fetchはTypeErrorで失敗する）と、
+// 画面側プログラムの不具合を区別して表示し、報告を受けたときに原因を即切り分けられる
+// ようにする（以前は両方とも「通信エラー」と表示され、原因調査ができなかった）。
+function _analyzeFailureMessage(e, tag) {
+  console.error(`[${tag}] 解析処理でエラー:`, e);
+  const isNetwork = (e instanceof TypeError) || /fetch|network|load failed|通信/i.test(String((e && e.message) || ''));
+  return isNetwork
+    ? '通信エラーが発生しました。電波の良い場所で、もう一度お試しください。'
+    : '画面の処理中に問題が発生しました。ページを再読み込みして、もう一度お試しください。';
 }
 
 // ═══════════════════════════════════════════
@@ -3187,7 +3201,7 @@ async function analyzeItem(mealId, itemId) {
   } catch(e) {
     _stopProgress(mealId, itemId);
     item.loading = false;
-    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+    showError(mealId, _analyzeFailureMessage(e, 'photo-analyze'));
   }
   renderStrip(mealId);
   renderResults(mealId);
@@ -3217,7 +3231,7 @@ async function resumeTextItem(mealId, item) {
   } catch(e) {
     _stopProgress(mealId, item.id);
     item.loading = false;
-    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+    showError(mealId, _analyzeFailureMessage(e, 'text-resume'));
   }
   renderStrip(mealId);
   renderResults(mealId);
@@ -3309,7 +3323,7 @@ async function reanalyzeItem(mealId, itemId) {
     clearInterval(timer);
     item.loading = false;
     renderStrip(mealId);
-    showError(mealId, '通信エラーが発生しました。再度お試しください。');
+    showError(mealId, _analyzeFailureMessage(e, 'reanalyze'));
     if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
   }
 }
