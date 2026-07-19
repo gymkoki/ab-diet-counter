@@ -1,0 +1,27 @@
+# 回帰テスト：mainへのPR・pushのたびに自動実行する。
+# 「文章入力で通信エラー」(2026-07) のような壊れを、デプロイ前に検知するための保険。
+# AIは呼ばない（モック）ため、APIキーは不要で1〜2分で終わる。
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run regression tests
+        run: pytest tests/ -q
