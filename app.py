@@ -197,7 +197,10 @@ def create_and_parse(client, **kwargs):
     返却前に total_* を内訳(foods)の合計へ揃え、合計と明細の食い違いを防ぐ。"""
     detail = ""
     last_json_err = None
-    attempts = 3
+    # 最大2回まで（1回失敗したらもう1回だけ生成し直す）。
+    # クライアントtimeout=140秒 × 2回 ＝ 最大280秒で、gunicornの --timeout=300秒を
+    # 超えない。これでワーカーが強制終了されて500/502になるのを防ぐ。
+    attempts = 2
     for attempt in range(attempts):
         try:
             response = client.messages.create(**kwargs)
@@ -218,7 +221,7 @@ def create_and_parse(client, **kwargs):
             if getattr(e, "status_code", None) not in (429, 500, 502, 503, 529):
                 raise
         if attempt < attempts - 1:
-            time.sleep(0.7 * (attempt + 1))  # 0.7s, 1.4s のバックオフ
+            time.sleep(0.7)  # 軽くバックオフしてから1回だけ再試行
     # リトライしても駄目だった場合は、呼び出し側でエラー表示できるよう送出する
     if last_json_err is not None:
         raise last_json_err
@@ -1194,11 +1197,14 @@ def get_client():
     if not key:
         return None
     # タイムアウトとリトライを明示する：
-    #  - timeout=90秒 …… gunicornの --timeout（後述で240秒に延長）より十分短くし、
-    #    AI応答が遅い時はワーカーが強制終了される前にクライアント側で打ち切って
-    #    「通信エラー」ではなく分かりやすいJSONエラーを返せるようにする。
-    #  - max_retries=2 …… 一時的な過負荷・接続エラーはSDKが自動で再試行する。
-    return anthropic.Anthropic(api_key=key, timeout=90.0, max_retries=2)
+    #  - timeout=140秒 …… 具材の多い複雑な写真でもAIが解析し切れるよう十分な時間を確保する
+    #    （短すぎるとタイムアウトが多発してエラーになる）。gunicornの --timeout=300秒より
+    #    十分に短くし、下記のcreate_and_parseの再試行（最大2回×140秒＝280秒）でも
+    #    ワーカーが強制終了される前に必ずクライアント側で打ち切れるようにする。
+    #  - max_retries=0 …… SDK側の自動再試行は無効化する。再試行はcreate_and_parseが
+    #    アプリ側でまとめて行うため、二重に再試行して総待ち時間がgunicornの上限(300秒)を
+    #    超えてワーカーが落とされる（＝500/502の原因）のを防ぐ。
+    return anthropic.Anthropic(api_key=key, timeout=140.0, max_retries=0)
 
 
 @app.route("/")
@@ -3550,7 +3556,7 @@ def analyze():
         result = create_and_parse(
             client,
             model="claude-sonnet-4-6",   # 通常解析は精度重視でSonnet
-            max_tokens=8000,
+            max_tokens=16000,
             system=[
                 {
                     "type": "text",
@@ -3665,7 +3671,7 @@ def reanalyze():
         result = create_and_parse(
             client,
             model="claude-sonnet-4-6",   # 再計算（修正時）は精度重視でSonnet
-            max_tokens=8000,
+            max_tokens=16000,
             system=[
                 {
                     "type": "text",
@@ -3737,7 +3743,7 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         result = create_and_parse(
             client,
             model="claude-sonnet-4-6",   # 文章入力も精度重視でSonnet
-            max_tokens=8000,
+            max_tokens=16000,
             system=[
                 {
                     "type": "text",
