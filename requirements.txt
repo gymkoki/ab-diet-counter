@@ -4,3 +4,5 @@ python-dotenv>=1.0.0
 gunicorn>=21.2.0
 psycopg2-binary>=2.9.0
 Pillow>=10.0.0
+Flask-Compress>=1.15
+brotli>=1.1.0
