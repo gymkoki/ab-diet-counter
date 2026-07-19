@@ -2960,18 +2960,22 @@ function _waitUntilVisible() {
   });
 }
 
-// レスポンスを安全にJSON化する。サーバーがHTML（502/504等のゲートウェイエラーや
+// レスポンスを安全にJSON化する。サーバーがHTML（500/502/504等のエラーや
 // タイムアウト）を返した場合でも res.json() の例外で「通信エラー」にせず、
-// 分かりやすいメッセージの {error} を返す。
+// 利用者に分かりやすい日本語メッセージの {error} を返す。
+// ※「エラーコード500」のような技術的な数字は利用者には出さない（意味が伝わらないため）。
+//   原因調査用にHTTPステータスはコンソールにだけ残す。
 async function parseAnalyzeResponse(res) {
   let data = null;
   try { data = await res.json(); } catch (e) { data = null; }
+  // サーバーが正しくJSONで返した場合はそのまま使う（＝運営が用意した分かりやすいメッセージ）
   if (data && typeof data === 'object') return data;
-  if (res.status === 413) return { error: '画像のサイズが大きすぎます。もう一度撮影し直してお試しください。' };
-  if (res.status === 502 || res.status === 503 || res.status === 504) {
-    return { error: 'サーバーが混み合っているか応答に時間がかかっています。少し待ってからもう一度お試しください。' };
+  // JSONでない応答（サーバー障害・タイムアウト等）のときは、状況別の平易な案内にする
+  if (!res.ok) console.warn('analyze non-JSON response, status=', res.status);
+  if (res.status === 413) {
+    return { error: '写真のサイズが大きすぎるようです。もう一度撮影し直してお試しください。' };
   }
-  return { error: `解析に失敗しました（エラーコード ${res.status}）。もう一度お試しください。` };
+  return { error: 'ただいま少し混み合っているようです。恐れ入りますが、少し時間をおいてもう一度お試しください。' };
 }
 
 async function fetchAnalyze(url, formData, maxRetries = 2) {
