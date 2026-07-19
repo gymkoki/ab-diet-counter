@@ -34,6 +34,19 @@ app = Flask(__name__)
 # フロントは画像を圧縮して送るため通常は1MB未満。16MBは十分な余裕。
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
+# ── 起動高速化 ──
+# index.html は1ファイル約300KBあり、無圧縮のままだとスマホ回線で
+# ダウンロードに数秒かかり「開いてから数秒真っ白」の原因になる。
+# gzip/brotli圧縮で約1/5に縮めて配信する（未インストール環境でも起動は継続）。
+try:
+    from flask_compress import Compress
+    Compress(app)
+except ImportError:
+    pass
+# 静的ファイル（キャラ画像・アイコン等）は30日キャッシュ。
+# 更新時はURLの ?v= を変えて配信し直す運用のため長めでも安全。
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 30
+
 
 @app.errorhandler(Exception)
 def _handle_uncaught_exception(e):
