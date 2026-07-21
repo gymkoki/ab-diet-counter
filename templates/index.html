@@ -3588,6 +3588,9 @@ function switchView(view) {
   if (view === 'history') loadHistory();
   if (view === 'chara') renderChara();
   if (view === 'settings') loadProfileInputs();
+  // タブを切り替えたら、最新の内容（記録・履歴・採点いずれも先頭に最新を表示）が
+  // すぐ見えるように画面の一番上へ自動スクロールする。
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // 記録タブ内のサブ切り替え（食事 / 運動 / 体重）
