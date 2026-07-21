@@ -3147,20 +3147,15 @@ async function analyzeItem(mealId, itemId) {
   _startProgress(mealId, itemId);
   renderStrip(mealId);
 
-  // ① 事前チェック：大盛り・油の確認を「本解析の前に」済ませ、回答を補足として
-  //    本解析に含める。これでフル解析のコストは1回で済む（再計算しない）。
-  //    ※初回の解析時だけ行う（自動リトライ時は前回の回答を使い回す）
-  let preAnswers = item._preAnswers;
-  if (preAnswers === undefined) {
-    preAnswers = await collectPrecheckAnswers(imageBlob);
-    item._preAnswers = preAnswers;   // null=事前チェック失敗（本解析後の確認でフォロー）
-  }
-
+  // 初手から高精度AI（Sonnet）で1回だけ解析する。
+  // 以前は事前に軽量AI（Haiku）で「大盛り？油は？」と確認してから本解析していたが、
+  // 事前チェック＋本解析で2回計算が走りコスト・待ち時間が二重になっていた。
+  // 現在はサーバーのANALYSIS_PROMPTが大盛り・油を「厳しめ（多め）」に見積もるため、
+  // 確認質問なしでも過小評価しない。ユーザーが手動で付けた補足(item.note)だけを渡す。
   const formData = new FormData();
   formData.append('image', imageBlob, 'image.jpg');
   formData.append('user_id', USER_ID);
-  const noteParts = [item.note, ...(preAnswers || [])].filter(Boolean);
-  if (noteParts.length) formData.append('note', noteParts.join('。'));   // 補足＋確認の回答
+  if (item.note) formData.append('note', item.note);
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
     const res  = await fetchAnalyze('/analyze', formData);
@@ -3180,23 +3175,8 @@ async function analyzeItem(mealId, itemId) {
     }
     else {
       item._retried = false;
-      let finalData = data;
-      // 事前チェックが失敗していたときだけ、従来どおり解析後に確認→再計算でフォローする
-      // （事前チェック済みなら回答は本解析に反映済みなので、二重に聞かない・再計算しない）
-      if (preAnswers === null) {
-        const answers = await collectClarifyAnswers(data);
-        if (answers.length) {
-          item.loading = true;
-          _startProgress(mealId, itemId);
-          renderStrip(mealId);
-          finalData = await reanalyzeWithAnswers(item, data, answers);
-          _stopProgress(mealId, itemId);
-          item.loading = false;
-        }
-      }
-      delete finalData.clarify;   // 確認フラグは保存データに持ち越さない
-      delete item._preAnswers;
-      item.result = finalData;
+      delete data.clarify;   // 確認フラグは保存データに持ち越さない
+      item.result = data;
     }
   } catch(e) {
     _stopProgress(mealId, itemId);
