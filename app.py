@@ -1499,22 +1499,22 @@ def admin_report_data():
         for uid, dt, w in cur.fetchall():
             all_w_by_user.setdefault(uid, []).append((dt, w))
 
-        weight_loss_list = []
+        # 各ユーザーの減量幅を用意する（初回記録 vs その後の記録）。
+        #  loss_by_user_day     … 記録した日ごとの減量幅（全体の推移グラフ用）
+        #  latest_loss_by_user  … 各ユーザーの「初回 → 最新記録」の減量幅
+        #    （KPI「減量希望者 平均減量実績」と相関グラフの直近値の共通の元データ）
+        # ※KPIの平均は目標=減量(cut)の会員だけで取るため、ここでは全ユーザー分を用意し、
+        #   目標マップ確定後（下部）に減量希望者だけへ絞り込む。
         loss_by_user_day: dict = {}
+        latest_loss_by_user: dict = {}
         for uid, rows in all_w_by_user.items():
             if len(rows) < 2:
                 continue
             initial_w = rows[0][1]
             latest_w  = rows[-1][1]
-            weight_loss_list.append(initial_w - latest_w)
             # プラス値 = 初回記録からの減量幅（体重が減っているほど大きくなる）
+            latest_loss_by_user[uid] = initial_w - latest_w
             loss_by_user_day[uid] = {dt: (initial_w - w) for dt, w in rows}
-
-        weight_loss_avg_kg = (
-            round(sum(weight_loss_list) / len(weight_loss_list), 2)
-            if weight_loss_list else None
-        )
-        weight_loss_users = len(weight_loss_list)
 
         # ── 日別利用推移（前日まで） ──────────────────────────
         cur.execute(
@@ -1651,6 +1651,30 @@ def admin_report_data():
 
     # ── 減量希望者：平均Bカウント×平均減量の推移（相関グラフ用） ──
     cut_uids = {u for u, g in goal_by_user.items() if g == "cut"}
+
+    # 【KPI】減量希望者の平均減量実績：各人の「初回記録 − 最新記録」を減量希望者だけで平均する。
+    # ※以前は目標を問わず全ユーザーで平均していたため、「減量希望者」ラベルと数字が食い違っていた
+    #   （体重維持・増量の会員まで平均に混ざっていた）。ここで減量(cut)会員だけに正しく絞る。
+    cut_losses = [latest_loss_by_user[u] for u in cut_uids if u in latest_loss_by_user]
+    weight_loss_avg_kg = round(sum(cut_losses) / len(cut_losses), 2) if cut_losses else None
+    weight_loss_users = len(cut_losses)
+
+    # 相関グラフの平均減量トレンドは「その日までの最新体重」で前方補完する。
+    # こうすると最終日は全減量希望者の最新記録が反映され、上のKPIと必ず一致する
+    # （以前は“その日に体重を記録した人だけ”の平均だったため、KPIと数字がずれていた）。
+    def _cut_loss_on_or_before(uid, day):
+        rows = all_w_by_user.get(uid) or []
+        if len(rows) < 2:
+            return None
+        initial_w = rows[0][1]
+        w = None
+        for dt, wt in rows:
+            if dt <= day:
+                w = wt
+            else:
+                break
+        return None if w is None else initial_w - w
+
     cut_corr = {
         "users": len(cut_uids),
         "b_avg_trend": [
@@ -1658,7 +1682,7 @@ def admin_report_data():
             for d in all_dates
         ],
         "loss_avg_trend": [
-            _avg([loss_by_user_day[u][d] for u in cut_uids if u in loss_by_user_day and d in loss_by_user_day[u]], 2)
+            _avg([_cut_loss_on_or_before(u, d) for u in cut_uids], 2)
             for d in all_dates
         ],
     }
