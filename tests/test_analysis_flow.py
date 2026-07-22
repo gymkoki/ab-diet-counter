@@ -43,3 +43,15 @@ def test_analysis_prompt_no_clarify_output_field():
     src = _read(APP)
     # 出力スキーマ内の clarify フィールド定義が無いこと
     assert '"clarify": {' not in src, "出力JSONに clarify フィールドが残っています（確認質問は廃止）"
+
+
+def test_analysis_prompt_display_kcal_matches_bcount():
+    """表示kcal(kcal_per_serving)とBカウントを一致させるルールが入っていること。
+    （135kcal表示なのにB0、のような矛盾を防ぐ）"""
+    src = _read(APP)
+    assert "表示kcalとBカウントを必ず一致させる" in src
+    # kcal_per_serving は「実際に食べた量のkcal」で入れる定義になっていること
+    assert "1人前の推定kcal（整数）," not in src, "kcal_per_serving が旧定義（標準1人前）のままです"
+    assert src.count("実際に食べたと推定した量のkcal") >= 4
+    # 純粋な脂質（バター等）を多めに見積もるルール
+    assert "純粋な脂質" in src and "バター" in src
