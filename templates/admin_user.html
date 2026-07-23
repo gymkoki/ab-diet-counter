@@ -93,6 +93,7 @@
     .meal-day { margin-bottom: 18px; }
     .meal-day-title { font-size: 13px; font-weight: 800; color: #6B7280; margin-bottom: 8px; }
     .meal-day-title .day-nut { font-size: 12px; font-weight: 700; margin-left: 8px; }
+    .meal-day-title .day-nut .bc { color: #FF6B35; }
     .meal-day-title .day-nut .pro { color: #DC2626; }
     .meal-day-title .day-nut .veg { color: #059669; }
 
@@ -328,7 +329,7 @@
     return `
       <div class="meal-day">
         <div class="meal-day-title">${escapeHtml(day.date)}
-          <span class="day-nut"><span class="pro">🥩 タンパク質 ${Math.round(day.protein_g || 0)}g</span> ・ <span class="veg">🥗 野菜 ${Math.round(day.veg_g || 0)}g</span></span>
+          <span class="day-nut"><span class="bc">🍽️ B合計 ${Math.round((Number(day.b_count) || 0) * 100) / 100}</span> ・ <span class="pro">🥩 タンパク質 ${Math.round(day.protein_g || 0)}g</span> ・ <span class="veg">🥗 野菜 ${Math.round(day.veg_g || 0)}g</span></span>
         </div>
         <div class="meal-grid">
           ${day.items.map(item => renderMealItem(item)).join('')}
