@@ -121,6 +121,9 @@
     }
     .meal-item .cap { padding: 8px 10px; font-size: 12px; color: #374151; line-height: 1.5; }
     .meal-item .cap .b-total { font-weight: 800; color: #FF6B35; }
+    .meal-item .cap .meal-nut { font-weight: 700; font-size: 11px; }
+    .meal-item .cap .meal-nut .pro { color: #DC2626; }
+    .meal-item .cap .meal-nut .veg { color: #059669; }
     .meal-item .cap .food-name { display:block; }
     .meal-item .cap .cat-a { color:#059669; }
     .meal-item .cap .cat-b { color:#DC2626; }
@@ -393,7 +396,13 @@
       const foodsHtml = r.foods.map(f =>
         `<span class="food-name"><span class="${f.category === 'A' ? 'cat-a' : 'cat-b'}">[${escapeHtml(f.category)}]</span> ${escapeHtml(f.name)}</span>`
       ).join('');
-      cap = `<span class="b-total">合計 B${r.total_b_count ?? '-'}</span><br>${foodsHtml}`;
+      // 1食あたりの合計：Bカウントに加え、タンパク質・野菜の重量も表示する。
+      // total_* が無い古い記録は foods から合算してフォールバックする。
+      const sumField = k => r.foods.reduce((s, f) => s + (parseFloat(f[k]) || 0), 0);
+      const protein = (typeof r.total_protein_g === 'number') ? r.total_protein_g : sumField('protein_g');
+      const veg     = (typeof r.total_veg_g === 'number')     ? r.total_veg_g     : sumField('veg_g');
+      const nut = `<span class="meal-nut"> ・ <span class="pro">🥩 ${Math.round(protein)}g</span> ・ <span class="veg">🥗 ${Math.round(veg)}g</span></span>`;
+      cap = `<span class="b-total">合計 B${r.total_b_count ?? '-'}</span>${nut}<br>${foodsHtml}`;
     } else if (item.isText) {
       cap = escapeHtml(item.text || '');
     } else {
