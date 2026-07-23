@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 管理画面は検索エンジンにインデックスさせない（存在を第三者に知られないため） -->
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <title>会員詳細 | ABダイエット 管理ダッシュボード</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23FF6B35'/><text y='78' x='50' text-anchor='middle' font-size='70' font-family='sans-serif' fill='white'>管</text></svg>">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -90,6 +92,21 @@
     /* ── 食事写真ギャラリー ── */
     .meal-day { margin-bottom: 18px; }
     .meal-day-title { font-size: 13px; font-weight: 800; color: #6B7280; margin-bottom: 8px; }
+    .meal-day-title .day-nut { font-size: 12px; font-weight: 700; margin-left: 8px; }
+    .meal-day-title .day-nut .pro { color: #DC2626; }
+    .meal-day-title .day-nut .veg { color: #059669; }
+
+    /* ── タンパク質・野菜の1日累計 ── */
+    .nut-table { width:100%; border-collapse:collapse; font-size:14px; }
+    .nut-table th { text-align:left; font-size:12px; color:#9CA3AF; font-weight:700; padding:6px 8px; border-bottom:2px solid #F3F4F6; }
+    .nut-table td { padding:8px; border-bottom:1px solid #F3F4F6; }
+    .nut-table td.num { text-align:right; font-weight:800; font-variant-numeric:tabular-nums; }
+    .nut-table td.pro { color:#DC2626; }
+    .nut-table td.pro.low { background:#FEF2F2; }
+    .nut-table td.veg { color:#059669; }
+    .nut-table tr:hover td { background:#FAFAFA; }
+    .nut-scroll { max-height:340px; overflow-y:auto; margin-top:12px; }
+    .nut-note { font-size:11px; color:#9CA3AF; margin-top:8px; line-height:1.6; }
     .meal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
     .meal-item {
       border: 1px solid #F3F4F6;
@@ -183,6 +200,13 @@
   </div>
 
   <div class="card">
+    <h2>🥩 タンパク質・🥗 野菜の1日累計</h2>
+    <div id="nut-summary"></div>
+    <canvas id="chart-nutrition" height="150" style="margin-top:8px"></canvas>
+    <div id="nut-list"></div>
+  </div>
+
+  <div class="card">
     <h2>📷 食事の写真</h2>
     <div id="meals-wrap"><div class="spinner"></div></div>
   </div>
@@ -200,8 +224,10 @@
 
 <script>
   const USER_ID = {{ user_id | tojson }};
-  let chartWeight = null, chartB = null, chartExercise = null;
+  let chartWeight = null, chartB = null, chartExercise = null, chartNutrition = null;
   let currentIsVip = false;
+  // タンパク質がこの値未満の日は「少ない」として赤く強調する（目安。減量者の1日目標の下限）
+  const LOW_PROTEIN_G = 50;
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -235,6 +261,64 @@
     });
   }
 
+  // タンパク質・野菜の1日累計（グラフ＋平均＋日別テーブル）
+  function renderNutrition(nutrition) {
+    const sumWrap = document.getElementById('nut-summary');
+    const listWrap = document.getElementById('nut-list');
+    const canvas = document.getElementById('chart-nutrition');
+    if (chartNutrition) { chartNutrition.destroy(); chartNutrition = null; }
+    if (!nutrition || nutrition.length === 0) {
+      sumWrap.innerHTML = '';
+      canvas.style.display = 'none';
+      listWrap.innerHTML = '<div class="no-data">タンパク質・野菜の記録がありません</div>';
+      return;
+    }
+    canvas.style.display = '';
+    const rowsAsc = nutrition.slice().sort((a, b) => a.date.localeCompare(b.date));
+    const rowsDesc = nutrition.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const days = rowsAsc.length;
+    const avgPro = Math.round(rowsAsc.reduce((s, x) => s + (Number(x.protein_g) || 0), 0) / days);
+    const avgVeg = Math.round(rowsAsc.reduce((s, x) => s + (Number(x.veg_g) || 0), 0) / days);
+
+    sumWrap.innerHTML = `
+      <div class="bcount-summary">
+        <div class="stat"><div class="label">1日平均タンパク質</div><div class="value" style="color:#DC2626">${avgPro}g</div></div>
+        <div class="stat"><div class="label">1日平均野菜</div><div class="value" style="color:#059669">${avgVeg}g</div></div>
+        <div class="stat"><div class="label">記録日数</div><div class="value" style="color:#6B7280">${days}日</div></div>
+      </div>`;
+
+    // 折れ線グラフ（タンパク質＝赤 / 野菜＝緑）
+    chartNutrition = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: rowsAsc.map(x => fmtLabel(x.date)),
+        datasets: [
+          { label: 'タンパク質(g)', data: rowsAsc.map(x => x.protein_g), borderColor: 'rgb(220,38,38)', backgroundColor: 'rgba(220,38,38,0.08)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: true },
+          { label: '野菜(g)', data: rowsAsc.map(x => x.veg_g), borderColor: 'rgb(5,150,105)', backgroundColor: 'rgba(5,150,105,0.08)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: true },
+        ]
+      },
+      options: { responsive: true, plugins: { legend: { display: true, labels: { font: { size: 11 } } } }, scales: { y: { beginAtZero: true } } }
+    });
+
+    const dow = ['日', '月', '火', '水', '木', '金', '土'];
+    const fmtDate = s => { const dt = new Date(s + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}（${dow[dt.getDay()]}）`; };
+    listWrap.innerHTML = `
+      <div class="nut-scroll">
+        <table class="nut-table">
+          <thead><tr><th>日付</th><th style="text-align:right">🥩 タンパク質</th><th style="text-align:right">🥗 野菜</th></tr></thead>
+          <tbody>
+            ${rowsDesc.map(x => {
+              const pro = Math.round(Number(x.protein_g) || 0);
+              const veg = Math.round(Number(x.veg_g) || 0);
+              const low = pro < LOW_PROTEIN_G ? ' low' : '';
+              return `<tr><td>${fmtDate(x.date)}</td><td class="num pro${low}">${pro}g</td><td class="num veg">${veg}g</td></tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="nut-note">🥩 タンパク質が ${LOW_PROTEIN_G}g 未満の日は赤く表示しています（目安）。タンパク質が慢性的に少ない会員の把握にお使いください。</div>`;
+  }
+
   // 食事写真は重い（base64サムネ）ため、詳細本体とは別に日付新しい順で分割取得する。
   const MEALS_PAGE = 20;
   let _mealsOffset = 0;
@@ -243,7 +327,9 @@
   function mealDayHtml(day) {
     return `
       <div class="meal-day">
-        <div class="meal-day-title">${escapeHtml(day.date)}</div>
+        <div class="meal-day-title">${escapeHtml(day.date)}
+          <span class="day-nut"><span class="pro">🥩 タンパク質 ${Math.round(day.protein_g || 0)}g</span> ・ <span class="veg">🥗 野菜 ${Math.round(day.veg_g || 0)}g</span></span>
+        </div>
         <div class="meal-grid">
           ${day.items.map(item => renderMealItem(item)).join('')}
         </div>
@@ -431,6 +517,8 @@
     renderBCountList(d.b_count);
     chartExercise = safeChart(chartExercise, 'chart-exercise', d.exercise.map(x => x.date), d.exercise.map(x => x.ex_b_count), '運動Bカウント消費', 'rgb(5,150,105)');
 
+    // タンパク質・野菜の1日累計（数値だけの軽いデータなので詳細本体と一緒に即描画）
+    renderNutrition(d.nutrition);
     renderComments(d.comments);
     // 食事写真（重いbase64サムネ）は詳細本体の描画後に別途分割ロードする
     initMeals(d.meal_days);
