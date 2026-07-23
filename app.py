@@ -2306,6 +2306,7 @@ def admin_user_meals(user_id):
         items = []
         day_protein = 0.0
         day_veg = 0.0
+        day_b = 0.0
         for key in MEAL_KEYS:
             for item in payload.get(key, {}).get("items", []):
                 res = item.get("result")
@@ -2317,7 +2318,7 @@ def admin_user_meals(user_id):
                     "text": item.get("text"),
                     "result": res,
                 })
-                # その日の全食事の総タンパク質・総野菜を合算（写真ギャラリーの日付見出しに表示）。
+                # その日の全食事の総タンパク質・総野菜・B合計を合算（写真ギャラリーの日付見出しに表示）。
                 # total値が無い旧データは各食材のprotein_g/veg_gを合計してフォールバック。
                 if isinstance(res, dict):
                     foods = res.get("foods") or []
@@ -2329,12 +2330,16 @@ def admin_user_meals(user_id):
                     day_veg += float(v) if isinstance(v, (int, float)) else sum(
                         float(f.get("veg_g") or 0) for f in foods
                     )
+                    b = res.get("total_b_count")
+                    if isinstance(b, (int, float)):
+                        day_b += float(b)
         if items:
             meals.append({
                 "date": dt,
                 "items": items,
                 "protein_g": round(day_protein),
                 "veg_g": round(day_veg),
+                "b_count": round(day_b, 2),
             })
 
     return jsonify({"meals": meals, "limit": limit, "offset": offset, "has_more": len(meal_rows) == limit})
