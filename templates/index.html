@@ -1668,10 +1668,13 @@ function buildPanel(m) {
     if (files.length) addFiles(m.id, files);
   });
   if (state[m.id].items.length) {
-    renderStrip(m.id);
-    renderResults(m.id);
+    // 保存データが壊れていても画面全体が止まらないよう、描画は個別に保護する。
+    try { renderStrip(m.id); }   catch(e) { console.error('renderStrip failed', e);   _initHadRenderError = true; }
+    try { renderResults(m.id); } catch(e) { console.error('renderResults failed', e); _initHadRenderError = true; }
   }
 }
+// 起動時の描画で保存データ由来のエラーが出たか（出たら1回だけ自動復旧を試みる）
+let _initHadRenderError = false;
 
 // ═══════════════════════════════════════════
 //  今日のBカウント合計
@@ -4818,18 +4821,62 @@ function closeUpdateNotice() {
 
 // ═══════════════════════════════════════════
 //  Init
+//  【重要】起動中に1つでも例外が出ると画面が真っ白のまま止まる。
+//  それを防ぐため、各処理を個別に try/catch で保護し、
+//  画面の土台（食事パネル・下ナビ）は何があっても必ず表示する。
+//  さらに、保存データ破損で描画に失敗した場合は、当日のローカルキャッシュ
+//  （サーバーにも保存済みなので消しても復元できる）を消して1回だけ再読み込みし、
+//  自動で正常な状態に戻す（無限リロードは sessionStorage のフラグで防止）。
 // ═══════════════════════════════════════════
-flushPreviousDayIfNeeded();
-loadSavedState();
-MEALS.forEach(m => buildPanel(m));
-showRecordSub('food');
-updateDailyTotal();
-loadStats();
-resumePendingAnalyses();   // 中断された解析（写真・文章）を復帰時に再開
-syncTodayMealsFromServer();   // 他の端末で記録された今日の食事を取り込む
-syncHistoryFromServer()       // 他の端末の履歴（体重・Bカウント・運動）を取り込む
-  .then(backfillCharaLog);    // → 取り込み後、キャラカレンダーの抜けた過去日を食事明細から復元
-checkFeedbackReplies();       // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
+function _step(fn, label) {
+  try { fn(); } catch(e) { console.error('[init] ' + label + ' failed:', e); }
+}
+
+(function initApp() {
+  const RECOVER_FLAG = 'ab-diet-init-recovered-v1';
+
+  _step(flushPreviousDayIfNeeded, 'flushPreviousDayIfNeeded');
+  _step(loadSavedState, 'loadSavedState');   // 内部でも try/catch 済み
+
+  // 画面の土台は必ず描画する。保存データの描画で失敗しても、空パネルとして立て直す。
+  MEALS.forEach(m => {
+    try {
+      buildPanel(m);
+    } catch(e) {
+      console.error('[init] buildPanel failed, rebuilding empty:', m.id, e);
+      _initHadRenderError = true;
+      try { state[m.id].items = []; buildPanel(m); } catch(_) {}
+    }
+  });
+  _step(() => showRecordSub('food'), 'showRecordSub');
+  _step(updateDailyTotal, 'updateDailyTotal');
+  _step(loadStats, 'loadStats');
+  _step(resumePendingAnalyses, 'resumePendingAnalyses');
+
+  // 保存データ由来の描画エラーがあり、まだ自動復旧していなければ、
+  // ローカルの当日キャッシュを消して1回だけ再読み込みする（データはサーバーから復元される）。
+  if (_initHadRenderError && !sessionStorage.getItem(RECOVER_FLAG)) {
+    try { sessionStorage.setItem(RECOVER_FLAG, '1'); } catch(_) {}
+    try { localStorage.removeItem(STORAGE_KEY); } catch(_) {}
+    location.reload();
+    return;
+  }
+  // 正常に起動できたら復旧フラグを解除（次回また壊れたら再度復旧できるように）
+  if (!_initHadRenderError) { try { sessionStorage.removeItem(RECOVER_FLAG); } catch(_) {} }
+
+  // ここから下は非同期・任意（各自でエラー処理済み。失敗しても画面は表示済み）
+  syncTodayMealsFromServer();     // 他の端末で記録された今日の食事を取り込む
+  syncHistoryFromServer()         // 他の端末の履歴（体重・Bカウント・運動）を取り込む
+    .then(backfillCharaLog)       // → 取り込み後、キャラカレンダーの抜けた過去日を復元
+    .catch(() => {});
+  checkFeedbackReplies();         // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
+
+  if (!localStorage.getItem(NOTICE_KEY)) {
+    const ov = document.getElementById('update-notice-overlay');
+    if (ov) ov.style.display = 'flex';
+  }
+  _step(maybeShowHomeBanner, 'maybeShowHomeBanner');
+})();
 
 // 画面に戻ってきたとき（スマホでアプリを開き直したとき等）にもサーバーと同期し、
 // デスクトップ⇔スマホの表示が揃うようにする。
@@ -4840,10 +4887,6 @@ document.addEventListener('visibilitychange', () => {
     checkFeedbackReplies();
   }
 });
-if (!localStorage.getItem(NOTICE_KEY)) {
-  document.getElementById('update-notice-overlay').style.display = 'flex';
-}
-maybeShowHomeBanner();
 
 // ═══════════════════════════════════════════
 //  24時（日付変更）で自動リセット
