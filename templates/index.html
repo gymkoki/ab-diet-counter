@@ -1163,15 +1163,27 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.22</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.23</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📝</span>
-        <span>履歴の画面から、<b>前日や前々日の記録を編集できるようになりました</b>。履歴タブで日付の横の<b>「編集」ボタン</b>を押すと、その日の食事記録・体重・Bカウントなどを後から直せます。</span>
+        <span style="font-size:20px;flex-shrink:0">📷</span>
+        <span><b>数日前の食事写真も、後からアップできます！</b>「撮ったのに登録し忘れた…」という日も大丈夫です。</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">①</span>
+        <span>下の<b>「履歴」</b>を開き、写真を追加したい日の<b>「編集」</b>を押す</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <span style="font-size:20px;flex-shrink:0">②</span>
+        <span>開いた画面の<b>「✏️ この日の記録を編集（食事・運動・体重）」</b>を押す</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <span style="font-size:20px;flex-shrink:0">③</span>
+        <span>いつもの記録画面が開くので、<b>「📷 写真を追加」</b>から写真をアップすれば、その日の記録に反映されます</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
         <span style="font-size:20px;flex-shrink:0">💡</span>
-        <span>記録を忘れた日や、入力を間違えた日があれば、ぜひ活用してください。</span>
+        <span>写真の追加は<b>3日前まで</b>できます。それより前の日は、同じ「編集」画面からBカウント・体重・ひとこと日記を手入力できます。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -4813,7 +4825,7 @@ function closeReplyNotice() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v24';
+const NOTICE_KEY = 'ab-diet-notice-v25';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
