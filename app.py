@@ -3926,5 +3926,48 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         return jsonify({"error": "解析中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
 
 
+ESTIMATE_NUTRITION_PROMPT = """次の食事の「タンパク質量(g)」と「野菜量(g)」だけを推定してください。Bカウントやカロリーは不要です。
+
+【タンパク質の目安（100gあたり）】鶏むね/ささみ≒23g、鶏もも≒18g、牛・豚赤身≒20g、ひき肉≒17g、魚≒20g、卵1個(50g)≒6g、木綿豆腐≒7g、納豆1パック≒8g、牛乳100ml≒3g、ヨーグルト100g≒4g、チーズ≒22g、プロテイン1杯≒20g、プロテインバー1本≒10〜15g、ご飯100g≒2.5g、パン・麺≒8g/100g、白米茶碗1杯≒4g。野菜・果物・油・砂糖・菓子・ジュース・コーヒー・エナジードリンクはほぼ0。
+【野菜(g)】野菜・きのこ・海藻のみ実重量。いも類・豆類・果物・米麦などの穀物・肉魚卵・乳製品・油・菓子・ジュースは0。サラダ小鉢≒40〜60g、サラダ1皿≒100g、野菜炒め1人前≒120〜150g、味噌汁の野菜≒40〜60g。
+
+量の指定が無ければ一般的な1人前・1個・1本として推定する。
+前置きや説明は一切書かず、次のJSONだけを出力すること：
+{"total_protein_g": 整数, "total_veg_g": 整数}"""
+
+
+@app.route("/estimate-nutrition", methods=["POST"])
+def estimate_nutrition():
+    """食事名（文章）から、その食事のタンパク質量・野菜量だけを推定して返す。
+    「コピーご飯」など写真なし・Bカウントだけで登録された食事に、後から
+    タンパク質・野菜を補うために使う。Bカウントには一切影響しない。"""
+    client = get_client()
+    if client is None:
+        return jsonify({"error": "APIキーが設定されていません。"}), 401
+
+    text = (request.form.get("text", "") or "").strip()
+    if not text:
+        return jsonify({"total_protein_g": 0, "total_veg_g": 0})
+
+    try:
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=120,
+            system=[{"type": "text", "text": ESTIMATE_NUTRITION_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": f"【食事】{text}"}],
+        )
+        raw = "".join(
+            b.text for b in msg.content if getattr(b, "type", None) == "text"
+        ).strip()
+        m = re.search(r"\{.*\}", raw, re.S)
+        data = json.loads(m.group(0)) if m else {}
+        p = int(round(float(data.get("total_protein_g") or 0)))
+        v = int(round(float(data.get("total_veg_g") or 0)))
+        return jsonify({"total_protein_g": max(0, p), "total_veg_g": max(0, v)})
+    except Exception:
+        # 失敗しても致命的にしない（Bカウントには影響しないので0で返す）
+        return jsonify({"total_protein_g": 0, "total_veg_g": 0})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
