@@ -1074,17 +1074,9 @@
     <button class="btn-save" style="margin-top:8px;background:#6366F1" onclick="toggleCopyTextForm()">✏️ 文章で登録する</button>
     <div id="copy-text-form" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg)">
       <label style="display:block;font-size:17px;font-weight:700;margin-bottom:4px">食事の名前・内容</label>
-      <input type="text" id="copy-text-name" maxlength="40" placeholder="例：コンビニのおにぎり2個" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;box-sizing:border-box;margin-bottom:10px">
-      <label style="display:block;font-size:17px;font-weight:700;margin-bottom:6px">Bカウント（回）<span style="font-weight:400;color:var(--text-muted)">ダイヤルで選択（B0〜4・0.5刻み）</span></label>
-      <div class="drum-wrap">
-        <div class="drum-fade-top"></div>
-        <div class="drum-line-top"></div>
-        <div class="drum-line-bot"></div>
-        <div class="drum-fade-bot"></div>
-        <div class="drum-roll" id="drum-copyb"></div>
-      </div>
-      <div style="margin-bottom:12px"></div>
-      <button class="btn-save" onclick="saveCopyMealText()">この内容で登録する</button>
+      <input type="text" id="copy-text-name" maxlength="60" placeholder="例：コンビニのおにぎり2個、鶏むね肉サラダ" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;box-sizing:border-box;margin-bottom:8px">
+      <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 12px">入力した内容から、AIが<strong>Bカウント・タンパク質・野菜の量を自動で計算</strong>して登録します（ダイヤルでの手入力は不要です）。</p>
+      <button class="btn-save" id="copy-text-save-btn" onclick="saveCopyMealText()">🤖 この内容で登録する</button>
     </div>
   </div>
   <div class="setting-card">
@@ -2734,44 +2726,48 @@ function toggleCopyTextForm() {
   if (!f) return;
   const hidden = (getComputedStyle(f).display === 'none');
   f.style.display = hidden ? 'block' : 'none';
-  if (hidden) _initCopyBDrum(1);   // Bカウントのダイヤルを初期化（既定B1）
+  if (hidden) document.getElementById('copy-text-name')?.focus();
 }
 
-// 設定画面：文章＋Bカウント（ダイヤル選択）でコピーご飯を登録（写真・AI解析なし）
-function saveCopyMealText() {
+// 設定画面：文章でコピーご飯を登録。Bカウント・タンパク質・野菜をAIが自動計算する
+// （以前はダイヤルでBカウントを手入力していたが、栄養（タンパク質・野菜）が
+//  記録されず普段の栄養計算に反映されなかったため、写真解析と同じ /analyze-text で自動判定する）。
+async function saveCopyMealText() {
   const nameEl = document.getElementById('copy-text-name');
-  let name = (nameEl.value || '').trim();
-  const b = _copyBCount;   // ダイヤルで選択済み（B0〜4）
-  if (!name) name = 'コピーご飯';
-  const copyId = 'cm-' + Date.now().toString(36);
-  const meals = getCopyMeals();
-  meals.push({
-    id: copyId,
-    name,
-    previewSrc: null,
-    result: { foods: [{ name, category: 'B', kcal_per_serving: 0, amount: '', b_count: b, reason: '文章で手動登録' }], total_b_count: b, advice: '' }
-  });
-  saveCopyMeals(meals);
-  renderCopyMealsList();
-  nameEl.value = '';
-  document.getElementById('copy-text-form').style.display = 'none';
+  const text = (nameEl.value || '').trim();
+  if (!text) { nameEl.focus(); return; }
+  const btn = document.getElementById('copy-text-save-btn');
   const status = document.getElementById('copy-add-status');
-  if (status) { status.style.display = 'block'; status.textContent = `✅ 「${name}」を B${fmtCount(b)} で登録しました`; setTimeout(() => { status.style.display = 'none'; }, 2500); }
-  // 登録した名前から、タンパク質・野菜をAIで自動推定して補う（Bカウントは変えない）
-  fillStoredCopyNutrition(copyId, name);
-}
-
-// 保存済みコピーご飯のタンパク質・野菜を推定して埋める（設定画面の登録直後用）
-async function fillStoredCopyNutrition(copyId, name) {
-  const nut = await estimateCopyNutrition(name);
-  if (!nut) return;
-  const meals = getCopyMeals();
-  const stored = meals.find(c => c.id === copyId);
-  if (!stored) return;
-  stored.result = stored.result || { foods: [], total_b_count: 0, advice: '' };
-  applyNutritionToResult(stored.result, nut);
-  saveCopyMeals(meals);
-  renderCopyMealsList();
+  if (btn) { btn.disabled = true; btn.textContent = '🤖 解析中…'; }
+  if (status) { status.style.display = 'block'; status.textContent = '🤖 AIがBカウント・タンパク質・野菜を計算中です…'; }
+  try {
+    const fd = new FormData();
+    fd.append('text', text);
+    fd.append('user_id', USER_ID);
+    { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
+    const res  = await fetchAnalyze('/analyze-text', fd);
+    const data = await parseAnalyzeResponse(res);
+    if (data.error) {
+      if (status) { status.textContent = '⚠️ ' + data.error; setTimeout(() => { status.style.display = 'none'; }, 5000); }
+      return;
+    }
+    delete data.clarify;
+    const name = text;
+    const meals = getCopyMeals();
+    meals.push({ id: 'cm-' + Date.now().toString(36), name, previewSrc: null, result: data });
+    saveCopyMeals(meals);
+    renderCopyMealsList();
+    nameEl.value = '';
+    document.getElementById('copy-text-form').style.display = 'none';
+    if (status) {
+      status.textContent = `✅ 「${name}」を B${fmtCount(data.total_b_count || 0)}（🥩${Math.round(mealProtein(data))}g・🥗${Math.round(mealVeg(data))}g）で登録しました`;
+      setTimeout(() => { status.style.display = 'none'; }, 4000);
+    }
+  } catch (e) {
+    if (status) { status.textContent = '⚠️ ' + _analyzeFailureMessage(e, 'copy-text'); setTimeout(() => { status.style.display = 'none'; }, 5000); }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🤖 この内容で登録する'; }
+  }
 }
 
 async function onCopyFileChange(input) {
