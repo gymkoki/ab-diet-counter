@@ -728,8 +728,21 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "abDiet2024admin")
 ADMIN_URL_PATH = os.environ.get("ADMIN_URL_PATH", "reall-kanri").strip("/")
 ADMIN_BASE = f"/{ADMIN_URL_PATH}"
 
-# 食事分析1回あたりの概算コスト（円）。通常解析はSonnet 4.6（入力$3/出力$15）。
-# 画像1024px・出力約1000トークンで約$0.025≒¥4。為替やモデルを変えたら調整。
+# 食事解析に使うモデル。環境変数 ANALYSIS_MODEL で差し替え可能にしてあるため、
+# 万一Sonnet 5で不具合が出てもRenderの環境変数に "claude-sonnet-4-6" を入れるだけで
+# コード変更・再デプロイなしに即座に元へ戻せる。
+ANALYSIS_MODEL = (os.environ.get("ANALYSIS_MODEL", "").strip() or "claude-sonnet-5")
+
+# 思考（adaptive thinking）は使わない設定。
+# Sonnet 5は thinking を省略すると自動で思考ONになり、出力トークン（＝コスト）が
+# 大きく増える。また栄養推定のような max_tokens が小さい呼び出しでは、思考だけで
+# 枠を使い切って回答が途中で切れる危険がある。従来のSonnet 4.6と同じ挙動に揃えるため
+# 全ての解析で明示的にオフにする。
+THINKING_OFF = {"type": "disabled"}
+
+# 食事分析1回あたりの概算コスト（円）。通常解析はSonnet 5（入力$3/出力$15。
+# ただし2026-08-31までは導入価格 $2/$10）。画像1024px・思考オフ・出力約1300トークンで、
+# 導入価格中は約¥3、9月以降は約¥4.5。ならして¥4を既定値とする。為替やモデルを変えたら調整。
 COST_PER_ANALYSIS_JPY = float(os.environ.get("COST_PER_ANALYSIS_JPY", "4"))
 
 def _is_admin_authed():
@@ -3717,7 +3730,8 @@ def analyze():
     try:
         result = create_and_parse(
             client,
-            model="claude-sonnet-4-6",   # 通常解析は精度重視でSonnet
+            model=ANALYSIS_MODEL,   # 通常解析は精度重視でSonnet
+            thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             max_tokens=16000,
             system=[
                 {
@@ -3841,7 +3855,8 @@ def reanalyze():
     try:
         result = create_and_parse(
             client,
-            model="claude-sonnet-4-6",   # 再計算（修正時）は精度重視でSonnet
+            model=ANALYSIS_MODEL,   # 再計算（修正時）は精度重視でSonnet
+            thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             max_tokens=16000,
             system=[
                 {
@@ -3913,7 +3928,8 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
     try:
         result = create_and_parse(
             client,
-            model="claude-sonnet-4-6",   # 文章入力も精度重視でSonnet
+            model=ANALYSIS_MODEL,   # 文章入力も精度重視でSonnet
+            thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             # 文章入力は出力が小さく通常10〜30秒で終わる。1回の試行を60秒で打ち切ることで、
             # AI側が固まった場合でもリクエスト全体が長引かず、スマホのブラウザが持つ
             # 通信タイムアウト（約60〜100秒）を超えて「通信エラー」になるのを防ぐ。
@@ -3970,7 +3986,8 @@ def estimate_nutrition():
 
     try:
         msg = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=ANALYSIS_MODEL,
+            thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             max_tokens=120,
             system=[{"type": "text", "text": ESTIMATE_NUTRITION_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": f"【食事】{text}"}],
