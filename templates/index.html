@@ -2575,15 +2575,67 @@ function addCopyMealToRecord(copyId) {
   if (!cm) return;
   const mealId = _copyPickerMeal || 'food';
   const id = nextItemId();
-  state[mealId].items.push({
+  const item = {
     id, file:null, previewSrc: cm.previewSrc || null, loading:false, error:null,
     isCopy:true, result: cm.result
-  });
+  };
+  state[mealId].items.push(item);
   closeCopyPicker();
   renderStrip(mealId);
   renderResults(mealId);
   updateDailyTotal();
   saveState();
+  // タンパク質・野菜が未計算のコピーご飯なら、名前からAIで推定して補い、
+  // 今追加した記録にも、保存済みのコピーご飯（今後の追加）にも反映する。
+  fillCopyMealNutrition(cm, item, mealId);
+}
+
+// /estimate-nutrition で名前からタンパク質・野菜(g)だけを推定する（Bカウントは変えない）
+async function estimateCopyNutrition(name) {
+  try {
+    const fd = new FormData();
+    fd.append('text', name || '');
+    const res = await fetch('/estimate-nutrition', { method:'POST', body: fd });
+    if (!res.ok) return null;
+    const d = await res.json();
+    return { total_protein_g: Number(d.total_protein_g) || 0, total_veg_g: Number(d.total_veg_g) || 0 };
+  } catch { return null; }
+}
+
+// result にタンパク質・野菜を書き込む（単一食材のコピーご飯向け）
+function applyNutritionToResult(result, nut) {
+  if (!result || !nut) return;
+  result.total_protein_g = nut.total_protein_g;
+  result.total_veg_g = nut.total_veg_g;
+  // 単一食材のコピーご飯なら、その食材行にも反映（🥩🥗の食材表示用）
+  if (Array.isArray(result.foods) && result.foods.length === 1) {
+    result.foods[0].protein_g = nut.total_protein_g;
+    result.foods[0].veg_g = nut.total_veg_g;
+  }
+}
+
+// コピーご飯のタンパク質・野菜が未設定なら推定して補う（記録アイテム＋保存済み両方）
+async function fillCopyMealNutrition(cm, item, mealId) {
+  const r = cm.result;
+  const hasNut = r && (typeof r.total_protein_g === 'number' || typeof r.total_veg_g === 'number');
+  if (hasNut) return;   // 写真登録のコピーご飯などは既に栄養がある
+  const nut = await estimateCopyNutrition(cm.name);
+  if (!nut) return;
+  // ① 保存済みのコピーご飯に反映（次回以降のワンタップ追加でも付く）
+  const meals = getCopyMeals();
+  const stored = meals.find(c => c.id === cm.id);
+  if (stored) {
+    stored.result = stored.result || { foods: [], total_b_count: 0, advice: '' };
+    applyNutritionToResult(stored.result, nut);
+    saveCopyMeals(meals);
+  }
+  // ② いま記録に追加したアイテムに反映（当日の合計・表示に即反映）
+  if (item && item.result) {
+    applyNutritionToResult(item.result, nut);
+    renderResults(mealId);
+    updateDailyTotal();
+    saveState();
+  }
 }
 
 // 設定画面：コピーご飯の一覧表示
@@ -2673,9 +2725,10 @@ function saveCopyMealText() {
   let name = (nameEl.value || '').trim();
   const b = _copyBCount;   // ダイヤルで選択済み（B0〜4）
   if (!name) name = 'コピーご飯';
+  const copyId = 'cm-' + Date.now().toString(36);
   const meals = getCopyMeals();
   meals.push({
-    id: 'cm-' + Date.now().toString(36),
+    id: copyId,
     name,
     previewSrc: null,
     result: { foods: [{ name, category: 'B', kcal_per_serving: 0, amount: '', b_count: b, reason: '文章で手動登録' }], total_b_count: b, advice: '' }
@@ -2686,6 +2739,21 @@ function saveCopyMealText() {
   document.getElementById('copy-text-form').style.display = 'none';
   const status = document.getElementById('copy-add-status');
   if (status) { status.style.display = 'block'; status.textContent = `✅ 「${name}」を B${fmtCount(b)} で登録しました`; setTimeout(() => { status.style.display = 'none'; }, 2500); }
+  // 登録した名前から、タンパク質・野菜をAIで自動推定して補う（Bカウントは変えない）
+  fillStoredCopyNutrition(copyId, name);
+}
+
+// 保存済みコピーご飯のタンパク質・野菜を推定して埋める（設定画面の登録直後用）
+async function fillStoredCopyNutrition(copyId, name) {
+  const nut = await estimateCopyNutrition(name);
+  if (!nut) return;
+  const meals = getCopyMeals();
+  const stored = meals.find(c => c.id === copyId);
+  if (!stored) return;
+  stored.result = stored.result || { foods: [], total_b_count: 0, advice: '' };
+  applyNutritionToResult(stored.result, nut);
+  saveCopyMeals(meals);
+  renderCopyMealsList();
 }
 
 async function onCopyFileChange(input) {
