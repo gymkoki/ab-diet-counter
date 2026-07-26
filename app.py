@@ -117,6 +117,10 @@ def repair_json(text: str) -> str:
             parsed["total_fruit_g"] = sum(
                 f.get("fruit_g", 0) or 0 for f in parsed.get("foods", [])
             )
+        if "total_sweet_kcal" not in parsed:
+            parsed["total_sweet_kcal"] = sum(
+                f.get("sweet_kcal", 0) or 0 for f in parsed.get("foods", [])
+            )
         if "advice" not in parsed:
             parsed["advice"] = "（分析データが多いため一部省略されました）"
         return json.dumps(parsed, ensure_ascii=False)
@@ -187,6 +191,7 @@ def recompute_totals(result):
         result["total_protein_g"] = round(sum(_num(f.get("protein_g")) for f in foods))
         result["total_veg_g"] = round(sum(_num(f.get("veg_g")) for f in foods))
         result["total_fruit_g"] = round(sum(_num(f.get("fruit_g")) for f in foods))
+        result["total_sweet_kcal"] = round(sum(_num(f.get("sweet_kcal")) for f in foods))
     return result
 
 
@@ -1165,6 +1170,15 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
 全食材の合計を total_fruit_g に整数で入れる。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+■ お菓子のkcal(sweet_kcal)の推定ルール【1日累積判定に使う】
+━━━━━━━━━━━━━━━━━━━━━━━
+各食材について、それがお菓子・スイーツ・スナック菓子なら実際に食べた分の推定kcalを sweet_kcal に整数で入れる（お菓子でなければ必ず0）。
+- 対象：チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子（ポテチ等）・せんべい・飴・グミ・和菓子・菓子パン・プリン・ゼリー等の甘い/スナック系の菓子。
+- 対象外（sweet_kcal=0）：食事の主食・おかず、果物そのもの、飲み物、調味料など、菓子でないもの。
+- 値は kcal_per_serving と同じ「実際に食べた量のkcal」を入れる（チョコ1かけら≒30kcal、クッキー1枚≒50kcal、ポテチひとつまみ≒60kcal 等）。
+- ※これは「少量ずつ食べたお菓子が1日で累積して200kcalを超えたらB1にする」特別ルールの集計に使う。1食ごとの判定（b_count）はこれまで通り実kcalで行い、変更しない。
+
+━━━━━━━━━━━━━━━━━━━━━━━
 ■【最重要】量が不確かなときは「厳しめ（多め）」に見積もる — 過小評価の禁止
 ━━━━━━━━━━━━━━━━━━━━━━━
 このアプリはユーザーに追加質問をせず、この1回の解析だけでBカウントを確定する。
@@ -1204,6 +1218,7 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
+      "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）の場合、実際に食べた分の推定kcal（整数）。お菓子でなければ必ず0,
       "amount": "写真での量（例：たっぷり、1人前、少量など）",
       "b_count": 0,
       "reason": "A食材のため（1人前約○kcal、120kcal未満）Bカウント0"
@@ -1215,6 +1230,7 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
+      "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）の場合、実際に食べた分の推定kcal（整数）。お菓子でなければ必ず0,
       "amount": "写真での量と推定kcal（例：1人前・約250kcal）",
       "b_count": 1,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが200kcal超のためB1"
@@ -1226,6 +1242,7 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
+      "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）の場合、実際に食べた分の推定kcal（整数）。お菓子でなければ必ず0,
       "amount": "写真での量と推定kcal（例：約150kcal相当）",
       "b_count": 0.5,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが120〜200kcalのためB0.5"
@@ -1237,6 +1254,7 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
       "protein_g": この食材の推定タンパク質量（g・整数。実際の摂取量ぶん。肉魚卵乳大豆等は多め、野菜・油・砂糖等はほぼ0）,
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
+      "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）の場合、実際に食べた分の推定kcal（整数）。お菓子でなければ必ず0,
       "amount": "写真での量と推定kcal（例：少量・約70kcal）",
       "b_count": 0,
       "reason": "B食材だが実際の摂取量約○kcalが120kcal未満のためノーカウント"
@@ -1246,6 +1264,7 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
   "total_protein_g": 全食材の推定タンパク質の合計（g・整数）,
   "total_veg_g": 全食材の野菜の合計（g・整数）,
   "total_fruit_g": 全食材の果物の合計（g・整数）,
+  "total_sweet_kcal": 全食材のお菓子の推定kcalの合計（g→kcal・整数。お菓子が無ければ0）,
   "advice": "このメニューをABダイエット観点でのワンポイントアドバイス（1〜2文）"
 }"""
 

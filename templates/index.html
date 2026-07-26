@@ -782,6 +782,9 @@
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
     🏃 運動で －<span id="ex-deduct-num" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span> カウント
   </div>
+  <div id="sweet-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95)">
+    🍬 お菓子の合計 <span id="sweet-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal（200kcal超）で ＋<span style="font-size:18px;font-weight:800">1</span> カウント
+  </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
     🥩 タンパク質 <span id="protein-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="protein-target-text" style="opacity:0.85"></span>
   </div>
@@ -1313,7 +1316,8 @@ function saveState() {
   if (_editingDate) {
     // 過去日編集中：サーバーのその日へ保存（今日のローカルは触らない）
     scheduleMealSync(_editingDate, payload);
-    const foodTotal = MEALS.reduce((s,m) => s + state[m.id].items.filter(i=>i.result).reduce((a,i)=>a+(i.result.total_b_count||0),0), 0);
+    const _editItems = MEALS.reduce((arr,m) => arr.concat(state[m.id].items.filter(i=>i.result)), []);
+    const foodTotal = _editItems.reduce((a,i)=>a+(i.result.total_b_count||0), 0) + daySweetBonusB(_editItems);
     const net = Math.max(0, foodTotal - getExBCountForDate(_editingDate));
     submitDailyB(net, _editingDate);
     return;
@@ -1468,17 +1472,19 @@ async function backfillCharaLog() {
         const r = await fetch(`/api/daily-meals?user_id=${encodeURIComponent(USER_ID)}&date=${encodeURIComponent(date)}`);
         const d = await r.json();
         if (!d || !d.payload || typeof d.payload !== 'object') continue;
-        let foodTotal = 0, protein = 0, veg = 0, count = 0;
+        let foodTotal = 0, protein = 0, veg = 0, count = 0, allItems = [];
         Object.values(d.payload).forEach(mv => {
           if (!mv || !Array.isArray(mv.items)) return;
           mv.items.filter(i => i && i.result).forEach(i => {
             count++;
+            allItems.push(i);
             foodTotal += i.result.total_b_count || 0;
             protein   += mealProtein(i.result);
             veg       += mealVeg(i.result);
           });
         });
         if (count === 0) continue;
+        foodTotal += daySweetBonusB(allItems);   // お菓子の1日累積ルール（+1）を反映
         setCharaLogEntry(date, scoreFromTotals(foodTotal, protein, veg, getExBCountForDate(date)).score);
         submitDailyB(blog[date], date);   // サーバーにも保存して他の端末のカレンダーにも出す
         changed = true;
@@ -1605,16 +1611,19 @@ function flushPreviousDayIfNeeded() {
   if (!savedDate || savedDate === getTodayJST()) return;  // 今日のデータなら何もしない
 
   // 前日の食事Bカウント・タンパク質・野菜の合計を集計（旧4分類キーも合算）
-  let foodTotal = 0, protein = 0, veg = 0;
+  let foodTotal = 0, protein = 0, veg = 0, allItems = [];
   ALL_MEAL_KEYS.forEach(k => {
     if (data[k] && data[k].items) {
       data[k].items.filter(i => i.result).forEach(i => {
+        allItems.push(i);
         foodTotal += i.result.total_b_count || 0;
         protein   += mealProtein(i.result);
         veg       += mealVeg(i.result);
       });
     }
   });
+  // お菓子の1日累積ルール：前日分にも +1 を反映
+  foodTotal += daySweetBonusB(allItems);
 
   // 運動分を差し引いた純カウントを履歴へ保存
   if (foodTotal > 0) {
@@ -1687,14 +1696,20 @@ function updateDailyTotal() {
   let foodTotal = 0;
   let proteinTotal = 0;
   let vegTotal = 0;
+  let allItems = [];
   MEALS.forEach(m => {
     const done = state[m.id].items.filter(i => i.result);
+    allItems = allItems.concat(done);
     foodTotal += done.reduce((s, i) => s + i.result.total_b_count, 0);
     proteinTotal += done.reduce((s, i) => s + mealProtein(i.result), 0);
     vegTotal += done.reduce((s, i) => s + mealVeg(i.result), 0);
     const dot = document.getElementById(`dot-${m.id}`);
     if (dot) dot.classList.toggle('visible', done.length > 0);
   });
+  // お菓子の1日累積ルール：少量B0のお菓子でも合計200kcal超なら +1
+  const sweetKcal  = daySweetB0Kcal(allItems);
+  const sweetBonus = daySweetBonusB(allItems);
+  foodTotal += sweetBonus;
   const exBc = getExBCountForDate(currentDate());
   const net  = Math.max(0, foodTotal - exBc);
   const el = document.getElementById('daily-total-count');
@@ -1712,6 +1727,17 @@ function updateDailyTotal() {
       bar.style.display = '';
     } else {
       bar.style.display = 'none';
+    }
+  }
+  // お菓子の1日累積で +1 が付いたときだけ、その旨を表示する
+  const sBar  = document.getElementById('sweet-bonus-bar');
+  const sKcal = document.getElementById('sweet-bonus-kcal');
+  if (sBar && sKcal) {
+    if (sweetBonus > 0) {
+      sKcal.textContent = Math.round(sweetKcal);
+      sBar.style.display = '';
+    } else {
+      sBar.style.display = 'none';
     }
   }
 
@@ -1846,15 +1872,17 @@ function scoreFromTotals(foodTotal, protein, veg, exBc) {
 }
 
 function calcCharaScore() {
-  let foodTotal = 0, protein = 0, veg = 0, count = 0;
+  let foodTotal = 0, protein = 0, veg = 0, count = 0, allItems = [];
   MEALS.forEach(m => {
     state[m.id].items.filter(i => i.result).forEach(i => {
       count++;
+      allItems.push(i);
       foodTotal += i.result.total_b_count || 0;
       protein   += mealProtein(i.result);
       veg       += mealVeg(i.result);
     });
   });
+  foodTotal += daySweetBonusB(allItems);   // お菓子の1日累積ルール（+1）を反映
   const exBc = getExBCountForDate(currentDate());
   const s = scoreFromTotals(foodTotal, protein, veg, exBc);
   s.count = count;
@@ -2410,6 +2438,34 @@ function mealProtein(r) {
   if (!r) return 0;
   if (typeof r.total_protein_g === 'number') return r.total_protein_g;
   return (r.foods || []).reduce((s, f) => s + (f.protein_g || 0), 0);
+}
+
+// ═══════════════════════════════════════════
+//  お菓子の1日累積ルール
+//  1食ごとは少量でB0（ノーカウント）でも、その日のお菓子（B0のもの）の実kcalを
+//  合計して200kcalを超えたら、特別ルールとして1日のBカウントに +1 する。
+//  ※1人前を1回で食べて既にB1以上が付いたお菓子は二重計上しないよう対象外
+//    （＝各食材の b_count が 0 のお菓子だけを累積する）。
+// ═══════════════════════════════════════════
+const SWEET_DAY_THRESHOLD_KCAL = 200;
+
+// その日の「B0のお菓子」の実kcал合計を求める（全食事の食材を横断）。
+function daySweetB0Kcal(items) {
+  let kcal = 0;
+  (items || []).forEach(i => {
+    const foods = (i.result && Array.isArray(i.result.foods)) ? i.result.foods : [];
+    foods.forEach(f => {
+      const sk = Number(f && f.sweet_kcal) || 0;
+      const bc = Number(f && f.b_count) || 0;
+      if (sk > 0 && bc === 0) kcal += sk;   // お菓子で、かつ0回カウントのものだけ累積
+    });
+  });
+  return kcal;
+}
+
+// その日のお菓子累積による追加Bカウント（200kcal超で+1、それ以外は0）。
+function daySweetBonusB(items) {
+  return daySweetB0Kcal(items) > SWEET_DAY_THRESHOLD_KCAL ? 1 : 0;
 }
 
 // 1日のタンパク質目標(g)。体重×1.2〜1.6g/日の幅を持たせる（体重未設定ならnull）。
