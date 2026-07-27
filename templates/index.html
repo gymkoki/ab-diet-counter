@@ -3812,6 +3812,25 @@ function getGoalTarget(p) {
   return { ...t, goalKey: p.goal, goalName: GOAL_NAMES[p.goal] };
 }
 
+// 身長をサーバーへ同期する（管理画面のBMI表示用）。
+// 既存会員はプロフィールを保存し直さなくても、アプリを開いた時点で身長がサーバーに届く。
+// 同じ身長を毎回送らないよう、送信済みの値をローカルに控えて差分があるときだけ送る。
+function _syncHeightToServer() {
+  try {
+    const p = getProfile() || {};
+    const h = p.height;
+    if (!h) return;
+    const sentKey = 'ab-diet-height-synced';
+    if (localStorage.getItem(sentKey) === String(h)) return;
+    fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, height_cm: h })
+    }).then(() => { try { localStorage.setItem(sentKey, String(h)); } catch(_) {} })
+      .catch(() => {});
+  } catch (_) {}
+}
+
 function saveProfile() {
   const hv = document.getElementById('input-height').value;
   const wv = document.getElementById('input-weight').value;
@@ -3826,12 +3845,12 @@ function saveProfile() {
   if (_selGoal)   profile.goal   = _selGoal;
   profile.name = nv;
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  // 表示名に加えて性別・目標もサーバーへ（デイリーレポートの目的別集計用）
-  if (nv || profile.gender || profile.goal) {
+  // 表示名に加えて性別・目標・身長もサーバーへ（デイリーレポートの目的別集計・BMI表示用）
+  if (nv || profile.gender || profile.goal || profile.height) {
     fetch('/api/profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: USER_ID, display_name: nv, gender: profile.gender || null, goal: profile.goal || null })
+      body: JSON.stringify({ user_id: USER_ID, display_name: nv, gender: profile.gender || null, goal: profile.goal || null, height_cm: profile.height || null })
     }).catch(() => {});
   }
   const msg = document.getElementById('profile-saved-msg');
@@ -5002,6 +5021,7 @@ function _step(fn, label) {
     .then(backfillCharaLog)       // → 取り込み後、キャラカレンダーの抜けた過去日を復元
     .catch(() => {});
   checkFeedbackReplies();         // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
+  _syncHeightToServer();          // 身長をサーバーへ同期（管理画面のBMI表示用。既存会員も自動反映）
 
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
