@@ -545,8 +545,8 @@ def init_db():
                 )
             """)
         conn.commit()
-        # 既存DBへの列追加（デイリーレポートの目的別集計用）。列が既にあれば無視。
-        for col in ("gender", "goal"):
+        # 既存DBへの列追加（デイリーレポートの目的別集計用／BMI表示用の身長）。列が既にあれば無視。
+        for col in ("gender", "goal", "height_cm"):
             try:
                 cur.execute(f"ALTER TABLE user_profile ADD COLUMN {col} TEXT")
                 conn.commit()
@@ -636,6 +636,51 @@ def _save_user_goal(uid, gender, goal):
                 conn.close()
     except Exception:
         pass  # 集計用の付帯情報のため、保存に失敗しても解析処理は続行する
+
+
+def _save_user_height(uid, height_cm):
+    """会員の身長(cm)を user_profile へ保存する（ダッシュボードのBMI表示用）。
+    身長は減量幅の目安に関わるため、管理画面で各会員のBMIを出せるようにする。
+    値が無効・未入力のときは何もしない（既存値は消さない）。"""
+    uid = (uid or "").strip()
+    if not uid or height_cm is None or height_cm == "":
+        return
+    try:
+        h = float(height_cm)
+    except (TypeError, ValueError):
+        return
+    if h < 100 or h > 250:   # 明らかに不正な値は無視
+        return
+    h_str = str(round(h, 1))
+    ts = datetime.datetime.now(JST).isoformat()
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                if USE_PG:
+                    cur.execute(
+                        """INSERT INTO user_profile (user_id, height_cm, updated_at)
+                           VALUES (%s, %s, %s)
+                           ON CONFLICT (user_id) DO UPDATE SET
+                             height_cm  = EXCLUDED.height_cm,
+                             updated_at = EXCLUDED.updated_at""",
+                        (uid, h_str, ts)
+                    )
+                else:
+                    cur.execute(
+                        """INSERT INTO user_profile (user_id, height_cm, updated_at)
+                           VALUES (?, ?, ?)
+                           ON CONFLICT(user_id) DO UPDATE SET
+                             height_cm  = excluded.height_cm,
+                             updated_at = excluded.updated_at""",
+                        (uid, h_str, ts)
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception:
+        pass  # 付帯情報のため、保存に失敗しても処理は続行する
 
 
 _backfill_done = False
@@ -2084,6 +2129,7 @@ def api_profile():
             finally:
                 conn.close()
     _save_user_goal(uid, data.get("gender") or "", data.get("goal") or "")
+    _save_user_height(uid, data.get("height_cm"))
     return jsonify({"ok": True})
 
 
@@ -2236,10 +2282,16 @@ def admin_user_detail(user_id):
     try:
         cur = conn.cursor()
 
-        cur.execute(f"SELECT display_name, is_vip FROM user_profile WHERE user_id={PH}", (user_id,))
+        cur.execute(f"SELECT display_name, is_vip, height_cm FROM user_profile WHERE user_id={PH}", (user_id,))
         row = cur.fetchone()
         display_name = row[0] if row else None
         is_vip = bool(row[1]) if row else False
+        height_cm = None
+        if row and row[2] not in (None, ""):
+            try:
+                height_cm = float(row[2])
+            except (TypeError, ValueError):
+                height_cm = None
 
         cur.execute(
             f"SELECT date, weight FROM daily_weight WHERE user_id={PH} ORDER BY date",
@@ -2315,6 +2367,7 @@ def admin_user_detail(user_id):
     return jsonify({
         "display_name": display_name,
         "is_vip": is_vip,
+        "height_cm": height_cm,
         "weight": weight,
         "b_count": b_count,
         "exercise": exercise,
