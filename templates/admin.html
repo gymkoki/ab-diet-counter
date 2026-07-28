@@ -275,11 +275,6 @@
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:20px">
-    <h2>🔥 減量メンバーの日別平均Bカウント（直近30日）</h2>
-    <canvas id="chart-b" height="120"></canvas>
-  </div>
-
   <!-- 体重変化の分析 -->
   <div class="charts-grid">
     <div class="card">
@@ -356,7 +351,7 @@
 
 <script>
   const ADMIN_BASE = {{ admin_base | tojson }};   // 管理画面のベースURL（専用パス）
-  let chartUsers = null, chartB = null, chartAnalyses = null;
+  let chartUsers = null, chartAnalyses = null;
   let usersData = [];
   let sortCol = null;         // ソート対象の列キー
   let sortDir = null;         // 'asc'=昇順, 'desc'=降順
@@ -440,29 +435,6 @@
       }
     });
 
-    if (chartB) chartB.destroy();
-    chartB = new Chart(document.getElementById('chart-b'), {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: '減量メンバーの平均Bカウント',
-          data: d.cut_avg_b_counts,
-          borderColor: '#FF6B35',
-          backgroundColor: 'rgba(255,107,53,0.1)',
-          fill: true,
-          tension: 0.35,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          spanGaps: true,
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } }
-      }
-    });
   }
 
   function escapeHtml(s) {
