@@ -306,6 +306,16 @@
     </div>
   </div>
 
+  <!-- 機能別の利用状況 -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🧭 機能別の利用状況（直近30日）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      どの機能が実際に使われているかを、<b>使った人数</b>と<b>延べ記録数</b>で比較します。
+      「利用率」は直近30日に何らかの記録があった会員（＝アクティブ会員）に対する割合です。
+    </div>
+    <div id="feature-usage"><div class="spinner"></div></div>
+  </div>
+
   <!-- Users Table -->
   <div class="card users-card">
     <h2>👤 ユーザー別統計</h2>
@@ -792,9 +802,92 @@
     }
   }
 
+  // ── 機能別の利用状況 ──
+  async function loadFeatureUsage() {
+    const box = document.getElementById('feature-usage');
+    if (!box) return;
+    const r = await fetch('/api/admin/feature-usage');
+    if (!r.ok) throw new Error('feature-usage');
+    const d = await r.json();
+
+    if (!d.active_users) {
+      box.innerHTML = '<div class="no-data">直近30日に記録のある会員がまだいません。</div>';
+      return;
+    }
+
+    const bar = (pct, color) =>
+      `<div style="background:#F3F4F6;border-radius:999px;height:8px;overflow:hidden;min-width:80px">
+         <div style="width:${Math.min(100, pct)}%;height:100%;background:${color};border-radius:999px"></div>
+       </div>`;
+
+    const rows = (d.features || []).map(f => `
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;color:#374151;white-space:nowrap">${escapeHtml(f.label)}</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:800;color:#FF6B35">${f.users}名</td>
+        <td style="padding:9px 12px;min-width:120px">
+          <div style="display:flex;align-items:center;gap:8px">
+            ${bar(f.pct, '#FF6B35')}
+            <span style="font-size:12px;font-weight:700;color:#6B7280;white-space:nowrap">${f.pct}%</span>
+          </div>
+        </td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700;color:#374151">${f.records.toLocaleString()}</td>
+      </tr>`).join('');
+
+    const mtRows = (d.meal_types || []).map(t => `
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;color:#374151;white-space:nowrap">${escapeHtml(t.label)}</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:800;color:#6366F1">${t.users}名</td>
+        <td style="padding:9px 12px;min-width:120px">
+          <div style="display:flex;align-items:center;gap:8px">
+            ${bar(t.pct, '#6366F1')}
+            <span style="font-size:12px;font-weight:700;color:#6B7280;white-space:nowrap">${t.pct}%</span>
+          </div>
+        </td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700;color:#374151">${t.records.toLocaleString()}</td>
+      </tr>`).join('');
+
+    const dy = d.diary || {};
+    box.innerHTML = `
+      <div style="font-size:12px;color:#6B7280;margin-bottom:8px">
+        直近30日のアクティブ会員：<b style="color:#FF6B35">${d.active_users}名</b>（この人数を母数に利用率を計算）
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>機能</th><th style="text-align:center">使った人数</th><th>利用率</th><th style="text-align:right">延べ記録数</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:20px;font-size:13px;font-weight:800;color:#374151">🍽️ 食事の記録方法の内訳（直近${d.meal_period_days}日）</div>
+      <div style="font-size:11px;color:#9CA3AF;margin:4px 0 8px;line-height:1.6">
+        ※食事の明細は${d.meal_period_days}日で自動削除されるため、この内訳だけは直近${d.meal_period_days}日が対象です（対象会員 ${d.meal_type_users}名）。
+        割合は記録件数に占める比率です。
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>記録方法</th><th style="text-align:center">使った人数</th><th>件数の割合</th><th style="text-align:right">件数</th>
+          </tr></thead>
+          <tbody>${mtRows}</tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:20px;background:#F9FAFB;border-radius:10px;padding:12px 14px">
+        <div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:6px">📝 ひとこと日記の使われ方</div>
+        <div style="font-size:13px;color:#6B7280;line-height:1.8">
+          書いた人：<b style="color:#FF6B35">${dy.users || 0}名</b>（アクティブ会員の ${d.active_users ? Math.round((dy.users||0)/d.active_users*100) : 0}%）／
+          延べ <b>${(dy.records || 0).toLocaleString()}日分</b>／
+          1人あたり平均 <b>${dy.avg_days || 0}日</b>／
+          平均 <b>${dy.avg_len || 0}文字</b>
+        </div>
+      </div>`;
+  }
+
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
