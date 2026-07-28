@@ -83,6 +83,28 @@
       margin-bottom: 14px;
     }
 
+    /* ── 注目メンバー（痩せた人／痩せていない人） ── */
+    .spot-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .spot-group-title { font-size: 13px; font-weight: 800; padding: 8px 12px; border-radius: 10px; margin-bottom: 10px; }
+    .spot-group-title.good { background: #ECFDF5; color: #047857; }
+    .spot-group-title.warn { background: #FEF2F2; color: #B91C1C; }
+    .spot-person { border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fff; }
+    .spot-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .spot-name { font-size: 14px; font-weight: 800; color: #111827; }
+    .spot-sub { font-size: 11px; color: #9CA3AF; font-weight: 600; }
+    .spot-change { font-size: 17px; font-weight: 800; white-space: nowrap; }
+    .spot-change.down { color: #047857; }
+    .spot-change.up { color: #DC2626; }
+    .spot-meta { font-size: 11px; color: #6B7280; margin-bottom: 8px; }
+    .spot-spark { display: block; width: 100%; height: 44px; margin-bottom: 8px; }
+    .spot-photos { display: flex; gap: 6px; overflow-x: auto; }
+    .spot-photo { position: relative; flex-shrink: 0; }
+    .spot-photo img { width: 74px; height: 74px; object-fit: cover; border-radius: 8px; display: block; border: 1px solid #E5E7EB; }
+    .spot-photo span { position: absolute; left: 3px; bottom: 3px; background: rgba(0,0,0,0.62); color: #fff; font-size: 10px; font-weight: 700; border-radius: 5px; padding: 1px 5px; }
+    .spot-nophoto { font-size: 11px; color: #9CA3AF; padding: 6px 0; }
+    .spot-empty { font-size: 12px; color: #9CA3AF; padding: 10px 0; }
+    @media (max-width: 780px) { .spot-groups { grid-template-columns: 1fr; } }
+
     /* ── Users Table ── */
     .users-card { margin-bottom: 20px; }
     .table-wrap { overflow-x: auto; }
@@ -292,6 +314,16 @@
       <canvas id="chart-corr" height="200"></canvas>
       <div id="corr-note" style="font-size:11px;color:#9CA3AF;margin-top:8px"></div>
     </div>
+  </div>
+
+  <!-- 注目メンバー：特に痩せた人／特に痩せていない人（各3人・食事写真つき） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🔍 注目メンバー（食事写真＆体重推移）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      直近90日の体重記録から、<b>特に痩せた人</b>と<b>特に痩せていない人</b>を各3人ずつ表示します。
+      青い線が体重推移、下は直近の食事写真です。名前を押すとその人の詳細（全写真・コメント）を開けます。
+    </div>
+    <div id="spotlight"><div class="spinner"></div></div>
   </div>
 
   <!-- 減量メンバーの詳細（日別Bカウント・記録状況・食事へのリンク） -->
@@ -802,6 +834,70 @@
     }
   }
 
+  // ── 注目メンバー（特に痩せた人／痩せていない人を各3人・食事写真つき）──
+  // 体重推移は外部ライブラリを使わずSVGのスパークラインで描く。
+  function spotSpark(series) {
+    const pts = (series || []).filter(p => typeof p.weight === 'number');
+    if (pts.length < 2) return '<div class="spot-nophoto">体重の記録が足りません</div>';
+    const W = 260, H = 44, pad = 4;
+    const ws = pts.map(p => p.weight);
+    let min = Math.min(...ws), max = Math.max(...ws);
+    if (min === max) { min -= 0.5; max += 0.5; }
+    const x = i => pad + (W - pad * 2) * (pts.length === 1 ? 0.5 : i / (pts.length - 1));
+    const y = w => pad + (H - pad * 2) * (1 - (w - min) / (max - min));
+    const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.weight).toFixed(1)}`).join(' ');
+    const last = pts[pts.length - 1];
+    return `<svg class="spot-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <polyline points="${line}" fill="none" stroke="#2563EB" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${x(0).toFixed(1)}" cy="${y(pts[0].weight).toFixed(1)}" r="2.6" fill="#93C5FD"/>
+      <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last.weight).toFixed(1)}" r="3" fill="#2563EB"/>
+    </svg>`;
+  }
+
+  const SPOT_GOAL = { cut: '減量希望', maintain: '体重維持', bulk: '増量希望' };
+
+  function spotPerson(u) {
+    const down = u.change < 0;
+    const sign = u.change > 0 ? '+' : '';
+    const photos = (u.photos || []).length
+      ? `<div class="spot-photos">${u.photos.map(p => `
+          <div class="spot-photo">
+            <img src="${p.src}" alt="" loading="lazy">
+            <span>${escapeHtml((p.date || '').slice(5))}${p.b != null ? ` B${p.b}` : ''}</span>
+          </div>`).join('')}</div>`
+      : '<div class="spot-nophoto">食事写真の記録はまだありません</div>';
+    return `
+      <div class="spot-person">
+        <div class="spot-head">
+          <div>
+            <a class="spot-name" href="${ADMIN_BASE}/user/${encodeURIComponent(u.user_id)}">${escapeHtml(u.name || '')}</a>
+            <div class="spot-sub">${SPOT_GOAL[u.goal] || '目標未設定'}${u.avg_b != null ? ` ／ 平均B ${u.avg_b}/日` : ''}</div>
+          </div>
+          <div class="spot-change ${down ? 'down' : 'up'}">${sign}${u.change} kg</div>
+        </div>
+        <div class="spot-meta">${u.start_weight}kg → ${u.latest_weight}kg（${escapeHtml(u.start_date)} 〜 ${escapeHtml(u.latest_date)}・${u.span_days}日）</div>
+        ${spotSpark(u.series)}
+        ${photos}
+      </div>`;
+  }
+
+  async function loadSpotlight() {
+    const box = document.getElementById('spotlight');
+    if (!box) return;
+    const r = await fetch('/api/admin/spotlight');
+    if (!r.ok) throw new Error('spotlight');
+    const d = await r.json();
+    const group = (title, cls, list, empty) => `
+      <div>
+        <div class="spot-group-title ${cls}">${title}</div>
+        ${list.length ? list.map(spotPerson).join('') : `<div class="spot-empty">${empty}</div>`}
+      </div>`;
+    box.innerHTML = `<div class="spot-groups">
+      ${group('📉 特に痩せた人', 'good', d.lost || [], '該当する会員がまだいません。')}
+      ${group('📈 特に痩せていない人', 'warn', d.not_lost || [], '該当する会員がまだいません。')}
+    </div>`;
+  }
+
   // ── 機能別の利用状況 ──
   async function loadFeatureUsage() {
     const box = document.getElementById('feature-usage');
@@ -887,7 +983,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
