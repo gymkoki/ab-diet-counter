@@ -1990,6 +1990,174 @@ def admin_weight_insights():
     })
 
 
+@app.route("/api/admin/feature-usage")
+@_admin_required
+def admin_feature_usage():
+    """ダッシュボード用：機能別の利用状況（どの機能が実際に使われているか）。
+
+    ・体重／運動／日記／食事記録／解析回数は全期間保持されるため直近30日で正確に集計できる。
+    ・食事の種別内訳（写真／文章／手動B／コピーご飯）は daily_meals が MEALS_RETAIN_DAYS 日で
+      自動削除されるため、その保持期間ぶんだけを対象にする（母数が違う点を画面側で明示する）。
+    """
+    days = 30
+    now = datetime.datetime.now(JST)
+    date_start = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    ts_start   = f"{date_start}T00:00:00"
+    meal_days_window = MEALS_RETAIN_DAYS
+    meal_date_start  = (now - datetime.timedelta(days=meal_days_window)).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+
+        def _uid_stats(table, date_col="date"):
+            """(ユニークユーザー数, 延べ記録数, 参加ユーザーIDの集合) を返す。"""
+            cur.execute(
+                f"SELECT user_id, COUNT(*) FROM {table} WHERE {date_col}>={PH} GROUP BY user_id",
+                (date_start,),
+            )
+            rows = cur.fetchall()
+            uids = {r[0] for r in rows}
+            return len(uids), sum(r[1] for r in rows), uids
+
+        b_users, b_records, b_uids = _uid_stats("daily_b_count")
+        w_users, w_records, w_uids = _uid_stats("daily_weight")
+        e_users, e_records, e_uids = _uid_stats("daily_exercise")
+        d_users, d_records, d_uids = _uid_stats("daily_diary")
+
+        # 解析（AI）実行回数：写真・文章の合計。usage_log は created_at がISO文字列。
+        cur.execute(
+            f"SELECT user_id, COUNT(*) FROM usage_log WHERE created_at>={PH} GROUP BY user_id",
+            (ts_start,),
+        )
+        rows = cur.fetchall()
+        analyze_uids = {r[0] for r in rows}
+        analyze_users, analyze_records = len(analyze_uids), sum(r[1] for r in rows)
+
+        # 日記の中身（平均文字数）— 「意外と使われているか」を見るための補助指標
+        cur.execute(
+            f"SELECT diary FROM daily_diary WHERE date>={PH}",
+            (date_start,),
+        )
+        diary_texts = [r[0] or "" for r in cur.fetchall()]
+        diary_avg_len = round(sum(len(t) for t in diary_texts) / len(diary_texts), 1) if diary_texts else 0
+
+        # プロフィール設定（目標・性別・表示名のいずれかを設定した人）
+        prof_users = 0
+        try:
+            cur.execute(
+                """SELECT COUNT(*) FROM user_profile
+                   WHERE (goal IS NOT NULL AND goal <> '')
+                      OR (gender IS NOT NULL AND gender <> '')
+                      OR (display_name IS NOT NULL AND display_name <> '')"""
+            )
+            prof_users = cur.fetchone()[0] or 0
+        except Exception:
+            pass
+
+        # 修正希望・ご要望（送信した人）
+        fb_users = fb_records = 0
+        try:
+            cur.execute(
+                f"SELECT user_id, COUNT(*) FROM feedback WHERE created_at>={PH} GROUP BY user_id",
+                (ts_start,),
+            )
+            rows = cur.fetchall()
+            fb_users, fb_records = len({r[0] for r in rows}), sum(r[1] for r in rows)
+        except Exception:
+            pass
+
+        # ── 食事の種別内訳（保持期間ぶんのみ） ──
+        cur.execute(
+            f"SELECT user_id, date, payload FROM daily_meals WHERE date>={PH}",
+            (meal_date_start,),
+        )
+        meal_rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+    types = {
+        "photo":    {"label": "📷 写真で記録",     "users": set(), "records": 0},
+        "text":     {"label": "✏️ 文章で記録",     "users": set(), "records": 0},
+        "manual_b": {"label": "🍙 Bを手動追加",    "users": set(), "records": 0},
+        "copy":     {"label": "🍚 コピーご飯",     "users": set(), "records": 0},
+    }
+    meal_type_uids = set()
+    for uid, _dt, payload_str in meal_rows:
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for k in MEAL_KEYS:
+            sec = payload.get(k)
+            if not isinstance(sec, dict):
+                continue
+            for it in (sec.get("items") or []):
+                if not isinstance(it, dict) or not it.get("result"):
+                    continue
+                # 判定順：手動B → コピーご飯 → 文章 → 写真（フラグが無いものは写真扱い）
+                if it.get("isOil"):
+                    key = "manual_b"
+                elif it.get("isCopy"):
+                    key = "copy"
+                elif it.get("isText"):
+                    key = "text"
+                else:
+                    key = "photo"
+                types[key]["users"].add(uid)
+                types[key]["records"] += 1
+                meal_type_uids.add(uid)
+
+    # 直近30日に何らかの記録があった人（＝利用率の母数）
+    active_uids = b_uids | w_uids | e_uids | d_uids | analyze_uids
+    active_users = len(active_uids)
+
+    def _pct(n):
+        return round(n / active_users * 100) if active_users else 0
+
+    features = [
+        {"key": "meal",     "label": "🍽️ 食事の記録（Bカウント）", "users": b_users,       "records": b_records,       "pct": _pct(b_users)},
+        {"key": "analyze",  "label": "🤖 AI解析（写真・文章）",      "users": analyze_users, "records": analyze_records, "pct": _pct(analyze_users)},
+        {"key": "weight",   "label": "⚖️ 体重の記録",               "users": w_users,       "records": w_records,       "pct": _pct(w_users)},
+        {"key": "exercise", "label": "🏃 運動の記録",               "users": e_users,       "records": e_records,       "pct": _pct(e_users)},
+        {"key": "diary",    "label": "📝 ひとこと日記",             "users": d_users,       "records": d_records,       "pct": _pct(d_users)},
+        {"key": "profile",  "label": "⚙️ プロフィール設定",         "users": prof_users,    "records": prof_users,      "pct": _pct(prof_users)},
+        {"key": "feedback", "label": "✉️ 修正希望・ご要望",         "users": fb_users,      "records": fb_records,      "pct": _pct(fb_users)},
+    ]
+    features.sort(key=lambda f: (-f["users"], -f["records"]))
+
+    meal_total = sum(t["records"] for t in types.values()) or 0
+    meal_types = [
+        {
+            "key": k,
+            "label": v["label"],
+            "users": len(v["users"]),
+            "records": v["records"],
+            "pct": round(v["records"] / meal_total * 100) if meal_total else 0,
+        }
+        for k, v in types.items()
+    ]
+    meal_types.sort(key=lambda t: -t["records"])
+
+    return jsonify({
+        "period_days":      days,
+        "active_users":     active_users,
+        "features":         features,
+        "meal_period_days": meal_days_window,
+        "meal_type_users":  len(meal_type_uids),
+        "meal_types":       meal_types,
+        "diary": {
+            "users":       d_users,
+            "records":     d_records,
+            "avg_len":     diary_avg_len,
+            "avg_days":    round(d_records / d_users, 1) if d_users else 0,
+        },
+    })
+
+
 @app.route("/api/admin/users")
 @_admin_required
 def admin_users():
