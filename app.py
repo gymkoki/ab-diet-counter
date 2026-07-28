@@ -1990,6 +1990,143 @@ def admin_weight_insights():
     })
 
 
+@app.route("/api/admin/spotlight")
+@_admin_required
+def admin_spotlight():
+    """ダッシュボード用：「特に痩せた人」「特に痩せていない人」を各3人ずつ、
+    体重推移（スパークライン用の点列）と直近の食事写真つきで返す。
+    直近90日の体重記録の最初→最後の差を変化量として判定する。"""
+    DAYS      = 90
+    PICK      = 3            # 各グループの人数
+    PHOTOS    = 4            # 1人あたりの食事写真の枚数
+    MIN_SPAN  = 7            # 変化とみなす最小の記録期間（日）。足りなければ緩める
+
+    now = datetime.datetime.now(JST)
+    date_start = (now - datetime.timedelta(days=DAYS)).strftime("%Y-%m-%d")
+    date_end   = now.strftime("%Y-%m-%d")
+    b_start    = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT user_id, date, weight FROM daily_weight
+               WHERE date>={PH} AND date<={PH} ORDER BY user_id, date""",
+            (date_start, date_end)
+        )
+        w_rows = cur.fetchall()
+        cur.execute(
+            f"""SELECT user_id, AVG(b_count) FROM daily_b_count
+               WHERE date>={PH} AND date<={PH} GROUP BY user_id""",
+            (b_start, date_end)
+        )
+        avg_b_by_uid = {r[0]: float(r[1]) for r in cur.fetchall() if r[1] is not None}
+        try:
+            cur.execute("SELECT user_id, display_name, goal FROM user_profile")
+            prof_by_uid = {r[0]: {"name": r[1], "goal": r[2]} for r in cur.fetchall()}
+        except Exception:
+            cur.execute("SELECT user_id, display_name FROM user_profile")
+            prof_by_uid = {r[0]: {"name": r[1], "goal": None} for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    series_by_uid = {}
+    for uid, dt, wt in w_rows:
+        series_by_uid.setdefault(uid, []).append((dt, float(wt)))
+
+    def _build(uid, min_span):
+        recs = series_by_uid.get(uid) or []
+        if len(recs) < 2:
+            return None
+        span = (datetime.date.fromisoformat(recs[-1][0]) - datetime.date.fromisoformat(recs[0][0])).days
+        if span < min_span:
+            return None
+        prof = prof_by_uid.get(uid, {})
+        return {
+            "user_id":   uid,
+            "name":      prof.get("name") or (uid[:8] + "…"),
+            "goal":      prof.get("goal") or None,
+            "change":    round(recs[-1][1] - recs[0][1], 1),
+            "start_weight": round(recs[0][1], 1),
+            "latest_weight": round(recs[-1][1], 1),
+            "start_date": recs[0][0],
+            "latest_date": recs[-1][0],
+            "span_days": span,
+            "avg_b":     round(avg_b_by_uid[uid], 1) if uid in avg_b_by_uid else None,
+            "series":    [{"date": d, "weight": w} for d, w in recs],
+        }
+
+    def _candidates(min_span):
+        out = []
+        for uid in series_by_uid:
+            u = _build(uid, min_span)
+            if u:
+                out.append(u)
+        return out
+
+    cands = _candidates(MIN_SPAN)
+    if len(cands) < PICK * 2:
+        cands = _candidates(1)   # 対象が少ないときは記録期間の条件を緩める
+
+    # 痩せた人：体重が減った人（増量目的の人は「減った＝好調」ではないので除く）
+    lost = sorted([u for u in cands if u["change"] < 0 and u["goal"] != "bulk"],
+                  key=lambda u: u["change"])[:PICK]
+    # 痩せていない人：減量目的なのに減っていない人を優先し、足りなければ維持・未設定も含める
+    gain_cut   = sorted([u for u in cands if u["goal"] == "cut" and u["change"] >= 0],
+                        key=lambda u: -u["change"])
+    gain_other = sorted([u for u in cands if u["goal"] in (None, "maintain") and u["change"] >= 0],
+                        key=lambda u: -u["change"])
+    not_lost = (gain_cut + gain_other)[:PICK]
+
+    # 選ばれた人の直近の食事写真（サムネ）を付ける
+    picked = {u["user_id"]: u for u in (lost + not_lost)}
+    for u in picked.values():
+        u["photos"] = []
+    if picked:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            ph_list = ",".join([PH] * len(picked))
+            cur.execute(
+                f"""SELECT user_id, date, payload FROM daily_meals
+                   WHERE user_id IN ({ph_list}) ORDER BY date DESC""",
+                tuple(picked.keys())
+            )
+            meal_rows = cur.fetchall()
+        finally:
+            conn.close()
+        MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+        for uid, dt, payload_str in meal_rows:
+            u = picked.get(uid)
+            if not u or len(u["photos"]) >= PHOTOS:
+                continue
+            try:
+                payload = json.loads(payload_str)
+            except Exception:
+                continue
+            for key in MEAL_KEYS:
+                for item in payload.get(key, {}).get("items", []):
+                    if len(u["photos"]) >= PHOTOS:
+                        break
+                    src = item.get("previewSrc")
+                    if not src:
+                        continue
+                    res = item.get("result") or {}
+                    u["photos"].append({
+                        "date": dt,
+                        "src":  src,
+                        "b":    res.get("total_b_count") if isinstance(res, dict) else None,
+                    })
+
+    return jsonify({
+        "period_days": DAYS,
+        "date_start":  date_start,
+        "date_end":    date_end,
+        "lost":        lost,
+        "not_lost":    not_lost,
+    })
+
+
 @app.route("/api/admin/feature-usage")
 @_admin_required
 def admin_feature_usage():
