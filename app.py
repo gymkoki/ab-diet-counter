@@ -1366,9 +1366,8 @@ def get_client():
 
 @app.route("/")
 def index():
-    # 食事明細（写真つき）の保持日数をフロントへ渡す。過去日に後から写真を追加できる
-    # 期間をこの値に合わせることで、サーバー側の自動削除とズレないようにする。
-    return render_template("index.html", meals_retain_days=MEALS_RETAIN_DAYS)
+    # 過去日に後から食事写真を追加できる日数をフロントへ渡す。
+    return render_template("index.html", past_meal_edit_days=PAST_MEAL_EDIT_DAYS)
 
 
 @app.route(ADMIN_BASE)
@@ -3943,6 +3942,12 @@ def get_monthly_b():
 # 食事の明細＋写真サムネを日別に保存（過去5日分のみ保持し、それ以前は自動削除。
 # ただしVIP会員（user_profile.is_vip）はスタッフ確認用に無期限保持する）
 MEALS_RETAIN_DAYS = 5
+
+# 過去日に後から食事写真を追加できる日数（何日前まで遡れるか）。
+# 保持日数(5日)より短い3日にしているのは、保持期限ギリギリの日に写真を追加できてしまうと
+# 翌日には自動削除されて「せっかく入れた写真が消える」ことになるため。
+# 2日ぶんの余裕を持たせ、追加した写真が必ずしばらく残るようにする。
+PAST_MEAL_EDIT_DAYS = 3
 
 
 @app.route("/api/daily-meals", methods=["POST"])

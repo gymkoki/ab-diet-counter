@@ -766,7 +766,7 @@
     }
   </style>
 </head>
-<body data-meals-retain-days="{{ meals_retain_days | default(5) | int }}">
+<body data-past-meal-edit-days="{{ past_meal_edit_days | default(3) | int }}">
 
 <header>
   <div class="daily-total-bar">
@@ -1159,19 +1159,19 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.26</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.27</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📝</span>
-        <span><b>「ひとこと日記」を毎日残せます！</b>下の<b>「体重/日記」</b>タブから、その日のひとこと（50字まで）を記録できます。</span>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🍽️</span>
-        <span>「飲み会で食べすぎた」「今日はよく歩いた」など、体調や気づきをメモしておくと、あとで振り返るときにとても役立ちます。</span>
+        <span style="font-size:20px;flex-shrink:0">📷</span>
+        <span><b>記録を忘れた日でも、あとから写真をアップできます！</b>その日に何ひとつ記録していなくても、<b>3日前まで</b>ならさかのぼって食事写真を追加できるようになりました。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
         <span style="font-size:20px;flex-shrink:0">🗓️</span>
-        <span>毎日その日のぶんを書けます。書き忘れた日も<b>「履歴」→「編集」</b>からあとで記入できます。</span>
+        <span>やり方は、下の<b>「履歴」</b>タブ →<b>「日付を選んで記入」</b>で日にちを選び、<b>「📷 この日の食事を追加する」</b>を押すだけ。いつもどおり写真を撮って登録できます。</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">💡</span>
+        <span>忙しくて記録できなかった日も、あとでまとめて入力できます。Bカウント・体重・日記は今までどおり、それより前の日でも記入できます。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -1264,11 +1264,10 @@ function nextItemId() {
   return id;
 }
 const STORAGE_KEY = 'ab-diet-state-v3';
-// 食事明細（写真つき）をサーバーが保持する日数。過去日に後から写真を追加できる期間も
-// この値に合わせる（サーバー側の自動削除とズレないよう、bodyのdata属性で受け取る）。
+// 過去日に後から食事写真を追加できる日数（何日前まで遡れるか）。サーバーから受け取る。
 // ※テンプレート記法をJS内に書くと構文チェック（node --check）が通らないため、
 //   data属性から読む形にしている。
-const MEALS_RETAIN_DAYS = Number(document.body.dataset.mealsRetainDays) || 5;
+const PAST_MEAL_EDIT_DAYS = Number(document.body.dataset.pastMealEditDays) || 3;
 let activeMeal = 'food';
 const _progressTimers = {};
 
@@ -4811,11 +4810,10 @@ function openHistEdit(date) {
   document.getElementById('hist-edit-bcount').value = (d.b_count != null) ? d.b_count : '';
   document.getElementById('hist-edit-weight').value = (d.weight != null) ? d.weight : '';
   document.getElementById('hist-edit-diary').value  = d.diary || getDiaryLog()[date] || '';
-  // 過去日の食事は、写真つき明細の保持期間内なら「記録が無い日」でも後から追加できる。
-  // 期間はサーバーの保持日数（MEALS_RETAIN_DAYS）に合わせる。
+  // 過去日の食事は「記録が1つも無い日」でも、PAST_MEAL_EDIT_DAYS日前までなら後から追加できる。
   const diff = _daysAgoFromToday(date);
   const mealBtn = document.getElementById('hist-meal-edit-btn');
-  const canEditMeal = (diff >= 1 && diff <= MEALS_RETAIN_DAYS);
+  const canEditMeal = (diff >= 1 && diff <= PAST_MEAL_EDIT_DAYS);
   mealBtn.style.display = canEditMeal ? '' : 'none';
   // その日にまだ食事の記録が無ければ、ボタンの文言を「追加」に変えて分かりやすくする
   mealBtn.textContent = (d.b_count == null)
@@ -4825,8 +4823,8 @@ function openHistEdit(date) {
   const mealNote = document.getElementById('hist-meal-edit-note');
   if (mealNote) {
     mealNote.style.display = canEditMeal ? 'none' : '';
-    mealNote.textContent = (diff > MEALS_RETAIN_DAYS)
-      ? `※食事の写真を後から追加できるのは${MEALS_RETAIN_DAYS}日前までです。それ以前の日はBカウント・体重・日記のみ記入できます。`
+    mealNote.textContent = (diff > PAST_MEAL_EDIT_DAYS)
+      ? `※食事の写真を後から追加できるのは${PAST_MEAL_EDIT_DAYS}日前までです。それ以前の日はBカウント・体重・日記のみ記入できます。`
       : '';
   }
   document.getElementById('hist-edit-overlay').classList.add('show');
@@ -5008,7 +5006,7 @@ function closeReplyNotice() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v28';
+const NOTICE_KEY = 'ab-diet-notice-v29';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
