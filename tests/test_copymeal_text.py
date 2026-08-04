@@ -33,3 +33,24 @@ def test_copymeal_text_form_has_no_dial():
     assert 'id="drum-copyb"' not in html, "Bカウントのダイヤル(drum-copyb)がまだHTMLに残っている"
     # 自動計算の案内文がある
     assert "自動で計算" in html
+
+
+def test_copymeal_text_form_allows_long_paste():
+    """文章登録の入力欄が長文貼り付けに対応していること（60字上限の再発防止）。"""
+    html = _read()
+    m = re.search(r'<textarea id="copy-text-name"[^>]*maxlength="(\d+)"', html)
+    assert m, "copy-text-name が textarea になっていない（input のままだと長文が貼れない）"
+    assert int(m.group(1)) >= 300, f"maxlength が短すぎる: {m.group(1)}"
+
+
+def test_record_item_can_be_saved_as_copymeal():
+    """記録済みの食事カードから、解析結果ごとコピーご飯に登録できること。"""
+    html = _read()
+    m = re.search(r"function saveItemAsCopyMeal\(mealId, itemId\)\s*\{.*?\n\}", html, re.S)
+    assert m, "saveItemAsCopyMeal が見つかりません"
+    body = m.group(0)
+    # 解析結果（B・kcal内訳・栄養）を丸ごと複製して保存する（AI再解析なし・文字数制限なし）
+    assert "JSON.parse(JSON.stringify(item.result))" in body
+    assert "saveCopyMeals" in body
+    # 食事カードに登録ボタンが出る
+    assert "saveItemAsCopyMeal(" in html and "コピーご飯に登録" in html

@@ -1078,7 +1078,7 @@
     <button class="btn-save" style="margin-top:8px;background:#6366F1" onclick="toggleCopyTextForm()">✏️ 文章で登録する</button>
     <div id="copy-text-form" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg)">
       <label style="display:block;font-size:17px;font-weight:700;margin-bottom:4px">食事の名前・内容</label>
-      <input type="text" id="copy-text-name" maxlength="60" placeholder="例：コンビニのおにぎり2個、鶏むね肉サラダ" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;box-sizing:border-box;margin-bottom:8px">
+      <textarea id="copy-text-name" maxlength="500" rows="3" placeholder="例：コンビニのおにぎり2個、鶏むね肉サラダ&#10;（長い内容の貼り付けもOK・500字まで）" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;box-sizing:border-box;margin-bottom:8px;font-family:inherit;resize:vertical"></textarea>
       <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 12px">入力した内容から、AIが<strong>Bカウント・タンパク質・野菜の量を自動で計算</strong>して登録します（ダイヤルでの手入力は不要です）。</p>
       <button class="btn-save" id="copy-text-save-btn" onclick="saveCopyMealText()">🤖 この内容で登録する</button>
     </div>
@@ -2633,6 +2633,32 @@ function closeCopyPicker() {
   document.getElementById('copy-picker-overlay').classList.remove('show');
 }
 
+// 記録画面：解析済みの食事（写真・文章・手動）をそのままコピーご飯に登録する。
+// 計算済みの結果（Bカウント・カロリー・タンパク質・野菜の内訳）を丸ごと保存するので、
+// AI解析は不要・文字数の制限もない。次回から「コピーご飯を追加」でワンタップ登録できる。
+function saveItemAsCopyMeal(mealId, itemId) {
+  const item = state[mealId].items.find(i => i.id === itemId);
+  if (!item || !item.result) return;
+  // 名前：文章入力ならその文章、写真などは食材名をつないで作る（表示用に60字まで）
+  let name = (item.isText && item.text) ? item.text.trim()
+           : ((item.result.foods || []).map(f => f.name).filter(Boolean).join('・') || 'コピーご飯');
+  if (name.length > 60) name = name.slice(0, 59) + '…';
+  const result = JSON.parse(JSON.stringify(item.result));   // 記録側と共有しないよう複製
+  delete result.clarify;
+  const meals = getCopyMeals();
+  meals.push({
+    id: 'cm-' + Date.now().toString(36),
+    name,
+    previewSrc: item.previewSrc || null,
+    result,
+  });
+  saveCopyMeals(meals);
+  renderCopyMealsList();   // 設定画面を開いていれば一覧も更新
+  // ボタンを「✅ 登録しました」に変えて完了を伝える（連打での重複登録も防ぐ）
+  const btn = document.getElementById(`copysave-${mealId}-${itemId}`);
+  if (btn) { btn.textContent = '✅ コピーご飯に登録しました'; btn.disabled = true; btn.style.opacity = '0.7'; }
+}
+
 // コピーご飯を記録に追加（AI解析なし・保存済みの結果を使う）
 function addCopyMealToRecord(copyId) {
   const cm = getCopyMeals().find(c => c.id === copyId);
@@ -2806,7 +2832,9 @@ async function saveCopyMealText() {
       return;
     }
     delete data.clarify;
-    const name = text;
+    // 一覧に表示する名前は60字まで（長文を貼り付けた場合も、解析には全文を使う）
+    let name = text.replace(/\s+/g, ' ');
+    if (name.length > 60) name = name.slice(0, 59) + '…';
     const meals = getCopyMeals();
     meals.push({ id: 'cm-' + Date.now().toString(36), name, previewSrc: null, result: data });
     saveCopyMeals(meals);
@@ -3007,6 +3035,7 @@ function renderResults(mealId) {
           <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：シュークリームは1個ではなく2個です"></textarea>
           <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
+        <button class="recalc-btn" id="copysave-${mealId}-${item.id}" onclick="saveItemAsCopyMeal('${mealId}',${item.id})">🍚 コピーご飯に登録</button>
       </div>
     </div>`;
   }).reverse().join('');   // 最新の食事カードを一番上に表示
