@@ -2112,11 +2112,29 @@ def admin_spotlight():
                     src = item.get("previewSrc")
                     if not src:
                         continue
-                    res = item.get("result") or {}
+                    res = item.get("result") if isinstance(item.get("result"), dict) else {}
+                    foods = res.get("foods") or []
+                    # ダッシュボード上で食事内容の詳細（食材・A/B・栄養）まで見られるようにする
+                    def _sum(key):
+                        return sum(float(f.get(key) or 0) for f in foods)
+                    protein = res.get("total_protein_g")
+                    veg     = res.get("total_veg_g")
                     u["photos"].append({
                         "date": dt,
                         "src":  src,
-                        "b":    res.get("total_b_count") if isinstance(res, dict) else None,
+                        "b":    res.get("total_b_count"),
+                        "protein_g": round(protein if isinstance(protein, (int, float)) else _sum("protein_g")),
+                        "veg_g":     round(veg if isinstance(veg, (int, float)) else _sum("veg_g")),
+                        "foods": [
+                            {
+                                "name":     f.get("name"),
+                                "category": f.get("category"),
+                                "b_count":  f.get("b_count"),
+                                "amount":   f.get("amount"),
+                            }
+                            for f in foods
+                        ],
+                        "note": item.get("text") if item.get("isText") else None,
                     })
 
     return jsonify({

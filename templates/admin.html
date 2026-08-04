@@ -88,7 +88,31 @@
     .spot-group-title { font-size: 13px; font-weight: 800; padding: 8px 12px; border-radius: 10px; margin-bottom: 10px; }
     .spot-group-title.good { background: #ECFDF5; color: #047857; }
     .spot-group-title.warn { background: #FEF2F2; color: #B91C1C; }
-    .spot-person { border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fff; }
+    .spot-person { border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fff; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+    .spot-person:hover { border-color: #FF6B35; box-shadow: 0 2px 10px rgba(255,107,53,0.14); }
+    .spot-open { font-size: 11px; font-weight: 800; color: #FF6B35; margin-top: 8px; text-align: right; }
+    .spot-photo { cursor: zoom-in; }
+    /* 食事内容の詳細モーダル */
+    #meal-modal { position: fixed; inset: 0; z-index: 900; background: rgba(17,24,39,0.72); display: none; align-items: center; justify-content: center; padding: 20px; }
+    #meal-modal.show { display: flex; }
+    .meal-modal-box { background: #fff; border-radius: 16px; max-width: 460px; width: 100%; max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.28); }
+    .meal-modal-box img { width: 100%; max-height: 300px; object-fit: contain; background: #111827; border-radius: 16px 16px 0 0; display: block; }
+    .meal-modal-body { padding: 16px 18px 18px; }
+    .meal-modal-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+    .meal-modal-date { font-size: 13px; font-weight: 800; color: #374151; }
+    .meal-modal-b { font-size: 18px; font-weight: 900; color: #FF6B35; white-space: nowrap; }
+    .meal-modal-nut { font-size: 12px; font-weight: 700; color: #6B7280; margin-bottom: 10px; }
+    .meal-modal-nut .pro { color: #DC2626; }
+    .meal-modal-nut .veg { color: #059669; }
+    .meal-food { display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-top: 1px solid #F3F4F6; font-size: 13px; }
+    .meal-food .cat { font-weight: 800; flex-shrink: 0; }
+    .meal-food .cat-a { color: #059669; }
+    .meal-food .cat-b { color: #DC2626; }
+    .meal-food .nm { color: #374151; flex: 1; }
+    .meal-food .amt { color: #9CA3AF; font-size: 11px; }
+    .meal-food .bc { font-weight: 800; color: #FF6B35; white-space: nowrap; }
+    .meal-modal-close { width: 100%; margin-top: 14px; padding: 11px; border: none; border-radius: 10px; background: #F3F4F6; color: #374151; font-size: 14px; font-weight: 800; cursor: pointer; }
+    .meal-modal-link { display: block; text-align: center; margin-top: 8px; font-size: 13px; font-weight: 800; color: #FF6B35; }
     .spot-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
     .spot-name { font-size: 14px; font-weight: 800; color: #111827; }
     .spot-sub { font-size: 11px; color: #9CA3AF; font-weight: 600; }
@@ -319,6 +343,11 @@
       青い線が体重推移、下は直近の食事写真です。名前を押すとその人の詳細（全写真・コメント）を開けます。
     </div>
     <div id="spotlight"><div class="spinner"></div></div>
+  </div>
+
+  <!-- 食事内容の詳細（注目メンバーの写真をタップで開く） -->
+  <div id="meal-modal" onclick="if(event.target===this)closeMealModal()">
+    <div class="meal-modal-box" id="meal-modal-box"></div>
   </div>
 
   <!-- 減量メンバーの詳細（日別Bカウント・記録状況・食事へのリンク） -->
@@ -828,21 +857,27 @@
 
   const SPOT_GOAL = { cut: '減量希望', maintain: '体重維持', bulk: '増量希望' };
 
-  function spotPerson(u) {
+  // 写真タップで開く食事内容の詳細。カードごとの写真データをここに保持する。
+  let _spotPhotos = {};
+
+  function spotPerson(u, gi, pi) {
     const down = u.change < 0;
     const sign = u.change > 0 ? '+' : '';
+    const key = `${gi}-${pi}`;
+    _spotPhotos[key] = { name: u.name, user_id: u.user_id, photos: u.photos || [] };
     const photos = (u.photos || []).length
-      ? `<div class="spot-photos">${u.photos.map(p => `
-          <div class="spot-photo">
+      ? `<div class="spot-photos">${u.photos.map((p, i) => `
+          <div class="spot-photo" onclick="event.stopPropagation();openMealModal('${key}',${i})" title="食事内容の詳細を見る">
             <img src="${p.src}" alt="" loading="lazy">
             <span>${escapeHtml((p.date || '').slice(5))}${p.b != null ? ` B${p.b}` : ''}</span>
           </div>`).join('')}</div>`
       : '<div class="spot-nophoto">食事写真の記録はまだありません</div>';
+    const url = `${ADMIN_BASE}/user/${encodeURIComponent(u.user_id)}`;
     return `
-      <div class="spot-person">
+      <div class="spot-person" onclick="location.href='${url}'" title="この会員の詳細（全ての食事写真・体重推移・コメント）を開く">
         <div class="spot-head">
           <div>
-            <a class="spot-name" href="${ADMIN_BASE}/user/${encodeURIComponent(u.user_id)}">${escapeHtml(u.name || '')}</a>
+            <a class="spot-name" href="${url}" onclick="event.stopPropagation()">${escapeHtml(u.name || '')}</a>
             <div class="spot-sub">${SPOT_GOAL[u.goal] || '目標未設定'}${u.avg_b != null ? ` ／ 平均B ${u.avg_b}/日` : ''}</div>
           </div>
           <div class="spot-change ${down ? 'down' : 'up'}">${sign}${u.change} kg</div>
@@ -850,8 +885,42 @@
         <div class="spot-meta">${u.start_weight}kg → ${u.latest_weight}kg（${escapeHtml(u.start_date)} 〜 ${escapeHtml(u.latest_date)}・${u.span_days}日）</div>
         ${spotSpark(u.series)}
         ${photos}
+        <div class="spot-open">写真をタップ＝食事内容 ／ カードをタップ＝この会員の詳細 →</div>
       </div>`;
   }
+
+  // 1枚の食事写真の内容（食材・A/B・Bカウント・栄養）をモーダルで表示する
+  function openMealModal(key, idx) {
+    const rec = _spotPhotos[key];
+    if (!rec) return;
+    const p = (rec.photos || [])[idx];
+    if (!p) return;
+    const foods = (p.foods || []).map(f => `
+      <div class="meal-food">
+        <span class="cat ${f.category === 'A' ? 'cat-a' : 'cat-b'}">[${escapeHtml(f.category || '-')}]</span>
+        <span class="nm">${escapeHtml(f.name || '')}${f.amount ? ` <span class="amt">${escapeHtml(f.amount)}</span>` : ''}</span>
+        ${f.b_count != null ? `<span class="bc">B${f.b_count}</span>` : ''}
+      </div>`).join('');
+    document.getElementById('meal-modal-box').innerHTML = `
+      <img src="${p.src}" alt="">
+      <div class="meal-modal-body">
+        <div class="meal-modal-head">
+          <div class="meal-modal-date">${escapeHtml(rec.name || '')}／${escapeHtml(p.date || '')}</div>
+          <div class="meal-modal-b">合計 B${p.b != null ? p.b : '-'}</div>
+        </div>
+        <div class="meal-modal-nut"><span class="pro">🥩 タンパク質 ${p.protein_g || 0}g</span> ・ <span class="veg">🥗 野菜 ${p.veg_g || 0}g</span></div>
+        ${foods || '<div class="spot-nophoto">食材の内訳データがありません</div>'}
+        ${p.note ? `<div class="spot-meta" style="margin-top:8px">📝 ${escapeHtml(p.note)}</div>` : ''}
+        <a class="meal-modal-link" href="${ADMIN_BASE}/user/${encodeURIComponent(rec.user_id)}">この会員の全記録を見る →</a>
+        <button class="meal-modal-close" onclick="closeMealModal()">閉じる</button>
+      </div>`;
+    document.getElementById('meal-modal').classList.add('show');
+  }
+
+  function closeMealModal() {
+    document.getElementById('meal-modal').classList.remove('show');
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMealModal(); });
 
   async function loadSpotlight() {
     const box = document.getElementById('spotlight');
@@ -859,14 +928,15 @@
     const r = await fetch('/api/admin/spotlight');
     if (!r.ok) throw new Error('spotlight');
     const d = await r.json();
-    const group = (title, cls, list, empty) => `
+    _spotPhotos = {};   // 描画のたびに写真データを作り直す
+    const group = (gi, title, cls, list, empty) => `
       <div>
         <div class="spot-group-title ${cls}">${title}</div>
-        ${list.length ? list.map(spotPerson).join('') : `<div class="spot-empty">${empty}</div>`}
+        ${list.length ? list.map((u, pi) => spotPerson(u, gi, pi)).join('') : `<div class="spot-empty">${empty}</div>`}
       </div>`;
     box.innerHTML = `<div class="spot-groups">
-      ${group('📉 特に痩せた人', 'good', d.lost || [], '該当する会員がまだいません。')}
-      ${group('📈 特に痩せていない人', 'warn', d.not_lost || [], '該当する会員がまだいません。')}
+      ${group(0, '📉 特に痩せた人', 'good', d.lost || [], '該当する会員がまだいません。')}
+      ${group(1, '📈 特に痩せていない人', 'warn', d.not_lost || [], '該当する会員がまだいません。')}
     </div>`;
   }
 
