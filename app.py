@@ -1366,7 +1366,9 @@ def get_client():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # 食事明細（写真つき）の保持日数をフロントへ渡す。過去日に後から写真を追加できる
+    # 期間をこの値に合わせることで、サーバー側の自動削除とズレないようにする。
+    return render_template("index.html", meals_retain_days=MEALS_RETAIN_DAYS)
 
 
 @app.route(ADMIN_BASE)
