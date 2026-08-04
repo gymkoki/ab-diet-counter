@@ -1159,19 +1159,19 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.25</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.26</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🍖</span>
-        <span><b>肉や魚の「量」の見積もりが、より正確になりました！</b></span>
+        <span style="font-size:20px;flex-shrink:0">📝</span>
+        <span><b>「ひとこと日記」を毎日残せます！</b>下の<b>「体重/日記」</b>タブから、その日のひとこと（50字まで）を記録できます。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🐟</span>
-        <span>写真から<b>肉・魚の種類や枚数・厚み</b>を見分けて重量を推定する精度を強化。薄切りのお肉やお刺身などの量を実際に近い形で計算できるようになりました。</span>
+        <span style="font-size:20px;flex-shrink:0">🍽️</span>
+        <span>「飲み会で食べすぎた」「今日はよく歩いた」など、体調や気づきをメモしておくと、あとで振り返るときにとても役立ちます。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">💪</span>
-        <span>これにより<b>タンパク質量</b>の表示がこれまでより正確になります。使い方はこれまでどおり、いつも通り記録するだけです。</span>
+        <span style="font-size:20px;flex-shrink:0">🗓️</span>
+        <span>毎日その日のぶんを書けます。書き忘れた日も<b>「履歴」→「編集」</b>からあとで記入できます。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -5008,7 +5008,7 @@ function closeReplyNotice() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v27';
+const NOTICE_KEY = 'ab-diet-notice-v28';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
