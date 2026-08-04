@@ -55,3 +55,19 @@ def test_analysis_prompt_display_kcal_matches_bcount():
     assert src.count("実際に食べたと推定した量のkcal") >= 4
     # 純粋な脂質（バター等）を多めに見積もるルール
     assert "純粋な脂質" in src and "バター" in src
+
+
+def test_analysis_prompt_distinguishes_konnyaku_from_tofu():
+    """紛らわしい食材（こんにゃく／豆腐など）の見分けルールが入っていること。
+    （2026-08：こんにゃくの味噌汁を豆腐と誤認しタンパク質12gと過大計上した障害の再発防止）"""
+    src = _read(APP)
+    # こんにゃくvs豆腐の識別ルール（灰色・斑点・半透明 → こんにゃく）
+    assert "こんにゃく と 豆腐" in src
+    for kw in ["黒い粒", "半透明", "迷ったらこんにゃく"]:
+        assert kw in src, f"こんにゃく識別ルールに『{kw}』が見当たりません"
+    # こんにゃく類はタンパク質0として扱う
+    assert "こんにゃく・しらたき・寒天" in src
+    # しらたきと麺類の識別
+    assert "しらたき と 麺類" in src
+    # 妥当性チェック（肉魚卵豆腐なしでタンパク質10g超は異常）
+    assert "タンパク質の妥当性チェック" in src
