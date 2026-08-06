@@ -1203,6 +1203,19 @@
   </div>
 </div>
 
+<!-- 今日のABダイエットのコツ（1日1回・ランダム表示） -->
+<div id="daily-tip-overlay" style="display:none;position:fixed;inset:0;z-index:490;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px" onclick="if(event.target===this)closeDailyTip()">
+  <div style="background:white;border-radius:20px;padding:26px 22px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:6px">TODAY'S TIP</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:4px">💡 今日のABダイエットのコツ</div>
+    <div id="daily-tip-no" style="font-size:13px;color:#A8A29B;margin-bottom:14px"></div>
+    <div id="daily-tip-text" style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:20px"></div>
+    <button onclick="showAnotherTip()" style="width:100%;padding:12px;border-radius:14px;border:1.5px solid #FFD9C2;background:#FFF3EB;color:#E8590C;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:10px">🔄 別のコツも見る</button>
+    <button onclick="closeDailyTip()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
+  </div>
+</div>
+
+<script src="/static/tips.js?v=1"></script>
 <script>
 // ═══════════════════════════════════════════
 //  写真選択
@@ -5010,6 +5023,64 @@ const NOTICE_KEY = 'ab-diet-notice-v29';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
+  // アップデートお知らせを閉じたら、その日のコツをまだ見ていなければ続けて表示する
+  setTimeout(maybeShowDailyTip, 350);
+}
+
+// ═══════════════════════════════════════════
+//  今日のABダイエットのコツ（1日1回・ランダム表示）
+//  コツ本文は /static/tips.js の DIET_TIPS（300件）。
+//  表示済みのコツはローカルに記録し、全件出るまで同じコツを繰り返さない。
+// ═══════════════════════════════════════════
+const TIP_DATE_KEY    = 'ab-diet-tip-date-v1';     // 最後にコツを表示した日（YYYY-MM-DD）
+const TIP_HISTORY_KEY = 'ab-diet-tip-history-v1';  // 表示済みコツのindex一覧（全件出たらリセット）
+
+// まだ表示していないコツからランダムに1つ選び、履歴へ記録して index を返す
+function _pickDailyTipIndex() {
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(TIP_HISTORY_KEY)) || []; } catch(e) {}
+  if (!Array.isArray(hist)) hist = [];
+  const total = DIET_TIPS.length;
+  hist = hist.filter(i => Number.isInteger(i) && i >= 0 && i < total);
+  if (hist.length >= total) hist = [];   // 300件すべて表示したら最初から
+  const seen = new Set(hist);
+  const candidates = [];
+  for (let i = 0; i < total; i++) if (!seen.has(i)) candidates.push(i);
+  const idx = candidates[Math.floor(Math.random() * candidates.length)];
+  hist.push(idx);
+  try { localStorage.setItem(TIP_HISTORY_KEY, JSON.stringify(hist)); } catch(e) {}
+  return idx;
+}
+
+function _renderDailyTip(idx) {
+  document.getElementById('daily-tip-no').textContent = `コツ No.${idx + 1}（全${DIET_TIPS.length}個）`;
+  document.getElementById('daily-tip-text').textContent = DIET_TIPS[idx];
+}
+
+// 1日1回だけ、その日のコツを表示する。アップデートお知らせ・運営からの返信・
+// キャラ紹介が表示中のときは邪魔しないよう後回しにする（日付を記録しないので、
+// それらを閉じたあと／次にアプリを開いたときに表示される）。
+function maybeShowDailyTip() {
+  try {
+    if (typeof DIET_TIPS === 'undefined' || !DIET_TIPS.length) return;  // tips.js未読込でも壊さない
+    if (_editingDate) return;   // 過去日の編集中は表示しない
+    if (localStorage.getItem(TIP_DATE_KEY) === getTodayJST()) return;   // 今日はもう表示済み
+    const busy = ['update-notice-overlay', 'reply-notice-overlay', 'chara-intro-overlay']
+      .some(id => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; });
+    if (busy) return;
+    localStorage.setItem(TIP_DATE_KEY, getTodayJST());
+    _renderDailyTip(_pickDailyTipIndex());
+    document.getElementById('daily-tip-overlay').style.display = 'flex';
+  } catch(e) { console.warn('daily tip failed', e); }
+}
+
+// 「別のコツも見る」：同じモーダル内で次のコツを表示（見たコツは履歴に記録）
+function showAnotherTip() {
+  try { _renderDailyTip(_pickDailyTipIndex()); } catch(e) {}
+}
+
+function closeDailyTip() {
+  document.getElementById('daily-tip-overlay').style.display = 'none';
 }
 
 // ═══════════════════════════════════════════
@@ -5069,6 +5140,7 @@ function _step(fn, label) {
     const ov = document.getElementById('update-notice-overlay');
     if (ov) ov.style.display = 'flex';
   }
+  _step(maybeShowDailyTip, 'maybeShowDailyTip');   // 今日のコツ（1日1回。お知らせ表示中は後回し）
   _step(maybeShowHomeBanner, 'maybeShowHomeBanner');
 })();
 
@@ -5079,6 +5151,7 @@ document.addEventListener('visibilitychange', () => {
     syncTodayMealsFromServer();
     syncHistoryFromServer();
     checkFeedbackReplies();
+    maybeShowDailyTip();   // 日をまたいでアプリに戻ってきたときも、その日のコツを1回表示
   }
 });
 
