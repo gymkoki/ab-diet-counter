@@ -65,6 +65,40 @@ def test_other_cuts_have_specific_values():
         assert kw in src, f"部位別の基準値『{kw}』が見当たりません"
 
 
+def test_bacon_is_400_not_185():
+    """ベーコンが成分表の400kcal/100gで計算されること。
+    （旧設定の185kcalはショルダーベーコンの値で、通常のベーコンには低すぎた）"""
+    src = _read(APP)
+    assert "ベーコン（ばらベーコン）＝ 400kcal" in src
+    assert "ベーコン（100gあたり約400kcal）" in src, "ベーコンがB食材例に載っていません"
+    # 旧値をそのまま使う記述が残っていないこと（誤用禁止の注意書きは可）
+    assert "ベーコンは100gあたり約185kcal（A食材寄り）" not in src, \
+        "ベーコンが旧値185kcal（A食材寄り）に戻っています"
+    assert "通常のベーコンに使ってはいけない" in src
+
+
+def test_bacon_amount_examples_recalculated():
+    """ベーコンの量別の判定例が400kcal/100gで再計算されていること。"""
+    src = _read(APP)
+    for kw in [
+        "ベーコン1枚（約10g・約40kcal）→ 120kcal未満 → 0カウント",
+        "ベーコン3枚（約30g・約120kcal）→ 120〜200kcal → 0.5カウント",
+        "ベーコン1人前（約60g・約240kcal）→ 200kcal超 → 1カウント",
+        "ベーコン大量（約120g・約480kcal）→ 400kcal超 → 2カウント",
+    ]:
+        assert kw in src, f"ベーコンの判定例『{kw}』が見当たりません"
+    # 薄切り1枚の重量目安も新しいカロリーに合わせてあること
+    assert "ベーコン薄切り1枚 ≒ 8〜10g（約32〜40kcal）" in src
+
+
+def test_processed_meat_values():
+    """加工肉（ウインナー・ハム）の基準値が入っていること。"""
+    src = _read(APP)
+    assert "ウインナーソーセージ ＝ 319kcal" in src
+    assert "生ハム ＝ 243kcal" in src
+    assert "ロースハム ＝ 211kcal" in src
+
+
 def test_fatty_cut_rule_prefers_higher_value():
     """脂身つき／なしで迷ったら高い方を使う指示が入っていること（過小評価の防止）。"""
     src = _read(APP)
