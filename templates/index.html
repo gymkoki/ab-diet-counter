@@ -5023,16 +5023,15 @@ const NOTICE_KEY = 'ab-diet-notice-v29';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
-  // アップデートお知らせを閉じたら、その日のコツをまだ見ていなければ続けて表示する
+  // アップデートお知らせを閉じたら、続けてコツを表示する
   setTimeout(maybeShowDailyTip, 350);
 }
 
 // ═══════════════════════════════════════════
-//  今日のABダイエットのコツ（1日1回・ランダム表示）
+//  ABダイエットのコツ（アプリを開くたびにランダム表示）
 //  コツ本文は /static/tips.js の DIET_TIPS（300件）。
 //  表示済みのコツはローカルに記録し、全件出るまで同じコツを繰り返さない。
 // ═══════════════════════════════════════════
-const TIP_DATE_KEY    = 'ab-diet-tip-date-v1';     // 最後にコツを表示した日（YYYY-MM-DD）
 const TIP_HISTORY_KEY = 'ab-diet-tip-history-v1';  // 表示済みコツのindex一覧（全件出たらリセット）
 
 // まだ表示していないコツからランダムに1つ選び、履歴へ記録して index を返す
@@ -5057,18 +5056,16 @@ function _renderDailyTip(idx) {
   document.getElementById('daily-tip-text').textContent = DIET_TIPS[idx];
 }
 
-// 1日1回だけ、その日のコツを表示する。アップデートお知らせ・運営からの返信・
-// キャラ紹介が表示中のときは邪魔しないよう後回しにする（日付を記録しないので、
-// それらを閉じたあと／次にアプリを開いたときに表示される）。
+// アプリを開くたびにコツを表示する。アップデートお知らせ・運営からの返信・
+// キャラ紹介が表示中のときは邪魔しないよう後回しにする
+// （それらを閉じたあと／次にアプリを開いたときに表示される）。
 function maybeShowDailyTip() {
   try {
     if (typeof DIET_TIPS === 'undefined' || !DIET_TIPS.length) return;  // tips.js未読込でも壊さない
     if (_editingDate) return;   // 過去日の編集中は表示しない
-    if (localStorage.getItem(TIP_DATE_KEY) === getTodayJST()) return;   // 今日はもう表示済み
     const busy = ['update-notice-overlay', 'reply-notice-overlay', 'chara-intro-overlay']
       .some(id => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; });
     if (busy) return;
-    localStorage.setItem(TIP_DATE_KEY, getTodayJST());
     _renderDailyTip(_pickDailyTipIndex());
     document.getElementById('daily-tip-overlay').style.display = 'flex';
   } catch(e) { console.warn('daily tip failed', e); }
@@ -5140,18 +5137,23 @@ function _step(fn, label) {
     const ov = document.getElementById('update-notice-overlay');
     if (ov) ov.style.display = 'flex';
   }
-  _step(maybeShowDailyTip, 'maybeShowDailyTip');   // 今日のコツ（1日1回。お知らせ表示中は後回し）
+  _step(maybeShowDailyTip, 'maybeShowDailyTip');   // ABダイエットのコツ（開くたびに表示。お知らせ表示中は後回し）
   _step(maybeShowHomeBanner, 'maybeShowHomeBanner');
 })();
 
 // 画面に戻ってきたとき（スマホでアプリを開き直したとき等）にもサーバーと同期し、
 // デスクトップ⇔スマホの表示が揃うようにする。
+// コツは「アプリを開き直した」とみなせる5分以上の離脱後のみ表示する
+// （カメラ撮影やアプリ切り替えで数秒〜数分離れただけの復帰では、操作の邪魔になるので出さない）。
+const TIP_REOPEN_MS = 5 * 60 * 1000;
+let _tipHiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { _tipHiddenAt = Date.now(); return; }
   if (document.visibilityState === 'visible' && !_editingDate) {
     syncTodayMealsFromServer();
     syncHistoryFromServer();
     checkFeedbackReplies();
-    maybeShowDailyTip();   // 日をまたいでアプリに戻ってきたときも、その日のコツを1回表示
+    if (_tipHiddenAt && Date.now() - _tipHiddenAt >= TIP_REOPEN_MS) maybeShowDailyTip();
   }
 });
 
