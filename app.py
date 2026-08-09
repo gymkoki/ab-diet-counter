@@ -2054,6 +2054,131 @@ def admin_weight_insights():
     })
 
 
+# ── AI減量コーチ（デイリーレポート用） ──────────────────────────
+# 減量希望メンバーの直近データから「1か月で1kg減量」を達成させるための
+# 具体的な提案を毎日生成し、デイリーレポートのメールに載せる。
+COACH_PROMPT = """あなたはABダイエットを運営するジムの減量コーチAIです。
+読み手はジムのオーナー（管理者）で、毎朝のレポートメールとして届きます。
+
+【ミッション】減量希望の会員全員が「1か月で約1kg（週250gペース）」減量できるように、
+オーナーが今日打てる具体的な手を提案する。
+
+【入力データの見方】
+- change_30d_kg：直近30日の体重変化（マイナス=減った）。目標ペースは-1kg/30日。
+- avg_b_7d：直近7日の1日平均Bカウント（食事の量的指標。減量中の目安は1日7回以内、少ないほど食事管理が良い）
+- recorded_days_7d：直近7日で食事記録をした日数（7が満点。少ない=サボり気味）
+- days_since：最後の記録からの経過日数（3以上は離脱リスク）
+
+【出力形式】以下の3部構成の日本語プレーンテキスト（400〜600字・箇条書き中心・前置きや締めの挨拶は不要）：
+■ 全体の状況（2行以内：ペース達成者/未達者の割合と今日の最重要テーマ）
+■ 今日の声かけリスト（優先度順に3〜5人。「名前：状況→具体的な声かけ・提案」を各1行。
+   記録が途絶えた人・ペース未達の人を優先。具体的な数字を入れる）
+■ 今日の一手（オーナーがアプリやジムで打てる施策を1つ。例：お知らせ配信案、グループ企画、掲示など）
+
+【注意】
+- 実名はデータのnameをそのまま使う（nameが無い人はuser_id_shortで呼ぶ）
+- 医学的に安全な範囲の提案のみ（極端な糖質制限・絶食は提案しない）
+- 前向きで、会員を責めないトーンで"""
+
+
+def _call_coach_ai(client, user_text):
+    """コーチ提案のAI呼び出し（テストで差し替えやすいよう関数に分離）。"""
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1500,
+        timeout=90.0,
+        system=[{"type": "text", "text": COACH_PROMPT}],
+        messages=[{"role": "user", "content": [{"type": "text", "text": user_text}]}],
+    )
+    parts = []
+    for block in getattr(response, "content", []) or []:
+        if getattr(block, "type", "") == "text":
+            parts.append(block.text)
+    return "\n".join(parts).strip()
+
+
+@app.route("/api/admin/coach-advice")
+@_admin_required
+def admin_coach_advice():
+    """デイリーレポート用：減量希望メンバーのデータからAIが「今日の提案」を生成する。
+    同じ日は結果をキャッシュして返す（テスト送信と朝の本送信で二重にAIを呼ばない）。"""
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    cache_key = f"coach-advice-{today}"
+    cached = _get_setting(cache_key, "")
+    if cached and request.args.get("refresh") != "1":
+        return jsonify({"date": today, "advice": cached, "cached": True})
+
+    client = get_client()
+    if client is None:
+        return jsonify({"error": "APIキーが設定されていません"}), 503
+
+    now = datetime.datetime.now(JST)
+    d30_start = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    d7_start  = (now - datetime.timedelta(days=6)).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, display_name, height_cm FROM user_profile WHERE goal = 'cut'")
+        cut = {r[0]: {"name": r[1], "height_cm": r[2]} for r in cur.fetchall()}
+        if not cut:
+            return jsonify({"date": today, "advice": "", "members": 0})
+
+        cur.execute(
+            f"SELECT user_id, date, weight FROM daily_weight WHERE date>={PH} ORDER BY user_id, date",
+            (d30_start,)
+        )
+        w_by_uid = {}
+        for uid, dt, w in cur.fetchall():
+            if uid in cut:
+                w_by_uid.setdefault(uid, []).append((dt, float(w)))
+
+        cur.execute(
+            f"SELECT user_id, AVG(b_count), COUNT(*) FROM daily_b_count WHERE date>={PH} GROUP BY user_id",
+            (d7_start,)
+        )
+        b7 = {r[0]: (round(float(r[1]), 1), int(r[2])) for r in cur.fetchall() if r[0] in cut}
+
+        cur.execute("SELECT user_id, MAX(date) FROM daily_b_count GROUP BY user_id")
+        last_by_uid = {r[0]: r[1] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    members = []
+    today_d = now.date()
+    for uid, prof in cut.items():
+        recs = w_by_uid.get(uid, [])
+        change = round(recs[-1][1] - recs[0][1], 1) if len(recs) >= 2 else None
+        latest_w = recs[-1][1] if recs else None
+        avg_b, rec_days = b7.get(uid, (None, 0))
+        last = last_by_uid.get(uid)
+        days_since = (today_d - datetime.date.fromisoformat(last)).days if last else None
+        members.append({
+            "name": prof["name"] or None,
+            "user_id_short": uid[:8],
+            "latest_weight_kg": latest_w,
+            "change_30d_kg": change,
+            "avg_b_7d": avg_b,
+            "recorded_days_7d": rec_days,
+            "days_since": days_since,
+        })
+
+    user_text = (f"今日の日付：{today}\n減量希望メンバー：{len(members)}名\n"
+                 f"データ：\n{json.dumps(members, ensure_ascii=False)}")
+    try:
+        advice = _call_coach_ai(client, user_text)
+    except Exception as e:
+        print(f"[COACH][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。"}), 502
+
+    if advice:
+        try:
+            _set_setting(cache_key, advice)
+        except Exception:
+            pass
+    return jsonify({"date": today, "advice": advice, "members": len(members), "cached": False})
+
+
 @app.route("/api/admin/spotlight")
 @_admin_required
 def admin_spotlight():

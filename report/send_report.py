@@ -476,7 +476,40 @@ def chart_goal_compare(data: dict) -> bytes:
 # 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
 # cid:chart_weight / cid:chart_weight_loss / cid:chart_exercise で参照する（send_email() が
 # main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
-def build_html(data: dict) -> str:
+def _coach_section(advice) -> str:
+    """AI減量コーチの提案セクション（メール最上部）。提案が無い日は出さない。"""
+    if not advice:
+        return ""
+    esc = (advice.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return f"""
+    <div class="section" style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:16px 18px">
+      <h2 style="border-left-color:#EA580C">🎯 AI減量コーチ｜今日の提案（1か月 −1kg 目標）</h2>
+      <div style="font-size:13px;color:#374151;line-height:1.9;white-space:pre-wrap">{esc}</div>
+    </div>
+    """
+
+
+def fetch_coach_advice():
+    """AI減量コーチの「今日の提案」を取得する（サーバー側で生成・日次キャッシュ）。
+    失敗してもレポート本体は送る（提案セクションだけ省略）。"""
+    for attempt in range(2):
+        try:
+            r = requests.get(
+                f"{APP_URL}/api/admin/coach-advice",
+                auth=(ADMIN_USER, ADMIN_PASS),
+                timeout=150,   # AI生成に時間がかかることがある
+            )
+            r.raise_for_status()
+            d = r.json()
+            advice = (d.get("advice") or "").strip()
+            return advice or None
+        except Exception as e:
+            print(f"coach-advice retry {attempt + 1}: {e}")
+            time.sleep(10)
+    return None
+
+
+def build_html(data: dict, coach_advice=None) -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
@@ -565,6 +598,8 @@ def build_html(data: dict) -> str:
     <p>対象日: {rdate} &nbsp;|&nbsp; 配信: {now_str}</p>
   </div>
   <div class="body">
+
+    {_coach_section(coach_advice)}
 
     <!-- ① 利用統計 -->
     <div class="section">
@@ -784,10 +819,14 @@ def main():
         "chart_goal_compare": chart_goal_compare(data),
     }
 
+    print("Fetching AI coach advice...")
+    coach_advice = fetch_coach_advice()
+    print(f"  coach advice: {'OK (' + str(len(coach_advice)) + ' chars)' if coach_advice else 'skipped'}")
+
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data)
+    html    = build_html(data, coach_advice)
 
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")
