@@ -1,0 +1,32 @@
+name: Daily Backup
+
+# 1日1回、全データのバックアップメールを送信させる。
+#
+# 仕組み：アプリの /ping を叩くと、その日まだバックアップを送っていなければ
+# サーバー側でバックアップメールを送信する（送信済みかは DB の LAST_BACKUP_DATE で判定）。
+# そのため下記のように1日複数回叩いても、メールは1日1通しか届かない。
+#
+# 1日3回にしているのは保険のため。GitHub側の混雑でジョブが実行されない日があっても、
+# どれか1回が通ればその日のバックアップが確実に送られる。
+#
+# ※ 以前は keep-alive ワークフロー（5分間隔）がこの役目を兼ねていたが、
+#   Render を有料プラン（standard）にしてスリープしなくなったため廃止した。
+
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 21:00 UTC = 06:00 JST
+    - cron: '0 3 * * *'    # 03:00 UTC = 12:00 JST（06時が流れた場合の保険）
+    - cron: '0 9 * * *'    # 09:00 UTC = 18:00 JST（さらに保険）
+  workflow_dispatch:        # 手動実行用
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger daily backup
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          URL="${APP_URL:-https://ab-diet-counter.onrender.com}"
+          curl -sS --fail --max-time 60 --retry 3 --retry-delay 10 "${URL%/}/ping"
