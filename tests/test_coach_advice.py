@@ -86,3 +86,15 @@ def test_report_script_includes_coach_section():
     assert "AI減量コーチ" in src
     # 提案が取れない日でもレポート本体は送る（return None で握りつぶす設計）
     assert "return None" in src
+
+
+def test_inapp_test_report_includes_coach_section(client, monkeypatch):
+    """アプリ内の「テストメールを今すぐ送信」で使う _build_report_html にも
+    AI減量コーチの提案が入ること（GitHub Actions版との内容の食い違い防止）。"""
+    today = datetime.datetime.now(m.JST).strftime("%Y-%m-%d")
+    m._set_setting(f"coach-advice-{today}", "■ 全体の状況\nキャッシュ提案テスト")
+    html = m._build_report_html(today)
+    assert "AI減量コーチ" in html
+    assert "キャッシュ提案テスト" in html
+    # 後始末（他テストへの影響防止）
+    m._set_setting(f"coach-advice-{today}", "")

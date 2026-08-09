@@ -18,6 +18,8 @@ on:
   schedule:
     - cron: '0 23 * * *'   # 23:00 UTC = 翌 08:00 JST
   workflow_dispatch:         # 手動テスト用
+  push:                      # ※一時的：AI減量コーチ欄のテスト送信用（確認後すぐ削除する）
+    branches: [main]
 
 jobs:
   send-report:

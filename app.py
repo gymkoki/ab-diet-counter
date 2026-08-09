@@ -2097,20 +2097,23 @@ def _call_coach_ai(client, user_text):
     return "\n".join(parts).strip()
 
 
-@app.route("/api/admin/coach-advice")
-@_admin_required
-def admin_coach_advice():
-    """デイリーレポート用：減量希望メンバーのデータからAIが「今日の提案」を生成する。
-    同じ日は結果をキャッシュして返す（テスト送信と朝の本送信で二重にAIを呼ばない）。"""
+class _CoachNoApiKey(Exception):
+    """コーチ提案：APIキー未設定を表す（一般エラーと区別してHTTP 503を返すため）。"""
+
+
+def _get_or_generate_coach_advice():
+    """減量コーチの「今日の提案」を返す（当日キャッシュ優先・無ければAIで生成して保存）。
+    メールレポート（GitHub Actions版・アプリ内テスト送信版）とAPIの両方から使う。
+    戻り値：(advice, cached, members) ／ 生成失敗時は例外を送出する。"""
     today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
     cache_key = f"coach-advice-{today}"
     cached = _get_setting(cache_key, "")
-    if cached and request.args.get("refresh") != "1":
-        return jsonify({"date": today, "advice": cached, "cached": True})
+    if cached:
+        return cached, True, None
 
     client = get_client()
     if client is None:
-        return jsonify({"error": "APIキーが設定されていません"}), 503
+        raise _CoachNoApiKey()
 
     now = datetime.datetime.now(JST)
     d30_start = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
@@ -2122,7 +2125,7 @@ def admin_coach_advice():
         cur.execute("SELECT user_id, display_name, height_cm FROM user_profile WHERE goal = 'cut'")
         cut = {r[0]: {"name": r[1], "height_cm": r[2]} for r in cur.fetchall()}
         if not cut:
-            return jsonify({"date": today, "advice": "", "members": 0})
+            return "", False, 0
 
         cur.execute(
             f"SELECT user_id, date, weight FROM daily_weight WHERE date>={PH} ORDER BY user_id, date",
@@ -2165,18 +2168,29 @@ def admin_coach_advice():
 
     user_text = (f"今日の日付：{today}\n減量希望メンバー：{len(members)}名\n"
                  f"データ：\n{json.dumps(members, ensure_ascii=False)}")
-    try:
-        advice = _call_coach_ai(client, user_text)
-    except Exception as e:
-        print(f"[COACH][ERROR] {type(e).__name__}: {e}")
-        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。"}), 502
-
+    advice = _call_coach_ai(client, user_text)
     if advice:
         try:
             _set_setting(cache_key, advice)
         except Exception:
             pass
-    return jsonify({"date": today, "advice": advice, "members": len(members), "cached": False})
+    return advice, False, len(members)
+
+
+@app.route("/api/admin/coach-advice")
+@_admin_required
+def admin_coach_advice():
+    """デイリーレポート用：減量希望メンバーのデータからAIが「今日の提案」を生成する。
+    同じ日は結果をキャッシュして返す（テスト送信と朝の本送信で二重にAIを呼ばない）。"""
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    try:
+        advice, cached, members = _get_or_generate_coach_advice()
+    except _CoachNoApiKey:
+        return jsonify({"error": "APIキーが設定されていません"}), 503
+    except Exception as e:
+        print(f"[COACH][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。"}), 502
+    return jsonify({"date": today, "advice": advice, "cached": cached, "members": members})
 
 
 @app.route("/api/admin/spotlight")
@@ -3402,6 +3416,23 @@ def _build_report_html(target_date: str) -> str:
         return rows
 
     sent_at = now.strftime("%Y-%m-%d %H:%M JST")
+
+    # AI減量コーチの提案（当日キャッシュを共用）。失敗してもレポート本体は送る。
+    coach_html = ""
+    try:
+        _advice, _cached, _n = _get_or_generate_coach_advice()
+        if _advice:
+            _esc = _advice.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            coach_html = f"""
+    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:16px 18px;margin-bottom:24px">
+      <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #EA580C;padding-left:10px;margin-bottom:12px">
+        🎯 AI減量コーチ｜今日の提案（1か月 −1kg 目標）
+      </div>
+      <div style="font-size:13px;color:#374151;line-height:1.9;white-space:pre-wrap">{_esc}</div>
+    </div>"""
+    except Exception as _e:
+        print(f"[REPORT][COACH][WARN] 提案生成をスキップ: {type(_e).__name__}: {_e}")
+
     return f"""<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif">
 <div style="max-width:620px;margin:0 auto;padding:20px">
@@ -3410,7 +3441,7 @@ def _build_report_html(target_date: str) -> str:
     <div style="font-size:13px;margin-top:6px;opacity:.88">対象日: {target_date}</div>
   </div>
   <div style="background:#fff;padding:24px;border-radius:0 0 14px 14px">
-
+{coach_html}
     <!-- 1. 利用統計 -->
     <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
       📊 利用統計（{target_date}）
