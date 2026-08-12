@@ -42,9 +42,25 @@ def _clean_secret(value: str) -> str:
 
 GMAIL_USER     = _clean_secret(os.environ.get("GMAIL_USER", ""))
 GMAIL_PASS     = _clean_secret(os.environ.get("GMAIL_APP_PASSWORD", ""))
+
+# デイリーレポートの宛先（オーナー指示 2026-08）：
+#   rits.1159@gmail.com へ送る。reallgym.tokyo 宛には送らない。
+# GitHub Secrets の REPORT_TO に古いアドレス（reallgym.tokyo）が残っていても
+# ここで弾いて既定の宛先に振り替える。
+REPORT_TO_DEFAULT = "rits.1159@gmail.com"
+REPORT_TO_BLOCKED = ("reallgym.tokyo@gmail.com",)
+
+
+def _resolve_report_to(value: str) -> str:
+    to = _clean_secret(value or "")
+    if not to or to.lower() in REPORT_TO_BLOCKED:
+        return REPORT_TO_DEFAULT
+    return to
+
+
 # ${{ secrets.REPORT_TO }} が未設定でも workflow 側で空文字の環境変数として渡されるため、
 # os.environ.get の default 引数だけでは効かない。空文字化・空白混入の両方をここで吸収する。
-REPORT_TO      = _clean_secret(os.environ.get("REPORT_TO", "")) or "reallgym.tokyo@gmail.com"
+REPORT_TO      = _resolve_report_to(os.environ.get("REPORT_TO", ""))
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
