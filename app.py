@@ -3505,8 +3505,9 @@ def version():
     return jsonify({"build": BUILD_ID, "has_retry": "create_and_parse" in globals()})
 
 
-# 修正希望・ご要望の転送先（運営メール）
-FEEDBACK_TO = "reallgym.tokyo@gmail.com"
+# 修正希望・ご要望の転送先（運営メール）。
+# オーナー指示（2026-08）により reallgym.tokyo 宛には送らず rits.1159@gmail.com へ送る。
+FEEDBACK_TO = "rits.1159@gmail.com"
 
 
 # デイリーレポート・バックアップメールの宛先（オーナー指示 2026-08）：
