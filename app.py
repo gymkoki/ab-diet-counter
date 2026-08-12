@@ -3509,6 +3509,21 @@ def version():
 FEEDBACK_TO = "reallgym.tokyo@gmail.com"
 
 
+# デイリーレポート・バックアップメールの宛先（オーナー指示 2026-08）：
+#   rits.1159@gmail.com へ送る。reallgym.tokyo 宛には送らない。
+# 設定画面やDBに古いアドレス（reallgym.tokyo）が残っていても、ここで弾いて振り替える。
+REPORT_TO_DEFAULT = "rits.1159@gmail.com"
+REPORT_TO_BLOCKED = ("reallgym.tokyo@gmail.com",)
+
+
+def _resolve_report_to():
+    """レポート系メールの宛先を決める。未設定・送信禁止アドレスなら既定の宛先にする。"""
+    to = "".join((_get_setting("REPORT_TO") or "").split())
+    if not to or to.lower() in REPORT_TO_BLOCKED:
+        return REPORT_TO_DEFAULT
+    return to
+
+
 @app.route("/api/feedback", methods=["POST"])
 def submit_feedback():
     """利用者からの修正希望・ご要望を受信箱（DB）に保存し、メールでも運営へ転送する。
@@ -3983,7 +3998,7 @@ def _set_setting(key: str, value: str):
 @_admin_required
 def setup_email_page():
     gmail_user = _get_setting("GMAIL_USER")
-    report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
+    report_to  = _resolve_report_to()
     saved = request.args.get("saved", "")
 
     err_msg = request.args.get("msg", "")
@@ -4029,11 +4044,13 @@ def setup_email_page():
   {banner}
   <form method="POST" action="{ADMIN_BASE}/setup-email-save">
     <label>送信元 Gmail アドレス</label>
-    <input type="email" name="gmail_user" value="{gmail_user}" placeholder="yourname@gmail.com" required>
+    <input type="email" name="gmail_user" value="{gmail_user}" placeholder="rits.1159@gmail.com" required>
+    <p class="hint">※ このアドレスのGmailアカウントから送信されます（アプリパスワードもこのアカウントのもの）。</p>
     <label>Gmail アプリパスワード（16桁）</label>
     <input type="password" name="gmail_app_password" placeholder="xxxx xxxx xxxx xxxx" required>
     <label>送信先メールアドレス</label>
     <input type="email" name="report_to" value="{report_to}" required>
+    <p class="hint">※ reallgym.tokyo@gmail.com は送信先に使えません（設定しても {REPORT_TO_DEFAULT} に送られます）。</p>
     <button class="btn" type="submit">💾 保存する</button>
   </form>
   {test_btn}
@@ -4129,7 +4146,7 @@ def _make_backup_attachment():
 def _send_daily_report():
     gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
     gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
-    report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
+    report_to  = _resolve_report_to()
     if not gmail_user or not gmail_pass or not report_to:
         raise ValueError(f"メール設定が未登録です。{ADMIN_BASE}/setup-email で設定してください。")
 
@@ -4150,7 +4167,7 @@ def _send_backup_email():
     """全データのバックアップ(.json.gz)をメール添付で送る。復元用の命綱。"""
     gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
     gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
-    report_to  = ("".join((_get_setting("REPORT_TO") or "").split())) or "reallgym.tokyo@gmail.com"
+    report_to  = _resolve_report_to()
     if not gmail_user or not gmail_pass or not report_to:
         print("[BACKUP][WARN] メール未設定のためバックアップを送れません")
         return

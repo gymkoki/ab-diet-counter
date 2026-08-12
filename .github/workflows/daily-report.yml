@@ -5,9 +5,12 @@ name: Daily Dashboard Report
 # Repository > Settings > Secrets and variables > Actions > New repository secret
 #   APP_URL            : https://ab-diet-counter.onrender.com
 #   ADMIN_PASSWORD     : 管理者パスワード（デフォルト: abDiet2024admin）
-#   GMAIL_USER         : 送信元 Gmail アドレス（例: yourname@gmail.com）
+#   GMAIL_USER         : 送信元 Gmail アドレス（rits.1159@gmail.com）
+#                        ※ここがそのまま差出人になる。アプリパスワードも同じアカウントのものを使う。
 #   GMAIL_APP_PASSWORD : Gmail アプリパスワード（Google アカウント > セキュリティ > アプリ パスワード）
-#   REPORT_TO          : 送信先メールアドレス（例: rits.1159@gmail.com）
+#   REPORT_TO          : 送信先メールアドレス（rits.1159@gmail.com）
+#                        ※未設定でも rits.1159@gmail.com に送られる。
+#                          reallgym.tokyo@gmail.com を入れても送られない（コード側で振り替える）。
 #
 # 【Claude APIクレジット残高を表示したい場合（任意）】
 #   ANTHROPIC_ADMIN_KEY   : Admin APIキー（`sk-ant-admin01-...`）
