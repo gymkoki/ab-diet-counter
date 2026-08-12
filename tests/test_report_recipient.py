@@ -58,6 +58,43 @@ def test_github_actions_report_never_sends_to_reallgym():
     assert resolve("someone@example.com") == "someone@example.com"
 
 
+def test_feedback_is_sent_to_rits():
+    """修正希望・ご要望（利用者からの問い合わせ）の転送先も rits.1159@gmail.com であること。"""
+    assert m.FEEDBACK_TO == EXPECTED, f"問い合わせが {m.FEEDBACK_TO} に送られます"
+
+
+def test_feedback_email_actually_addressed_to_rits(monkeypatch):
+    """実際に /api/feedback を叩いたとき、SMTPへ渡される宛先が rits であること。"""
+    m._set_setting("GMAIL_USER", "sender@example.com")
+    m._set_setting("GMAIL_APP_PASSWORD", "dummy-pass")
+    captured = {}
+
+    class _SMTP:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def login(self, *a):
+            pass
+
+        def sendmail(self, from_addr, to_addrs, msg):
+            captured["to"] = to_addrs
+            captured["raw"] = msg
+
+    monkeypatch.setattr(m.smtplib, "SMTP_SSL", _SMTP)
+    c = m.app.test_client()
+    r = c.post("/api/feedback", json={"user_id": "u-1", "text": "テストの要望です"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert captured.get("to") == [EXPECTED], f"転送先が想定外です: {captured.get('to')}"
+    assert BLOCKED.encode() not in captured.get("raw", b""), \
+        "メール本文/ヘッダに reallgym 宛が残っています"
+
+
 def test_no_hardcoded_reallgym_fallback_remains():
     """レポート送信のフォールバック先に reallgym.tokyo が残っていないこと。"""
     app_src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
