@@ -25,6 +25,10 @@ try:
 except ImportError:
     pass
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from anthropic_credit import build_credit_info  # noqa: E402
+
 # ── 設定 ──────────────────────────────────────────────────────
 APP_URL        = os.environ.get("APP_URL", "https://ab-diet-counter.onrender.com").rstrip("/")
 ADMIN_USER     = os.environ.get("ADMIN_USER", "admin")
@@ -474,8 +478,148 @@ def chart_goal_compare(data: dict) -> bytes:
 
 # ── メール HTML 本文 ────────────────────────────────────────────
 # 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
-# cid:chart_weight / cid:chart_weight_loss / cid:chart_exercise で参照する（send_email() が
+# cid:chart_weight / cid:chart_weight_loss / cid:chart_exercise / cid:chart_credit で参照する（send_email() が
 # main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
+def has_credit_chart(credit: dict) -> bool:
+    """コストの実データが取れたときだけグラフを出す（取れないときは案内文だけ）。"""
+    return bool(credit) and credit.get("status") == "ok" and bool(credit.get("dates"))
+
+
+def chart_credit(credit: dict) -> bytes:
+    """Claude API の日別実コスト（円換算）。残高が分かっていれば使い切り予測も併記。"""
+    fig, ax = plt.subplots(figsize=(10, 3.2))
+
+    dates = credit.get("dates") or []
+    values = credit.get("values") or []
+    rate = credit.get("usd_jpy") or 155.0
+    yen = [v * rate for v in values]
+    x = range(len(dates))
+    ax.bar(x, yen, color=C_INDIGO + "CC", zorder=2)
+
+    tick_idx = [i for i in x if i % 5 == 0]
+    ax.set_xticks(tick_idx)
+    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
+    ax.set_ylabel("APIコスト (円/日)", fontsize=13)
+    ax.set_ylim(bottom=0)
+
+    remaining = credit.get("remaining_usd")
+    if remaining is not None:
+        suffix = f" — 残高 ¥{round(remaining * rate):,}"
+        if credit.get("days_left") is not None:
+            suffix += f"（あと約{credit['days_left']}日）"
+    else:
+        suffix = f" — 今月の使用額 ¥{round((credit.get('spend_month_usd') or 0) * rate):,}"
+    ax.set_title(f"Claude API 日別コスト（直近30日）{suffix}",
+                 fontsize=15, fontweight="bold", pad=8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.25, zorder=0)
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
+def _credit_section(credit: dict, est_cost_jpy: int) -> str:
+    """💳 Claude API クレジット状況セクション。
+
+    Anthropic に残高を返すAPIは無いため、
+    「Cost API の実使用額」＋「オーナーが控えた基準残高」から残りを算出している。
+    """
+    rate = credit.get("usd_jpy") or 155.0
+
+    def _yen(usd):
+        return f"¥{round(usd * rate):,}" if usd is not None else "—"
+
+    def _usd(usd):
+        return f"${usd:,.2f}" if usd is not None else "—"
+
+    status = credit.get("status")
+    note = ""
+
+    if status != "ok":
+        # 実額が取れないときは、アプリ側の解析回数ベースの推定値だけ出す
+        head = f"""
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-lbl">昨日の推定コスト</div>
+          <div class="kpi-val" style="font-size:22px">¥{est_cost_jpy:,}</div>
+          <div class="kpi-sub">解析回数からの概算</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">クレジット残高</div>
+          <div class="kpi-val" style="font-size:20px;color:#9CA3AF">取得できず</div>
+          <div class="kpi-sub"><a href="{credit.get('console_url')}">Console で確認 →</a></div>
+        </div>
+      </div>"""
+        note = credit.get("message") or ""
+    else:
+        remaining = credit.get("remaining_usd")
+        if remaining is None:
+            rem_val, rem_sub, rem_color = "未設定", "基準残高の登録が必要", "#9CA3AF"
+        else:
+            rem_val = _yen(remaining)
+            rem_sub = f"{_usd(remaining)}（{credit.get('base_date')} 時点 {_usd(credit.get('base_usd'))} 基準）"
+            rem_color = "#10B981" if remaining > (credit.get("spend_7d_avg_usd") or 0) * 14 else "#EF4444"
+
+        if credit.get("days_left") is not None:
+            days_val = f"約{credit['days_left']}日"
+            days_sub = f"この使用ペースだと {credit.get('empty_date')} 頃に枯渇"
+        else:
+            days_val, days_sub = "—", "残高または使用実績が不足"
+
+        head = f"""
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-lbl">💳 クレジット残高（推定）</div>
+          <div class="kpi-val" style="font-size:24px;color:{rem_color}">{rem_val}</div>
+          <div class="kpi-sub">{rem_sub}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">⏳ 残り日数の目安</div>
+          <div class="kpi-val" style="font-size:22px">{days_val}</div>
+          <div class="kpi-sub">{days_sub}</div>
+        </div>
+      </div>
+      <div class="kpi-row" style="margin-top:10px">
+        <div class="kpi">
+          <div class="kpi-lbl">昨日の実コスト</div>
+          <div class="kpi-val" style="font-size:20px">{_yen(credit.get('spend_yesterday_usd'))}</div>
+          <div class="kpi-sub">{_usd(credit.get('spend_yesterday_usd'))}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">今月の実コスト</div>
+          <div class="kpi-val" style="font-size:20px">{_yen(credit.get('spend_month_usd'))}</div>
+          <div class="kpi-sub">{_usd(credit.get('spend_month_usd'))}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">1日あたり平均</div>
+          <div class="kpi-val" style="font-size:20px">{_yen(credit.get('spend_7d_avg_usd'))}</div>
+          <div class="kpi-sub">直近7日平均</div>
+        </div>
+      </div>"""
+        note = credit.get("message") or ""
+
+    note_html = ""
+    if note:
+        note_html = f"""
+      <div style="margin-top:10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;
+                  padding:10px 12px;font-size:12px;color:#92400E;line-height:1.7">{note}</div>"""
+
+    chart_html = ""
+    if has_credit_chart(credit):
+        chart_html = '\n      <img class="chart" src="cid:chart_credit" alt="API Credit" style="margin-top:12px">'
+
+    return f"""
+    <div class="section">
+      <h2>💳 6. Claude API クレジット状況</h2>{head}{chart_html}{note_html}
+      <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
+        ※ 実コストは Anthropic の Cost API（実測値）。Anthropic には残高を返すAPIが無いため、
+        残高は「基準日の残高 − 基準日以降の実使用額」で算出した推定値です。
+        正確な残高は <a href="{credit.get('console_url')}">Anthropic Console</a> で確認できます。
+        円換算レート: $1 = ¥{rate:.0f}
+      </div>
+    </div>"""
+
+
 def _coach_section(advice) -> str:
     """AI減量コーチの提案セクション（メール最上部）。提案が無い日は出さない。"""
     if not advice:
@@ -509,7 +653,7 @@ def fetch_coach_advice():
     return None
 
 
-def build_html(data: dict, coach_advice=None) -> str:
+def build_html(data: dict, coach_advice=None, credit=None) -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
@@ -566,6 +710,11 @@ def build_html(data: dict, coach_advice=None) -> str:
           <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{_fmt(g.get('avg_protein'), 'g', 0)}</td>
           <td style="padding:8px;text-align:center;font-weight:800;color:#10B981">{_fmt(g.get('avg_veg'), 'g', 0)}</td>
         </tr>"""
+
+    # Claude API クレジット状況（取得できなくてもレポートは出す）
+    credit_section = _credit_section(credit or {"status": "error", "message":
+                                                "クレジット情報を取得できませんでした。"},
+                                     data.get("est_cost_jpy") or 0)
 
     return f"""<!DOCTYPE html>
 <html lang="ja">
@@ -751,14 +900,13 @@ def build_html(data: dict, coach_advice=None) -> str:
         </tr>
         <tr>
           <td style="padding:8px;color:#6B7280;font-weight:700">APIクレジット残高</td>
-          <td style="padding:8px;color:#9CA3AF">
-            <a href="https://console.anthropic.com/settings/billing" style="color:#FF6B35">
-              Anthropic Console で確認 →
-            </a>
-          </td>
+          <td style="padding:8px;color:#9CA3AF">下の「6. Claude API クレジット状況」を参照</td>
         </tr>
       </table>
     </div>
+
+    <!-- ⑥ Claude API クレジット状況 -->
+    {credit_section}
 
   </div>
   <div class="footer">
@@ -819,6 +967,17 @@ def main():
         "chart_goal_compare": chart_goal_compare(data),
     }
 
+    print("Fetching Claude API credit / cost...")
+    try:
+        credit = build_credit_info()
+    except Exception as e:   # noqa: BLE001 — クレジット取得の失敗でレポートを落とさない
+        print(f"  credit info failed: {e}")
+        credit = {"status": "error", "message": f"クレジット情報の取得に失敗しました（{e}）。"}
+    print(f"  credit status={credit.get('status')} remaining={credit.get('remaining_usd')} "
+          f"month={credit.get('spend_month_usd')}")
+    if has_credit_chart(credit):
+        charts["chart_credit"] = chart_credit(credit)
+
     print("Fetching AI coach advice...")
     coach_advice = fetch_coach_advice()
     print(f"  coach advice: {'OK (' + str(len(coach_advice)) + ' chars)' if coach_advice else 'skipped'}")
@@ -826,7 +985,7 @@ def main():
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data, coach_advice)
+    html    = build_html(data, coach_advice, credit)
 
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")

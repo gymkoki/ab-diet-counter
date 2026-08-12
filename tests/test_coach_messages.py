@@ -13,7 +13,9 @@ os.environ.setdefault("ADMIN_PASSWORD", "testpw")
 
 import app as m  # noqa: E402
 
-ADMIN = {"X-Admin-Password": "testpw"}
+# 他のテストが先に app をimportしていると上の setdefault は効かず、
+# m.ADMIN_PASSWORD は既定値のままになる。実際に読み込まれた値を使う。
+ADMIN = {"X-Admin-Password": m.ADMIN_PASSWORD}
 
 
 def _reset_db():

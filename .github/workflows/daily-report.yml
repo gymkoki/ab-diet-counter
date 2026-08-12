@@ -9,6 +9,16 @@ name: Daily Dashboard Report
 #   GMAIL_APP_PASSWORD : Gmail アプリパスワード（Google アカウント > セキュリティ > アプリ パスワード）
 #   REPORT_TO          : 送信先メールアドレス（例: rits.1159@gmail.com）
 #
+# 【Claude APIクレジット残高を表示したい場合（任意）】
+#   ANTHROPIC_ADMIN_KEY   : Admin APIキー（`sk-ant-admin01-...`）
+#       Anthropic Console > Settings > Admin keys で発行する。
+#       ※ アプリが使う通常の ANTHROPIC_API_KEY とは別物。これが無いと実コストは取得できない。
+#   ANTHROPIC_CREDIT_BASE : "YYYY-MM-DD:残高USD"（例: 2026-08-01:100）
+#       Anthropic には「残高を返すAPI」が無いため、Console の Billing で見た残高を
+#       いつ時点でいくらだったか控えて登録する。以降は実使用額を自動で差し引いて残高を出す。
+#       残高を追加購入したら、その日の残高で登録し直す。
+#   USD_JPY               : 円換算レート（未設定なら 155）
+#
 # 【Gmail アプリパスワード取得手順】
 # 1. Google アカウント > セキュリティ で「2段階認証」を有効化
 # 2. セキュリティ > アプリパスワード > アプリを選択「その他」→ 名前「AB Diet Report」
@@ -42,4 +52,7 @@ jobs:
           GMAIL_USER:         ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           REPORT_TO:          ${{ secrets.REPORT_TO }}
+          ANTHROPIC_ADMIN_KEY:   ${{ secrets.ANTHROPIC_ADMIN_KEY }}
+          ANTHROPIC_CREDIT_BASE: ${{ secrets.ANTHROPIC_CREDIT_BASE }}
+          USD_JPY:               ${{ secrets.USD_JPY }}
         run: python report/send_report.py
