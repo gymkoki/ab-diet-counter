@@ -2150,6 +2150,64 @@ def _call_coach_ai(client, user_text):
     return "\n".join(parts).strip()
 
 
+def _api_error_message(e, tag: str) -> str:
+    """Anthropic APIのエラーを、会員に見せてよい日本語メッセージへ変換する。
+    英語の生エラー（'Your credit balance is too low...' や request_id 等）を
+    会員の画面にそのまま出さない。原因調査用の詳細はサーバーログにだけ残す。"""
+    detail = str(e)
+    print(f"[{tag}][APIError] {detail}")
+    low = detail.lower()
+    if ("credit balance" in low or "billing" in low
+            or "insufficient" in low or "quota" in low):
+        # 運営側の残高・請求の問題。会員には運営が対応中であることだけ伝える。
+        return ("ただいまAI解析を一時的にご利用いただけません。"
+                "運営が対応していますので、しばらくしてからお試しください。")
+    return "AI解析が一時的にうまくいきませんでした。少し時間をおいて、もう一度お試しください。"
+
+
+@app.route("/api/admin/api-health")
+@_admin_required
+def admin_api_health():
+    """運営用：Claude APIが今すぐ使える状態かを実際に1回呼んで確認する。
+    「課金したのにエラーが出る」ときに、どのAPIキーで・何が起きているかを切り分ける。"""
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    info = {
+        "key_set": bool(key),
+        "key_hint": (f"{key[:14]}…{key[-4:]}" if len(key) > 20 else None),
+        "key_length": len(key),
+    }
+    if not key:
+        info.update({"ok": False, "status": "no_key",
+                     "message": "ANTHROPIC_API_KEY が設定されていません（Renderの環境変数を確認してください）"})
+        return jsonify(info)
+
+    try:
+        client = anthropic.Anthropic(api_key=key, timeout=30.0, max_retries=0)
+        client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        info.update({"ok": True, "status": "ok", "message": "APIは正常に使えます（解析可能）"})
+    except anthropic.AuthenticationError as e:
+        info.update({"ok": False, "status": "auth_error", "detail": str(e),
+                     "message": "APIキーが無効です。キーの貼り間違い・失効の可能性があります。"})
+    except anthropic.APIError as e:
+        detail = str(e)
+        low = detail.lower()
+        if "credit balance" in low or "billing" in low or "insufficient" in low:
+            info.update({"ok": False, "status": "no_credit", "detail": detail,
+                         "message": ("このAPIキーのアカウント／ワークスペースに残高がありません。"
+                                     "購入先のアカウントとキーの発行元が同じか確認してください。")})
+        else:
+            info.update({"ok": False, "status": "api_error", "detail": detail,
+                         "message": "APIエラーが発生しています。"})
+    except Exception as e:
+        info.update({"ok": False, "status": "error", "detail": f"{type(e).__name__}: {e}",
+                     "message": "接続を確認できませんでした。"})
+    return jsonify(info)
+
+
 class _CoachNoApiKey(Exception):
     """コーチ提案：APIキー未設定を表す（一般エラーと区別してHTTP 503を返すため）。"""
 
@@ -4738,7 +4796,7 @@ def analyze():
     except (anthropic.APITimeoutError, anthropic.APIConnectionError):
         return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
-        return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+        return jsonify({"error": _api_error_message(e, "ANALYZE")}), 503
     except Exception as e:
         # 想定外の例外でもHTMLの500を返さない（フロントの res.json() が壊れ「通信エラー」に
         # なるのを防ぐ）。必ずJSONで返し、原因はログに残す。
@@ -4863,7 +4921,7 @@ def reanalyze():
     except (anthropic.APITimeoutError, anthropic.APIConnectionError):
         return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
-        return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+        return jsonify({"error": _api_error_message(e, "REANALYZE")}), 503
     except Exception as e:
         print(f"[REANALYZE][ERROR] {type(e).__name__}: {e}")
         return jsonify({"error": "再計算中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
@@ -4935,7 +4993,7 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
     except (anthropic.APITimeoutError, anthropic.APIConnectionError):
         return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
     except anthropic.APIError as e:
-        return jsonify({"error": f"AI分析中にエラーが発生しました: {e}"}), 500
+        return jsonify({"error": _api_error_message(e, "ANALYZE-TEXT")}), 503
     except Exception as e:
         print(f"[ANALYZE-TEXT][ERROR] {type(e).__name__}: {e}")
         return jsonify({"error": "解析中に予期しないエラーが発生しました。もう一度お試しください。"}), 500
