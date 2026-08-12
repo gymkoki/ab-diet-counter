@@ -1189,6 +1189,16 @@
   </div>
 </div>
 
+<!-- コーチからの応援メッセージ（運営が承認して送った個別の声かけ） -->
+<div id="coach-msg-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
+  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">COACH</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📣 コーチからの応援メッセージ</div>
+    <div id="coach-msg-body" style="font-size:17px;line-height:1.8;color:#44403B;margin-bottom:22px"></div>
+    <button onclick="closeCoachMessages()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
+  </div>
+</div>
+
 <!-- 目標達成！リオールジムのマスコット猫「キーラン君」が2〜3秒踊る演出 -->
 <div id="goal-celebrate" onclick="hideGoalCelebrate()">
   <div class="gc-stage">
@@ -5017,6 +5027,40 @@ function closeReplyNotice() {
 }
 
 // ═══════════════════════════════════════════
+//  コーチからの応援メッセージ（運営が承認して送った個別の声かけ）
+//  未読があればモーダルで表示し、OKで既読にする。
+// ═══════════════════════════════════════════
+let _unreadCoachIds = [];
+
+async function checkCoachMessages() {
+  try {
+    const r = await fetch(`/api/coach-messages?user_id=${encodeURIComponent(USER_ID)}`);
+    const d = await r.json();
+    const unread = (d.items || []).filter(i => !i.read && i.message);
+    if (!unread.length) return;
+    _unreadCoachIds = unread.map(i => i.id);
+    const body = document.getElementById('coach-msg-body');
+    body.innerHTML = unread.map(i => `
+      <div style="margin-bottom:14px">
+        <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:10px;padding:12px 14px;line-height:1.8;white-space:pre-wrap">${esc(i.message)}</div>
+        <div style="font-size:13px;color:#A8A29B;text-align:right;margin-top:4px">${esc((i.sent_at || '').slice(0, 10))}　リオールジム コーチ</div>
+      </div>`).join('');
+    document.getElementById('coach-msg-overlay').style.display = 'flex';
+  } catch(e) {}
+}
+
+function closeCoachMessages() {
+  document.getElementById('coach-msg-overlay').style.display = 'none';
+  const ids = _unreadCoachIds;
+  _unreadCoachIds = [];
+  if (!ids.length) return;
+  fetch('/api/coach-messages/read', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: USER_ID, ids })
+  }).catch(() => {});
+}
+
+// ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
 const NOTICE_KEY = 'ab-diet-notice-v29';
@@ -5063,7 +5107,7 @@ function maybeShowDailyTip() {
   try {
     if (typeof DIET_TIPS === 'undefined' || !DIET_TIPS.length) return;  // tips.js未読込でも壊さない
     if (_editingDate) return;   // 過去日の編集中は表示しない
-    const busy = ['update-notice-overlay', 'reply-notice-overlay', 'chara-intro-overlay']
+    const busy = ['update-notice-overlay', 'reply-notice-overlay', 'coach-msg-overlay', 'chara-intro-overlay']
       .some(id => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; });
     if (busy) return;
     _renderDailyTip(_pickDailyTipIndex());
@@ -5131,6 +5175,7 @@ function _step(fn, label) {
     .then(backfillCharaLog)       // → 取り込み後、キャラカレンダーの抜けた過去日を復元
     .catch(() => {});
   checkFeedbackReplies();         // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
+  checkCoachMessages();           // コーチからの個別の応援メッセージ（未読があればモーダル表示）
   _syncHeightToServer();          // 身長をサーバーへ同期（管理画面のBMI表示用。既存会員も自動反映）
 
   if (!localStorage.getItem(NOTICE_KEY)) {
@@ -5153,6 +5198,7 @@ document.addEventListener('visibilitychange', () => {
     syncTodayMealsFromServer();
     syncHistoryFromServer();
     checkFeedbackReplies();
+    checkCoachMessages();
     if (_tipHiddenAt && Date.now() - _tipHiddenAt >= TIP_REOPEN_MS) maybeShowDailyTip();
   }
 });
