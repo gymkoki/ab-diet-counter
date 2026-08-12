@@ -362,6 +362,26 @@
     </div>
   </div>
 
+  <!-- 個別の声かけメッセージ（AIが下書き → 承認して会員へ送信） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>📣 個別の声かけメッセージ<span id="dm-draft-badge" style="display:none;margin-left:8px;background:#DC2626;color:#fff;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800;vertical-align:1px"></span></h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      記録が途絶えている人・体重が増加傾向の人などをAIが自動で抽出し、会員向けの文面を下書きします。
+      <b>下書きの段階では会員には一切届きません。</b>内容を確認して「送信」を押した人にだけ、アプリを開いたときにメッセージが表示されます。
+      文面はその場で編集できます。同じ人には7日間は続けて下書きされません。
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="apikey-save" style="width:auto" onclick="generateCoachDrafts()">🤖 声かけ文面を作る</button>
+      <button class="vip-btn" id="dm-send-all-btn" style="display:none" onclick="sendAllCoachDrafts()">✉️ すべて送信</button>
+    </div>
+    <div id="dm-status" style="font-size:13px;margin-bottom:10px"></div>
+    <div id="dm-drafts"></div>
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">送信済みのメッセージを見る</summary>
+      <div id="dm-sent" style="margin-top:10px"></div>
+    </details>
+  </div>
+
   <!-- 機能別の利用状況 -->
   <div class="card" style="margin-bottom:20px">
     <h2>🧭 機能別の利用状況（直近30日）</h2>
@@ -1023,9 +1043,104 @@
       </div>`;
   }
 
+  // ── 個別の声かけメッセージ（下書きを確認 → 承認して会員へ送信）──
+  function dmStatus(msg, cls) {
+    const el = document.getElementById('dm-status');
+    el.textContent = msg || '';
+    el.style.color = cls === 'err' ? '#DC2626' : (cls === 'ok' ? '#065F46' : '#6B7280');
+  }
+
+  async function loadCoachMessages() {
+    const wrap = document.getElementById('dm-drafts');
+    const sentWrap = document.getElementById('dm-sent');
+    const badge = document.getElementById('dm-draft-badge');
+    const sendAll = document.getElementById('dm-send-all-btn');
+    try {
+      const r = await fetch('/api/admin/coach-messages');
+      const d = await r.json();
+      const drafts = d.drafts || [];
+      const sent = d.sent || [];
+
+      badge.style.display = drafts.length ? 'inline-block' : 'none';
+      badge.textContent = drafts.length ? `未送信 ${drafts.length}` : '';
+      sendAll.style.display = drafts.length ? 'inline-block' : 'none';
+
+      wrap.innerHTML = drafts.length ? drafts.map(m => `
+        <div class="spot-person" style="cursor:default">
+          <div class="spot-head">
+            <span class="spot-name">${escapeHtml(m.name || '匿名ユーザー（' + (m.user_id || '').slice(0, 8) + '…）')}</span>
+            <span class="spot-sub">${escapeHtml(m.reason || '')}</span>
+          </div>
+          <textarea id="dm-text-${m.id}" style="width:100%;min-height:80px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit;line-height:1.7;resize:vertical">${escapeHtml(m.message)}</textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end">
+            <button class="vip-btn" onclick="discardCoachDraft(${m.id})">送らない</button>
+            <button class="apikey-save" style="width:auto;padding:6px 16px;font-size:13px" onclick="sendCoachDraft(${m.id})">✉️ この人に送信</button>
+          </div>
+        </div>`).join('')
+        : '<div class="no-data">未送信の下書きはありません。「声かけ文面を作る」で対象者を抽出できます。</div>';
+
+      sentWrap.innerHTML = sent.length ? sent.map(m => `
+        <div style="border-top:1px solid #F3F4F6;padding:8px 0;font-size:13px">
+          <div style="display:flex;justify-content:space-between;gap:10px">
+            <b>${escapeHtml(m.name || (m.user_id || '').slice(0, 8) + '…')}</b>
+            <span style="color:#9CA3AF;font-size:11px;white-space:nowrap">${escapeHtml((m.sent_at || '').slice(0, 10))}　${m.read ? '既読' : '未読'}</span>
+          </div>
+          <div style="color:#374151;line-height:1.7;margin-top:3px">${escapeHtml(m.message)}</div>
+        </div>`).join('')
+        : '<div class="no-data">送信済みのメッセージはまだありません</div>';
+    } catch (e) {
+      wrap.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+    }
+  }
+
+  async function generateCoachDrafts() {
+    dmStatus('AIが対象者を抽出して文面を作成中…（30秒ほどかかります）');
+    try {
+      const r = await fetch('/api/admin/coach-messages/generate', { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) { dmStatus('⚠️ ' + (d.error || '作成に失敗しました'), 'err'); return; }
+      if (d.created === 0) {
+        dmStatus(d.skipped_recent
+          ? '声かけが必要な人はいませんでした（直近7日に送信済みの人は対象外です）'
+          : '声かけが必要な人はいませんでした', 'ok');
+      } else {
+        dmStatus(`✅ ${d.created}件の下書きを作成しました。内容を確認して送信してください。`, 'ok');
+      }
+      await loadCoachMessages();
+    } catch (e) {
+      dmStatus('⚠️ 通信エラーが発生しました', 'err');
+    }
+  }
+
+  async function sendCoachDraft(id) {
+    const ta = document.getElementById('dm-text-' + id);
+    const message = ta ? ta.value.trim() : '';
+    if (!message) { dmStatus('⚠️ 本文が空です', 'err'); return; }
+    if (!confirm('この文面を会員本人に送信します。よろしいですか？')) return;
+    await fetch(`/api/admin/coach-messages/${id}/send`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    dmStatus('✅ 送信しました。会員が次にアプリを開いたときに表示されます。', 'ok');
+    await loadCoachMessages();
+  }
+
+  async function sendAllCoachDrafts() {
+    if (!confirm('未送信の下書きをすべて会員本人に送信します。よろしいですか？')) return;
+    const r = await fetch('/api/admin/coach-messages/send-all', { method: 'POST' });
+    const d = await r.json();
+    dmStatus(`✅ ${d.sent || 0}件を送信しました。`, 'ok');
+    await loadCoachMessages();
+  }
+
+  async function discardCoachDraft(id) {
+    await fetch(`/api/admin/coach-messages/${id}/discard`, { method: 'POST' });
+    await loadCoachMessages();
+  }
+
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

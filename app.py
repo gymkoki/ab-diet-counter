@@ -544,6 +544,38 @@ def init_db():
                     read_at    TEXT
                 )
             """)
+
+        # 個別の声かけメッセージ（AIが下書きを作り、オーナーが承認してから本人へ送る）
+        # status: draft=未送信の下書き ／ sent=会員へ送信済み ／ discarded=送らないと判断
+        # 会員に届くのは status='sent' のものだけ。承認前の下書きは本人には一切見えない。
+        if USE_PG:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS coach_messages (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT NOT NULL,
+                    name       TEXT,
+                    reason     TEXT,
+                    message    TEXT NOT NULL,
+                    status     TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    sent_at    TEXT,
+                    read_at    TEXT
+                )
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS coach_messages (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT NOT NULL,
+                    name       TEXT,
+                    reason     TEXT,
+                    message    TEXT NOT NULL,
+                    status     TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    sent_at    TEXT,
+                    read_at    TEXT
+                )
+            """)
         conn.commit()
         # 既存DBへの列追加（デイリーレポートの目的別集計用／BMI表示用の身長）。列が既にあれば無視。
         for col in ("gender", "goal", "height_cm"):
@@ -2122,20 +2154,10 @@ class _CoachNoApiKey(Exception):
     """コーチ提案：APIキー未設定を表す（一般エラーと区別してHTTP 503を返すため）。"""
 
 
-def _get_or_generate_coach_advice():
-    """減量コーチの「今日の提案」を返す（当日キャッシュ優先・無ければAIで生成して保存）。
-    メールレポート（GitHub Actions版・アプリ内テスト送信版）とAPIの両方から使う。
-    戻り値：(advice, cached, members) ／ 生成失敗時は例外を送出する。"""
-    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
-    cache_key = f"coach-advice-{today}"
-    cached = _get_setting(cache_key, "")
-    if cached:
-        return cached, True, None
-
-    client = get_client()
-    if client is None:
-        raise _CoachNoApiKey()
-
+def _collect_cut_member_stats():
+    """減量希望メンバーの直近データを集めて返す（コーチ提案と個別声かけで共用）。
+    戻り値：[{uid, name, user_id_short, latest_weight_kg, change_30d_kg,
+              avg_b_7d, recorded_days_7d, days_since}, ...]"""
     now = datetime.datetime.now(JST)
     d30_start = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
     d7_start  = (now - datetime.timedelta(days=6)).strftime("%Y-%m-%d")
@@ -2146,7 +2168,7 @@ def _get_or_generate_coach_advice():
         cur.execute("SELECT user_id, display_name, height_cm FROM user_profile WHERE goal = 'cut'")
         cut = {r[0]: {"name": r[1], "height_cm": r[2]} for r in cur.fetchall()}
         if not cut:
-            return "", False, 0
+            return []
 
         cur.execute(
             f"SELECT user_id, date, weight FROM daily_weight WHERE date>={PH} ORDER BY user_id, date",
@@ -2178,6 +2200,7 @@ def _get_or_generate_coach_advice():
         last = last_by_uid.get(uid)
         days_since = (today_d - datetime.date.fromisoformat(last)).days if last else None
         members.append({
+            "uid": uid,
             "name": prof["name"] or None,
             "user_id_short": uid[:8],
             "latest_weight_kg": latest_w,
@@ -2186,9 +2209,31 @@ def _get_or_generate_coach_advice():
             "recorded_days_7d": rec_days,
             "days_since": days_since,
         })
+    return members
 
+
+def _get_or_generate_coach_advice():
+    """減量コーチの「今日の提案」を返す（当日キャッシュ優先・無ければAIで生成して保存）。
+    メールレポート（GitHub Actions版・アプリ内テスト送信版）とAPIの両方から使う。
+    戻り値：(advice, cached, members) ／ 生成失敗時は例外を送出する。"""
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    cache_key = f"coach-advice-{today}"
+    cached = _get_setting(cache_key, "")
+    if cached:
+        return cached, True, None
+
+    client = get_client()
+    if client is None:
+        raise _CoachNoApiKey()
+
+    members = _collect_cut_member_stats()
+    if not members:
+        return "", False, 0
+
+    # AIへ渡す本文には user_id（内部ID）を含めない
+    safe = [{k: v for k, v in m.items() if k != "uid"} for m in members]
     user_text = (f"今日の日付：{today}\n減量希望メンバー：{len(members)}名\n"
-                 f"データ：\n{json.dumps(members, ensure_ascii=False)}")
+                 f"データ：\n{json.dumps(safe, ensure_ascii=False)}")
     advice = _call_coach_ai(client, user_text)
     if advice:
         try:
@@ -2212,6 +2257,296 @@ def admin_coach_advice():
         print(f"[COACH][ERROR] {type(e).__name__}: {e}")
         return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。"}), 502
     return jsonify({"date": today, "advice": advice, "cached": cached, "members": members})
+
+
+# ── 個別の声かけメッセージ（AIが下書き → オーナーが承認 → 本人に通知） ──────
+# 会員に自動でメッセージが飛ぶことはない。必ずオーナーが文面を見て送信を押す。
+COACH_DM_PROMPT = """あなたはABダイエットを運営するジムのコーチです。
+会員一人ひとりに、アプリ内で表示する短い応援メッセージを書いてください。
+
+【最重要】このメッセージは会員本人が読みます。オーナー向けの指示や分析ではありません。
+会員に直接語りかける文章にしてください。
+
+【書き方】
+- 1人あたり60〜120字程度の日本語。丁寧語で、親しみやすく前向きに。
+- 責めない・急かさない。「サボっている」「増えています」等の否定的な断定はしない。
+- 状況に応じた具体的な一歩を1つだけ提案する（例：今日の体重を1回だけ入力する／間食を1回お茶に置き換える）。
+- 名前が分かる場合は「〇〇さん、」で始めてよい。分からなければ名前は使わない。
+- 体重の数値やBカウントの細かい数字は必要最小限にとどめる。
+- 医学的に安全な範囲のみ（極端な糖質制限・絶食・断食は絶対に提案しない）。
+- 体重が大きく増えているなど数値が不自然な場合は、断定せず「記録を確認してみましょう」と促す。
+
+【出力形式】必ず次のJSONだけを出力する（前置き・説明・コードブロックは一切書かない）：
+{"messages":[{"user_id_short":"（入力データのuser_id_shortをそのまま）","message":"（会員への本文）"}]}
+入力に含まれる会員すべてについて、1人1件ずつ出力すること。"""
+
+
+# 声かけが必要と判定する条件（コード側で決める。AIには文面だけを書かせる）
+COACH_DM_RULES = [
+    # (判定関数, 理由ラベル)
+    (lambda m: (m.get("days_since") is None) or (m["days_since"] >= 3), "記録が3日以上途絶えている（離脱リスク）"),
+    (lambda m: isinstance(m.get("change_30d_kg"), (int, float)) and m["change_30d_kg"] >= 0.5, "直近30日で体重が増加傾向"),
+    (lambda m: isinstance(m.get("avg_b_7d"), (int, float)) and m["avg_b_7d"] > 7, "直近7日のBカウント平均が目安(7)を超えている"),
+    (lambda m: isinstance(m.get("recorded_days_7d"), int) and m["recorded_days_7d"] <= 3, "直近7日の記録日数が3日以下"),
+]
+
+# 同じ会員へ短期間に何度も送らないための間隔（日）
+COACH_DM_COOLDOWN_DAYS = 7
+
+
+def _members_needing_outreach(members):
+    """声かけが必要な会員だけを、理由つきで抽出する。"""
+    picked = []
+    for m in members:
+        reasons = [label for cond, label in COACH_DM_RULES if cond(m)]
+        if reasons:
+            picked.append({**m, "reasons": reasons})
+    return picked
+
+
+def _recent_dm_user_ids(days=COACH_DM_COOLDOWN_DAYS):
+    """直近days日以内に送信済み、または未送信の下書きが残っている会員のIDを返す。"""
+    since = (datetime.datetime.now(JST) - datetime.timedelta(days=days)).isoformat()
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT DISTINCT user_id FROM coach_messages "
+            f"WHERE (status='sent' AND sent_at>={PH}) OR status='draft'",
+            (since,)
+        )
+        return {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def _generate_coach_dm_drafts():
+    """声かけが必要な会員を抽出し、AIに文面を書かせて「下書き」として保存する。
+    戻り値：(作成した下書き件数, 対象者数, スキップ数)。送信はしない。"""
+    members = _collect_cut_member_stats()
+    if not members:
+        return 0, 0, 0
+
+    targets = _members_needing_outreach(members)
+    skip_ids = _recent_dm_user_ids()
+    targets = [t for t in targets if t["uid"] not in skip_ids]
+    if not targets:
+        return 0, 0, len(skip_ids)
+
+    client = get_client()
+    if client is None:
+        raise _CoachNoApiKey()
+
+    safe = [{k: v for k, v in t.items() if k != "uid"} for t in targets]
+    user_text = ("以下の会員に、アプリ内で表示する応援メッセージを書いてください。\n"
+                 "reasons は声かけが必要と判断した理由です。\n"
+                 f"{json.dumps(safe, ensure_ascii=False)}")
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        timeout=90.0,
+        system=[{"type": "text", "text": COACH_DM_PROMPT}],
+        messages=[{"role": "user", "content": [{"type": "text", "text": user_text}]}],
+    )
+    raw = "".join(
+        b.text for b in (getattr(response, "content", []) or [])
+        if getattr(b, "type", "") == "text"
+    ).strip()
+    match = re.search(r"\{.*\}", raw, re.S)
+    if not match:
+        raise ValueError("AIの応答からJSONを取得できませんでした")
+    by_short = {}
+    for item in (json.loads(match.group(0)).get("messages") or []):
+        short = str(item.get("user_id_short") or "").strip()
+        msg = str(item.get("message") or "").strip()
+        if short and msg:
+            by_short[short] = msg
+
+    ts = datetime.datetime.now(JST).isoformat()
+    created = 0
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            for t in targets:
+                msg = by_short.get(t["user_id_short"])
+                if not msg:
+                    continue
+                cur.execute(
+                    f"""INSERT INTO coach_messages (user_id, name, reason, message, status, created_at)
+                       VALUES ({PH},{PH},{PH},{PH},'draft',{PH})""",
+                    (t["uid"], t.get("name"), " / ".join(t["reasons"]), msg[:500], ts)
+                )
+                created += 1
+            conn.commit()
+        finally:
+            conn.close()
+    return created, len(targets), len(skip_ids)
+
+
+@app.route("/api/admin/coach-messages/generate", methods=["POST"])
+@_admin_required
+def admin_coach_messages_generate():
+    """声かけが必要な会員を抽出し、AIに文面を書かせて下書きを作る（送信はしない）。"""
+    try:
+        created, targets, skipped = _generate_coach_dm_drafts()
+    except _CoachNoApiKey:
+        return jsonify({"error": "APIキーが設定されていません"}), 503
+    except Exception as e:
+        print(f"[COACH-DM][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "声かけ文面の作成に失敗しました。時間をおいてお試しください。"}), 502
+    return jsonify({"ok": True, "created": created, "targets": targets, "skipped_recent": skipped})
+
+
+@app.route("/api/admin/coach-messages")
+@_admin_required
+def admin_coach_messages_list():
+    """未送信の下書きと、直近の送信済みメッセージを返す。"""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, user_id, name, reason, message, created_at FROM coach_messages "
+            "WHERE status='draft' ORDER BY id DESC LIMIT 50"
+        )
+        drafts = [
+            {"id": r[0], "user_id": r[1], "name": r[2], "reason": r[3],
+             "message": r[4], "created_at": r[5]}
+            for r in cur.fetchall()
+        ]
+        cur.execute(
+            "SELECT id, user_id, name, message, sent_at, read_at FROM coach_messages "
+            "WHERE status='sent' ORDER BY id DESC LIMIT 30"
+        )
+        sent = [
+            {"id": r[0], "user_id": r[1], "name": r[2], "message": r[3],
+             "sent_at": r[4], "read": bool(r[5])}
+            for r in cur.fetchall()
+        ]
+    finally:
+        conn.close()
+    return jsonify({"drafts": drafts, "sent": sent})
+
+
+@app.route("/api/admin/coach-messages/<int:mid>/send", methods=["POST"])
+@_admin_required
+def admin_coach_message_send(mid):
+    """下書きを承認して会員本人へ送信する（文面を編集して送ることもできる）。"""
+    data = request.get_json(silent=True) or {}
+    edited = (data.get("message") or "").strip()
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if edited:
+                cur.execute(
+                    f"UPDATE coach_messages SET message={PH}, status='sent', sent_at={PH} "
+                    f"WHERE id={PH} AND status='draft'",
+                    (edited[:500], ts, mid)
+                )
+            else:
+                cur.execute(
+                    f"UPDATE coach_messages SET status='sent', sent_at={PH} "
+                    f"WHERE id={PH} AND status='draft'",
+                    (ts, mid)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/coach-messages/send-all", methods=["POST"])
+@_admin_required
+def admin_coach_messages_send_all():
+    """未送信の下書きをまとめて送信する。"""
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"UPDATE coach_messages SET status='sent', sent_at={PH} WHERE status='draft'",
+                (ts,)
+            )
+            sent = cur.rowcount
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True, "sent": sent})
+
+
+@app.route("/api/admin/coach-messages/<int:mid>/discard", methods=["POST"])
+@_admin_required
+def admin_coach_message_discard(mid):
+    """下書きを送らずに破棄する。"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"UPDATE coach_messages SET status='discarded' WHERE id={PH} AND status='draft'",
+                (mid,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/coach-messages")
+def get_coach_messages():
+    """会員本人向け：自分あての送信済みメッセージ（下書きは絶対に返さない）。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"items": []})
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT id, message, sent_at, read_at FROM coach_messages
+               WHERE user_id={PH} AND status='sent'
+               ORDER BY sent_at DESC LIMIT 20""",
+            (uid,)
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    items = [
+        {"id": r[0], "message": r[1], "sent_at": r[2], "read": bool(r[3])}
+        for r in rows
+    ]
+    return jsonify({"items": items})
+
+
+@app.route("/api/coach-messages/read", methods=["POST"])
+def mark_coach_messages_read():
+    """会員本人がメッセージを読んだ印を付ける（本人のuser_idと一致する項目のみ）。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    ids = data.get("ids") or []
+    if not uid or not isinstance(ids, list) or not ids:
+        return jsonify({"ok": True})
+    ids = [int(i) for i in ids if isinstance(i, (int, float, str)) and str(i).lstrip('-').isdigit()][:50]
+    if not ids:
+        return jsonify({"ok": True})
+    ts = datetime.datetime.now(JST).isoformat()
+    ph_list = ",".join([PH] * len(ids))
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"UPDATE coach_messages SET read_at={PH} "
+                f"WHERE user_id={PH} AND read_at IS NULL AND id IN ({ph_list})",
+                tuple([ts, uid] + ids)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/spotlight")
