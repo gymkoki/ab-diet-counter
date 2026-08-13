@@ -1084,39 +1084,6 @@
     </div>
   </div>
   <div class="setting-card">
-    <h2>📸 撮った写真をそのまま記録（iPhone）</h2>
-    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">
-      iPhoneの「ショートカット」を使うと、<strong>写真を撮ったあとに「ABダイエットにアップしますか？」と確認</strong>が出て、<strong>「はい」を押すだけで記録</strong>できます（アプリを開かなくてOK）。
-    </p>
-    <button class="btn-save" onclick="copyShortcutId()">📋 自分の連携コードをコピー</button>
-    <div id="shortcut-copy-status" style="display:none;text-align:center;margin-top:10px;font-size:17px;font-weight:700;color:var(--a-color)"></div>
-    <details style="margin-top:14px">
-      <summary style="font-size:17px;font-weight:700;cursor:pointer;color:var(--indigo)">設定のしかたを見る（iPhone・1回だけ）</summary>
-      <ol style="font-size:16px;color:var(--text-muted);line-height:1.9;padding-left:22px;margin-top:10px">
-        <li>上のボタンで<strong>連携コード</strong>をコピーします。</li>
-        <li>iPhoneの<strong>「ショートカット」アプリ</strong>を開き、右上の「＋」で新規作成します。</li>
-        <li>下の「① 判定＋確認＋アップ」の手順どおりにアクションを追加し、コピーした連携コードを貼り付けます。</li>
-        <li>「オートメーション」タブ →「個人用オートメーションを作成」→<strong>「App」→「カメラ」→「閉じたとき」</strong>を選び、作成したショートカットを実行するように設定します。</li>
-      </ol>
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;font-size:15px;color:var(--text-muted);line-height:1.8">
-        <strong>① 判定＋確認＋アップ の中身</strong><br>
-        1. 「最新の写真を取得」<br>
-        2. 「URLの内容を取得」<br>
-        　URL：<code id="shortcut-url-check" style="word-break:break-all"></code><br>
-        　方法：POST／本文：フォーム／<code>image</code>＝最新の写真<br>
-        3. 「if」→ 取得結果の <code>is_food</code> が true のとき<br>
-        4. 「結果を表示」→「ABダイエットにアップしますか？」（はい／いいえ）<br>
-        5. 「はい」のとき →「URLの内容を取得」<br>
-        　URL：<code id="shortcut-url-upload" style="word-break:break-all"></code><br>
-        　方法：POST／本文：フォーム／<code>image</code>＝最新の写真、<code>user_id</code>＝連携コード<br>
-        6. 「通知を表示」→ 取得結果の <code>message</code>（B・タンパク質・野菜が出ます）
-      </div>
-      <p style="font-size:15px;color:var(--text-muted);line-height:1.7;margin-top:10px">
-        ※ Androidの場合は、写真の共有メニューからこのアプリを開いて記録してください。
-      </p>
-    </details>
-  </div>
-  <div class="setting-card">
     <h2>🔗 スマホ・パソコンでデータを共有</h2>
     <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">スマホとパソコンなど、複数の端末で<strong>同じ記録</strong>を見たり編集したりできるようにします。<br><strong>① いつも記録している端末</strong>で連携コードを発行し、<strong>② もう一方の端末</strong>でそのコードを入力してください。</p>
     <button class="btn-save" onclick="issueLinkCode()">① 連携コードを発行する</button>
@@ -1550,32 +1517,6 @@ async function backfillCharaLog() {
 // ═══════════════════════════════════════════
 //  端末の連携（連携コードの発行・入力）
 // ═══════════════════════════════════════════
-// iPhoneショートカット連携：連携コード（ユーザーID）のコピーと、貼り付け用URLの表示
-function copyShortcutId() {
-  const st = document.getElementById('shortcut-copy-status');
-  const done = () => {
-    if (!st) return;
-    st.style.display = 'block';
-    st.textContent = '✅ コピーしました。ショートカットの user_id に貼り付けてください';
-    setTimeout(() => { st.style.display = 'none'; }, 4000);
-  };
-  try {
-    navigator.clipboard.writeText(USER_ID).then(done).catch(() => {
-      window.prompt('この連携コードをコピーしてください', USER_ID);
-    });
-  } catch (e) {
-    window.prompt('この連携コードをコピーしてください', USER_ID);
-  }
-}
-
-function fillShortcutUrls() {
-  const base = location.origin;
-  const c = document.getElementById('shortcut-url-check');
-  const u = document.getElementById('shortcut-url-upload');
-  if (c) c.textContent = `${base}/api/shortcut/check`;
-  if (u) u.textContent = `${base}/api/shortcut/upload`;
-}
-
 async function issueLinkCode() {
   const disp = document.getElementById('link-code-display');
   disp.style.display = '';
@@ -5236,7 +5177,6 @@ function _step(fn, label) {
   checkFeedbackReplies();         // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
   checkCoachMessages();           // コーチからの個別の応援メッセージ（未読があればモーダル表示）
   _syncHeightToServer();          // 身長をサーバーへ同期（管理画面のBMI表示用。既存会員も自動反映）
-  fillShortcutUrls();             // iPhoneショートカット設定手順に貼り付け用URLを表示
 
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
