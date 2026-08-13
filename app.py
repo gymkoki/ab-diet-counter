@@ -2325,14 +2325,22 @@ COACH_DM_PROMPT = """あなたはABダイエットを運営するジムのコー
 【最重要】このメッセージは会員本人が読みます。オーナー向けの指示や分析ではありません。
 会員に直接語りかける文章にしてください。
 
-【書き方】
-- 1人あたり60〜120字程度の日本語。丁寧語で、親しみやすく前向きに。
-- 責めない・急かさない。「サボっている」「増えています」等の否定的な断定はしない。
-- 状況に応じた具体的な一歩を1つだけ提案する（例：今日の体重を1回だけ入力する／間食を1回お茶に置き換える）。
+【書き方】（オーナー指示 2026-08：もっと優しく。指導より「気にかけている」を伝える）
+- 1人あたり60〜140字程度の日本語。丁寧語で、やわらかく、親しみやすく。
+- まず相手を気にかける一言から始める（例：「お変わりありませんか？」「無理なく続けられていますか？」）。
+- 責めない・急かさない・評価しない。「サボっている」「増えています」「止まっています」など、
+  できていない事実を突きつける表現は使わない。
+- 【重要】日数・体重の増減・Bカウントなどの数字は本文に書かない。
+  「〇日間途絶えています」「+1.3kg増えています」のような指摘は絶対にしない。
+  代わりに「お久しぶりです」「少し停滞しているかもしれませんね」のようにやわらげる。
+- 提案は1つだけ、しかも「やらなくても大丈夫」と思える軽さで。
+  （例：「体重だけでも大丈夫です」「1行だけでも十分です」「気が向いたときに」）
+- 命令形・指導口調にしない。「〜しましょう」より「〜してみませんか？」「〜でも大丈夫です」。
+- 相手を否定せず、これまでの頑張りを一言認める（続けている人には必ず触れる）。
 - 名前が分かる場合は「〇〇さん、」で始めてよい。分からなければ名前は使わない。
-- 体重の数値やBカウントの細かい数字は必要最小限にとどめる。
+- 絵文字は0〜1個まで。多用しない。
 - 医学的に安全な範囲のみ（極端な糖質制限・絶食・断食は絶対に提案しない）。
-- 体重が大きく増えているなど数値が不自然な場合は、断定せず「記録を確認してみましょう」と促す。
+- 数値が不自然な場合も断定せず、「よかったら記録を見直してみてくださいね」程度にとどめる。
 
 【出力形式】必ず次のJSONだけを出力する（前置き・説明・コードブロックは一切書かない）：
 {"messages":[{"user_id_short":"（入力データのuser_id_shortをそのまま）","message":"（会員への本文）"}]}
@@ -2485,6 +2493,40 @@ def admin_coach_messages_list():
     finally:
         conn.close()
     return jsonify({"drafts": drafts, "sent": sent})
+
+
+@app.route("/api/admin/coach-messages/create", methods=["POST"])
+@_admin_required
+def admin_coach_message_create():
+    """AIの抽出リストに載っていない会員へ、オーナーが指名して個別メッセージを送る。
+
+    AIの自動抽出は「記録が途絶えた／体重が増えた」等の条件に当てはまる人だけが対象なので、
+    順調な会員をねぎらいたいときなど、そこに載らない相手には送れなかった。
+    文面はオーナーが自分で書いて送るため、ここでは下書きを経ずに直接送信する。
+    """
+    data = request.get_json(silent=True) or {}
+    user_id = (data.get("user_id") or "").strip()
+    message = (data.get("message") or "").strip()
+    if not user_id or not message:
+        return jsonify({"error": "送信先と本文の両方を入力してください"}), 400
+
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT display_name FROM user_profile WHERE user_id={PH}", (user_id,))
+            row = cur.fetchone()
+            name = row[0] if row else None
+            cur.execute(
+                f"""INSERT INTO coach_messages (user_id, name, reason, message, status, created_at, sent_at)
+                   VALUES ({PH},{PH},'手動作成（指名して送信）',{PH},'sent',{PH},{PH})""",
+                (user_id, name, message[:500], ts, ts)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True, "user_id": user_id, "name": name})
 
 
 @app.route("/api/admin/coach-messages/<int:mid>/send", methods=["POST"])

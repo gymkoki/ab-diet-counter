@@ -376,6 +376,27 @@
     </div>
     <div id="dm-status" style="font-size:13px;margin-bottom:10px"></div>
     <div id="dm-drafts"></div>
+
+    <!-- 指名して送る（AIの抽出リストに載らない会員へ、オーナーが自分で文面を書いて送る） -->
+    <details style="margin-top:14px;border-top:1px solid #F3F4F6;padding-top:12px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">
+        ✍️ 会員を指名して送る（リストに出てこない人へ）
+      </summary>
+      <div style="font-size:12px;color:#9CA3AF;margin:8px 0 10px;line-height:1.6">
+        AIの抽出は「記録が途絶えた」「体重が増えた」などに当てはまる人だけが対象です。
+        順調な人をねぎらいたいときなど、リストに出てこない相手にはここから送れます。
+      </div>
+      <select id="dm-pick-user" style="width:100%;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit;margin-bottom:8px">
+        <option value="">送信先の会員を選んでください</option>
+      </select>
+      <textarea id="dm-pick-text" oninput="updatePickCount()" placeholder="例：お変わりありませんか？いつも続けていらっしゃるのを見て、こちらも励みになっています。無理のないペースで大丈夫ですので、また気が向いたときに覗いてみてください。"
+        style="width:100%;min-height:90px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit;line-height:1.7;resize:vertical"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">
+        <span id="dm-pick-count" style="font-size:11px;color:#9CA3AF">0 / 500字</span>
+        <button class="apikey-save" style="width:auto;padding:6px 16px;font-size:13px" onclick="sendPickedCoachMessage()">✉️ この人に送信</button>
+      </div>
+    </details>
+
     <details style="margin-top:14px">
       <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">送信済みのメッセージを見る</summary>
       <div id="dm-sent" style="margin-top:10px"></div>
@@ -1125,6 +1146,59 @@
     await loadCoachMessages();
   }
 
+  // 「指名して送る」の送信先リスト（会員一覧を流用。最終利用が新しい順のまま並べる）
+  async function loadCoachRecipients() {
+    const sel = document.getElementById('dm-pick-user');
+    if (!sel) return;
+    try {
+      const r = await fetch('/api/admin/users');
+      const d = await r.json();
+      const users = (d.users || []).slice().sort((a, b) =>
+        (b.last_active || '').localeCompare(a.last_active || ''));
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">送信先の会員を選んでください</option>' + users.map(u => {
+        const name = u.display_name || ('匿名ユーザー（' + (u.user_id_short || '') + '）');
+        const last = u.last_active ? `最終記録 ${u.last_active}` : '記録なし';
+        return `<option value="${escapeHtml(u.user_id)}">${escapeHtml(name)}（${escapeHtml(last)}）</option>`;
+      }).join('');
+      if (keep) sel.value = keep;
+    } catch (e) { /* 会員一覧が取れなくても他の表示は続ける */ }
+  }
+
+  async function sendPickedCoachMessage() {
+    const sel = document.getElementById('dm-pick-user');
+    const ta  = document.getElementById('dm-pick-text');
+    const user_id = sel ? sel.value : '';
+    const message = ta ? ta.value.trim() : '';
+    if (!user_id) { dmStatus('⚠️ 送信先の会員を選んでください', 'err'); return; }
+    if (!message) { dmStatus('⚠️ 本文が空です', 'err'); return; }
+    const who = sel.options[sel.selectedIndex].textContent;
+    if (!confirm(`${who}\n\nこの文面を送信します。よろしいですか？\n\n${message}`)) return;
+    try {
+      const r = await fetch('/api/admin/coach-messages/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id, message }),
+      });
+      const d = await r.json();
+      if (!r.ok) { dmStatus('⚠️ ' + (d.error || '送信に失敗しました'), 'err'); return; }
+      ta.value = '';
+      updatePickCount();
+      dmStatus('✅ 送信しました。会員が次にアプリを開いたときに表示されます。', 'ok');
+      await loadCoachMessages();
+    } catch (e) {
+      dmStatus('⚠️ 通信エラーが発生しました', 'err');
+    }
+  }
+
+  function updatePickCount() {
+    const ta = document.getElementById('dm-pick-text');
+    const el = document.getElementById('dm-pick-count');
+    if (!ta || !el) return;
+    const n = ta.value.length;
+    el.textContent = `${n} / 500字`;
+    el.style.color = n > 500 ? '#DC2626' : '#9CA3AF';
+  }
+
   async function sendAllCoachDrafts() {
     if (!confirm('未送信の下書きをすべて会員本人に送信します。よろしいですか？')) return;
     const r = await fetch('/api/admin/coach-messages/send-all', { method: 'POST' });
@@ -1140,7 +1214,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
