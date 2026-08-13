@@ -2208,6 +2208,204 @@ def admin_api_health():
     return jsonify(info)
 
 
+# ═══════════════════════════════════════════
+#  iPhone「ショートカット」連携
+#  写真を撮った直後に「食事の写真か」を判定し、
+#  会員が「はい」を押したらそのままアプリへアップロードする。
+# ═══════════════════════════════════════════
+FOOD_CHECK_PROMPT = """この写真に「人が食べる料理・食品・飲み物」が写っているかだけを判定し、必ずJSONのみで答えてください（説明文・コードブロック不要）：
+{"is_food": trueまたはfalse}
+- true：料理・弁当・定食・お菓子・パッケージ食品・飲み物などが写真の主役
+- false：風景・人物・書類・画面のスクリーンショット・ペット・製品・レシートなど、食べ物が主役でないもの
+迷う場合（食べ物が小さく写り込んでいるだけ等）は false にする。"""
+
+
+def _shortcut_thumbnail(image_data: bytes) -> str:
+    """アプリ内・管理画面に表示する小さなサムネイル（data URL）を作る。
+    保存する食事データに埋め込むため、軽さ優先で長辺320px・JPEG品質60にする。"""
+    if Image is None:
+        return ""
+    src = None
+    try:
+        src = Image.open(io.BytesIO(image_data))
+        src = src.convert("RGB")
+        src.thumbnail((320, 320))
+        buf = io.BytesIO()
+        src.save(buf, format="JPEG", quality=60, optimize=True)
+        return "data:image/jpeg;base64," + base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+    except Exception:
+        return ""
+    finally:
+        if src is not None:
+            try: src.close()
+            except Exception: pass
+
+
+def _append_meal_item_server_side(uid: str, item: dict) -> str:
+    """サーバー側で今日の食事payloadに1件追加する（ショートカット連携用）。
+    アプリ側は同じIDの項目を取り込む作りなので、次にアプリを開いた時点で反映される。"""
+    date = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT payload FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, date))
+            row = cur.fetchone()
+            payload = {}
+            if row and row[0]:
+                try:
+                    payload = json.loads(row[0]) or {}
+                except Exception:
+                    payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            sec = payload.get("food")
+            if not isinstance(sec, dict):
+                sec = {}
+            if not isinstance(sec.get("items"), list):
+                sec["items"] = []
+            sec["items"].append(item)
+            payload["food"] = sec
+            payload_str = json.dumps(payload, ensure_ascii=False)
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO daily_meals (user_id, date, payload, created_at)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET payload=%s, created_at=%s""",
+                    (uid, date, payload_str, ts, payload_str, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO daily_meals (user_id, date, payload, created_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET payload=excluded.payload, created_at=excluded.created_at""",
+                    (uid, date, payload_str, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    return date
+
+
+@app.route("/api/shortcut/check", methods=["POST"])
+def shortcut_check():
+    """iPhoneショートカット用：撮った写真が食事かどうかだけを高速・低コストで判定する。
+    ここが true のときだけ「ABダイエットにアップしますか？」と会員に確認する。"""
+    client = get_client()
+    if client is None:
+        return jsonify({"is_food": False, "error": "APIキーが設定されていません。"}), 503
+    if "image" not in request.files:
+        return jsonify({"is_food": False, "error": "画像が見つかりません"}), 400
+
+    file = request.files["image"]
+    media_type = file.content_type
+    if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+        media_type = "image/jpeg"
+    try:
+        base64_image, media_type = prepare_image_for_api(file.read(), media_type)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",   # 判定だけなので軽量・低コストなモデル
+            max_tokens=50,
+            timeout=30.0,
+            system=[{"type": "text", "text": FOOD_CHECK_PROMPT}],
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64_image}},
+                {"type": "text", "text": "この写真を判定してください。"},
+            ]}],
+        )
+        text = "".join(b.text for b in (getattr(response, "content", []) or [])
+                       if getattr(b, "type", "") == "text")
+        parsed = json.loads(text[text.find("{"):text.rfind("}") + 1])
+        return jsonify({"is_food": bool(parsed.get("is_food"))})
+    except Exception as e:
+        # 判定に失敗したときは確認を出さない（誤って毎回聞かれるのを防ぐ）
+        print(f"[SHORTCUT-CHECK][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"is_food": False})
+
+
+@app.route("/api/shortcut/upload", methods=["POST"])
+def shortcut_upload():
+    """iPhoneショートカット用：写真を解析して、今日の食事記録にそのまま追加する。
+    戻り値の message は、ショートカットの通知にそのまま出せる日本語にする。"""
+    uid = (request.form.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"ok": False, "message": "連携コード（ユーザーID）が設定されていません。"}), 400
+    client = get_client()
+    if client is None:
+        return jsonify({"ok": False, "message": "ただいまAI解析をご利用いただけません。運営が対応しています。"}), 503
+    if "image" not in request.files:
+        return jsonify({"ok": False, "message": "写真が見つかりませんでした。"}), 400
+
+    file = request.files["image"]
+    image_data = file.read()
+    media_type = file.content_type
+    if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+        media_type = "image/jpeg"
+
+    _log_usage(uid)
+    _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))
+
+    try:
+        base64_image, api_media_type = prepare_image_for_api(image_data, media_type)
+        user_content = [{"type": "image", "source": {
+            "type": "base64", "media_type": api_media_type, "data": base64_image}}]
+        note = (request.form.get("note") or "").strip()
+        if note:
+            user_content.append({"type": "text", "text": (
+                "━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "【ユーザーからの補足情報（写真より最優先で反映すること）】\n"
+                f"{note[:1000]}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━")})
+        adv = _advice_context(request.form.get("gender", ""), request.form.get("goal", ""))
+        if adv:
+            user_content.append({"type": "text", "text": adv})
+
+        result = create_and_parse(
+            client,
+            model="claude-sonnet-4-6",
+            max_tokens=16000,
+            system=[{"type": "text", "text": ANALYSIS_PROMPT,
+                     "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_content}],
+        )
+    except anthropic.APIError as e:
+        return jsonify({"ok": False, "message": _api_error_message(e, "SHORTCUT")}), 503
+    except Exception as e:
+        print(f"[SHORTCUT-UPLOAD][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"ok": False, "message": "解析できませんでした。アプリからお試しください。"}), 500
+
+    result.pop("clarify", None)
+    item = {
+        # IDはアプリ側と同じ「ミリ秒×100」方式にして、取り込み時に衝突しないようにする
+        "id": int(time.time() * 1000) * 100,
+        "previewSrc": _shortcut_thumbnail(image_data),
+        "result": result,
+        "loading": False,
+        "error": None,
+        "fromShortcut": True,
+    }
+    try:
+        _append_meal_item_server_side(uid, item)
+    except Exception as e:
+        print(f"[SHORTCUT-UPLOAD][SAVE-ERROR] {type(e).__name__}: {e}")
+        return jsonify({"ok": False, "message": "保存できませんでした。アプリからお試しください。"}), 500
+
+    b = result.get("total_b_count")
+    p = result.get("total_protein_g")
+    v = result.get("total_veg_g")
+    names = "・".join([f.get("name", "") for f in (result.get("foods") or [])][:3])
+    msg = f"✅ 記録しました｜B{b if b is not None else '-'}"
+    if isinstance(p, (int, float)):
+        msg += f"・🥩{round(p)}g"
+    if isinstance(v, (int, float)):
+        msg += f"・🥗{round(v)}g"
+    if names:
+        msg += f"（{names}）"
+    return jsonify({"ok": True, "message": msg, "total_b_count": b,
+                    "total_protein_g": p, "total_veg_g": v})
+
+
 class _CoachNoApiKey(Exception):
     """コーチ提案：APIキー未設定を表す（一般エラーと区別してHTTP 503を返すため）。"""
 
