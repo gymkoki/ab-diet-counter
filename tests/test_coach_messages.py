@@ -214,3 +214,53 @@ def test_prompt_writes_to_member_not_owner():
     # 安全面（極端な食事制限を勧めない・責めない）
     assert "極端な糖質制限・絶食・断食は絶対に提案しない" in src
     assert "責めない・急かさない" in src
+
+
+# ── 指名して送る（AIの抽出リストに載らない会員へ、オーナーが自分で書いて送る）──
+def test_manual_message_reaches_only_that_member():
+    """リストに載っていない会員でも、指名して送れば本人にだけ届くこと。"""
+    _reset_db()
+    _seed([("u-a", "山田", 0, -1.2), ("u-b", "奥松", 0, -0.8)])   # どちらも順調＝AI抽出の対象外
+    assert m._members_needing_outreach(m._collect_cut_member_stats()) == [], \
+        "前提が崩れています（この2人はAI抽出の対象外のはず）"
+
+    c = m.app.test_client()
+    body = {"user_id": "u-b", "message": "お変わりありませんか？無理のないペースで大丈夫です。"}
+    r = c.post("/api/admin/coach-messages/create", json=body, headers=ADMIN)
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert r.get_json()["name"] == "奥松"
+
+    got_b = c.get("/api/coach-messages?user_id=u-b").get_json()["items"]
+    assert len(got_b) == 1 and got_b[0]["message"] == body["message"]
+    assert c.get("/api/coach-messages?user_id=u-a").get_json()["items"] == [], \
+        "指名していない会員にメッセージが届いています"
+
+    # 管理画面では「送信済み」に入り、未送信の下書きは増えない
+    d = c.get("/api/admin/coach-messages", headers=ADMIN).get_json()
+    assert d["drafts"] == []
+    assert any(x["user_id"] == "u-b" for x in d["sent"])
+
+
+def test_manual_message_validates_input():
+    """送信先・本文が欠けていたら送らないこと。"""
+    _reset_db()
+    _seed([("u-a", "山田", 0, -1.2)])
+    c = m.app.test_client()
+    assert c.post("/api/admin/coach-messages/create", json={"message": "本文"}, headers=ADMIN).status_code == 400
+    assert c.post("/api/admin/coach-messages/create", json={"user_id": "u-a"}, headers=ADMIN).status_code == 400
+    assert c.post("/api/admin/coach-messages/create",
+                  json={"user_id": "u-a", "message": "   "}, headers=ADMIN).status_code == 400
+    assert c.get("/api/coach-messages?user_id=u-a").get_json()["items"] == []
+    # 未認証では存在を隠す
+    assert c.post("/api/admin/coach-messages/create",
+                  json={"user_id": "u-a", "message": "x"}).status_code == 404
+
+
+def test_prompt_is_gentle():
+    """オーナー指示（2026-08「もっと優しく」）が文面ルールに入っていること。"""
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "app.py"), encoding="utf-8").read()
+    # 数字で事実を突きつけない
+    assert "日数・体重の増減・Bカウントなどの数字は本文に書かない" in src
+    # 指導口調にしない
+    assert "命令形・指導口調にしない" in src
