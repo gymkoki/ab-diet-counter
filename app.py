@@ -2301,6 +2301,129 @@ def _get_or_generate_coach_advice():
     return advice, False, len(members)
 
 
+# ── 毎朝の「Claude Code に頼める改善案」──────────────────────────
+# オーナー指示 2026-08：毎朝のレポートを見て、アプリをどう直せるかを毎朝提案してほしい。
+# 手間をかけずに実行できるよう、提案は「そのままコピペできる依頼文」の形で出す。
+#
+# AIが実在しない機能を提案しないよう、アプリの現状を下記にまとめてプロンプトへ渡す。
+APP_CAPABILITIES = """【アプリの現状（2026-08時点）】
+- 会員側：写真/文章での食事解析（Bカウント・タンパク質・野菜を推定）、Bの手動追加、コピーご飯、
+  体重記録、ひとこと日記（50字）、運動記録（種目＋時間、ダイヤル入力）、履歴（グラフ＋日別リスト）、
+  進捗タブ（3項目の達成率の平均点＋キャラのダンス）、アプリ内お知らせ、修正希望フォーム、
+  オーナーからの個別メッセージ受信、iPhoneショートカット連携。
+- 管理側（ダッシュボード /reall-kanri）：全体KPI、日別推移、会員一覧、体重インサイト、
+  注目メンバー（痩せた3人/痩せていない3人＋食事写真）、機能別利用状況、要望一覧、
+  個別の声かけメッセージ（AI下書き→承認送信／会員を指名して送信）。
+- 自動化：毎朝8時のデイリーレポートメール、1日1回のバックアップメール。
+- 技術：Flask（app.py）＋1ファイルのフロント（templates/index.html）、PostgreSQL、Renderで自動デプロイ。
+  変更は Claude Code に日本語で頼めば、実装→テスト→PR→マージまで自動で進む。"""
+
+DEV_PROPOSAL_PROMPT = """あなたはABダイエットアプリの開発パートナー（Claude Code）です。
+読み手はジムのオーナー（非エンジニア）で、毎朝のレポートメールとして届きます。
+
+【ミッション】その日の会員データを見て、「アプリをこう直せば会員の減量が進む」という
+改善案を3つ提案する。オーナーは提案文をそのままコピーして私（Claude Code）に貼るだけで
+実装が始まる。だから提案は必ず「実装できる具体的な変更」にすること。
+
+""" + APP_CAPABILITIES + """
+
+【提案の条件】
+- 3つとも、いま出ているデータの課題に直接効くものにする（データ根拠を必ず示す）。
+- 「運用でがんばる」ではなく「アプリの機能・画面・文言をどう変えるか」を提案する。
+- 1つは必ず「小さくてすぐ終わる改善」にする（文言・表示・通知の調整など）。
+- すでにある機能の焼き直しを提案しない（上の現状リストにある機能は作らない）。
+- 会員に不利益・不快感を与える変更（通知の連投、体重の晒し、煽り文言）は提案しない。
+- effort は "小"（30分以内）/"中"（半日）/"大"（1日以上）のいずれか。
+
+【出力形式】必ず次のJSONだけを出力する（前置き・説明・コードブロックは一切書かない）：
+{"proposals":[{"title":"（15字以内の見出し）","why":"（データ根拠と狙い。60〜100字）",
+"effort":"小","prompt":"（Claude Codeにそのまま貼れる依頼文。日本語1〜3文。何をどう変えるかを具体的に）"}]}
+必ず3件出力すること。"""
+
+
+def _get_or_generate_dev_proposals():
+    """「Claude Code に頼める改善案」を返す（当日キャッシュ優先・無ければAIで生成）。
+    戻り値：(proposals(list), cached(bool))／生成失敗時は例外を送出する。"""
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    cache_key = f"dev-proposals-{today}"
+    cached_raw = _get_setting(cache_key, "")
+    if cached_raw:
+        try:
+            return json.loads(cached_raw), True
+        except Exception:
+            pass   # 壊れていたら作り直す
+
+    client = get_client()
+    if client is None:
+        raise _CoachNoApiKey()
+
+    members = _collect_cut_member_stats()
+    safe = [{k: v for k, v in m.items() if k != "uid"} for m in members]
+    try:
+        usage = _collect_feature_usage()
+    except Exception as e:
+        print(f"[DEV-PROPOSAL] feature usage skipped: {type(e).__name__}: {e}")
+        usage = {}
+
+    user_text = (
+        f"今日の日付：{today}\n"
+        f"減量希望メンバー：{len(members)}名\n"
+        f"会員データ：\n{json.dumps(safe, ensure_ascii=False)}\n\n"
+        f"機能別の利用状況（直近30日）：\n{json.dumps(usage, ensure_ascii=False)}"
+    )
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        timeout=90.0,
+        system=[{"type": "text", "text": DEV_PROPOSAL_PROMPT}],
+        messages=[{"role": "user", "content": [{"type": "text", "text": user_text}]}],
+    )
+    raw = "".join(
+        b.text for b in (getattr(response, "content", []) or [])
+        if getattr(b, "type", "") == "text"
+    ).strip()
+    match = re.search(r"\{.*\}", raw, re.S)
+    if not match:
+        raise ValueError("AIの応答からJSONを取得できませんでした")
+
+    proposals = []
+    for item in (json.loads(match.group(0)).get("proposals") or []):
+        title  = str(item.get("title") or "").strip()
+        prompt = str(item.get("prompt") or "").strip()
+        if not title or not prompt:
+            continue
+        proposals.append({
+            "title":  title[:40],
+            "why":    str(item.get("why") or "").strip()[:200],
+            "effort": str(item.get("effort") or "").strip()[:4] or "中",
+            "prompt": prompt[:400],
+        })
+    proposals = proposals[:3]
+    if proposals:
+        try:
+            _set_setting(cache_key, json.dumps(proposals, ensure_ascii=False))
+        except Exception:
+            pass
+    return proposals, False
+
+
+@app.route("/api/admin/dev-proposals")
+@_admin_required
+def admin_dev_proposals():
+    """デイリーレポート用：今日のデータを踏まえた「Claude Codeに頼める改善案」を返す。
+    同じ日は結果をキャッシュして返す（テスト送信と朝の本送信で二重にAIを呼ばない）。"""
+    try:
+        proposals, cached = _get_or_generate_dev_proposals()
+    except _CoachNoApiKey:
+        return jsonify({"error": "APIキーが設定されていません"}), 503
+    except Exception as e:
+        print(f"[DEV-PROPOSAL][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "改善案の生成に失敗しました。次回のレポートで再試行します。"}), 502
+    return jsonify({"date": datetime.datetime.now(JST).strftime("%Y-%m-%d"),
+                    "proposals": proposals, "cached": cached})
+
+
 @app.route("/api/admin/coach-advice")
 @_admin_required
 def admin_coach_advice():
@@ -2807,7 +2930,12 @@ def admin_spotlight():
 @app.route("/api/admin/feature-usage")
 @_admin_required
 def admin_feature_usage():
-    """ダッシュボード用：機能別の利用状況（どの機能が実際に使われているか）。
+    """ダッシュボード用：機能別の利用状況（どの機能が実際に使われているか）。"""
+    return jsonify(_collect_feature_usage())
+
+
+def _collect_feature_usage():
+    """機能別の利用状況を集計して返す（ダッシュボードと開発提案で共用）。
 
     ・体重／運動／日記／食事記録／解析回数は全期間保持されるため直近30日で正確に集計できる。
     ・食事の種別内訳（写真／文章／手動B／コピーご飯）は daily_meals が MEALS_RETAIN_DAYS 日で
@@ -2956,7 +3084,7 @@ def admin_feature_usage():
     ]
     meal_types.sort(key=lambda t: -t["records"])
 
-    return jsonify({
+    return {
         "period_days":      days,
         "active_users":     active_users,
         "features":         features,
@@ -2969,7 +3097,7 @@ def admin_feature_usage():
             "avg_len":     diary_avg_len,
             "avg_days":    round(d_records / d_users, 1) if d_users else 0,
         },
-    })
+    }
 
 
 @app.route("/api/admin/users")
