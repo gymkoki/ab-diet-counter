@@ -6,6 +6,7 @@ import gzip
 import base64
 import json
 import time
+import random
 import secrets
 import datetime
 import threading
@@ -216,6 +217,42 @@ def _create_with_server_tools(client, **kwargs):
     return response
 
 
+# ── AI呼び出しの再試行設定 ────────────────────────────────────
+# 方針（2026-08）：利用者に「混み合っています」と出さないため、サーバー側で粘る。
+#  ・過負荷(529)やレート制限(429)はAPIが“即座に”エラーを返すので、待って再試行すれば
+#    ほぼ回復する。ここで早々に諦めると、画面にエラーが出て利用者が撮り直す羽目になる。
+#  ・一方タイムアウトは1回あたりクライアントtimeout(140秒)を丸ごと消費する。
+#    そこで回数ではなく「総経過時間の予算」で管理し、gunicornの --timeout=300秒を
+#    超えてワーカーが強制終了される（＝500/502）前に必ず自分で打ち切る。
+RETRY_MAX_ATTEMPTS   = 6            # 過負荷が続くときに粘る上限回数
+RETRY_TIME_BUDGET_SEC = 235.0       # 再試行に使ってよい総時間（gunicorn 300秒に対する余裕）
+RETRY_RESERVE_SEC     = 20.0        # 応答生成・送信ぶんの取り置き
+RETRY_STATUS_CODES    = (429, 500, 502, 503, 529)
+
+# サーバー側で粘っても解析し切れなかったときに、はじめて会員に見せる文言。
+# 「混み合っています／時間をおいて再試行してください」とは書かない：
+# 写真は端末に保存済みで、アプリを開き直せば自動で解析を再開するため、
+# 利用者に撮り直しややり直しの手間をかけさせない案内にする。
+ANALYSIS_BUSY_MESSAGE = (
+    "解析に少し時間がかかっています。写真は保存されているので、"
+    "このままお待ちいただくか、アプリを開き直すと自動で続きから計算します。"
+)
+
+
+def _retry_wait_seconds(err, attempt):
+    """次の再試行までの待ち時間（秒）。
+    APIが Retry-After を返していればそれに従い、無ければ指数バックオフする。"""
+    try:
+        resp = getattr(err, "response", None)
+        raw = resp.headers.get("retry-after") if resp is not None else None
+        if raw:
+            return max(0.5, min(20.0, float(raw)))
+    except Exception:
+        pass
+    base = min(8.0, 1.0 * (2 ** attempt))       # 1s, 2s, 4s, 8s, 8s...
+    return base + random.uniform(0, 0.4)        # 同時アクセスが重ならないよう軽く散らす
+
+
 def create_and_parse(client, **kwargs):
     """messages.create を呼び、失敗しても数回まで自動リトライしてからJSONを返す。
     ・空応答／JSONが壊れていた場合は生成し直す（AIの一時的なブレ対策）
@@ -224,11 +261,9 @@ def create_and_parse(client, **kwargs):
     返却前に total_* を内訳(foods)の合計へ揃え、合計と明細の食い違いを防ぐ。"""
     detail = ""
     last_json_err = None
-    # 最大2回まで（1回失敗したらもう1回だけ生成し直す）。
-    # クライアントtimeout=140秒 × 2回 ＝ 最大280秒で、gunicornの --timeout=300秒を
-    # 超えない。これでワーカーが強制終了されて500/502になるのを防ぐ。
-    attempts = 2
-    for attempt in range(attempts):
+    started = time.monotonic()
+    for attempt in range(RETRY_MAX_ATTEMPTS):
+        err = None
         try:
             response = _create_with_server_tools(client, **kwargs)
             result = recompute_totals(parse_ai_result(response))
@@ -241,14 +276,22 @@ def create_and_parse(client, **kwargs):
         except json.JSONDecodeError as e:
             last_json_err = e   # JSONが壊れていた → もう一度生成し直す
         except (anthropic.RateLimitError, anthropic.InternalServerError,
-                anthropic.APITimeoutError, anthropic.APIConnectionError):
-            pass  # 一時的なAPIエラーは待って再試行
+                anthropic.APITimeoutError, anthropic.APIConnectionError) as e:
+            err = e  # 一時的なAPIエラーは待って再試行
         except anthropic.APIStatusError as e:
             # 529(過負荷) や 5xx など一時的なものだけ再試行。その他は即失敗させる。
-            if getattr(e, "status_code", None) not in (429, 500, 502, 503, 529):
+            if getattr(e, "status_code", None) not in RETRY_STATUS_CODES:
                 raise
-        if attempt < attempts - 1:
-            time.sleep(0.7)  # 軽くバックオフしてから1回だけ再試行
+            err = e
+        # 次を試す時間が残っているか（gunicornに切られる前に必ず自分で打ち切る）
+        wait = _retry_wait_seconds(err, attempt)
+        elapsed = time.monotonic() - started
+        if elapsed + wait + RETRY_RESERVE_SEC >= RETRY_TIME_BUDGET_SEC:
+            print(f"[RETRY] 予算切れで打ち切り: attempt={attempt + 1} elapsed={elapsed:.1f}s")
+            break
+        print(f"[RETRY] {attempt + 1}回目が失敗。{wait:.1f}秒待って再試行します "
+              f"({type(err).__name__ if err else detail or 'invalid-json'})")
+        time.sleep(wait)
     # リトライしても駄目だった場合は、呼び出し側でエラー表示できるよう送出する
     if last_json_err is not None:
         raise last_json_err
@@ -2228,7 +2271,7 @@ def _api_error_message(e, tag: str) -> str:
         # 運営側の残高・請求の問題。会員には運営が対応中であることだけ伝える。
         return ("ただいまAI解析を一時的にご利用いただけません。"
                 "運営が対応していますので、しばらくしてからお試しください。")
-    return "AI解析が一時的にうまくいきませんでした。少し時間をおいて、もう一度お試しください。"
+    return ANALYSIS_BUSY_MESSAGE
 
 
 @app.route("/api/admin/api-health")
@@ -5039,54 +5082,10 @@ def get_daily_meals():
         return jsonify({"payload": None})
 
 
-# 事前チェック用プロンプト：栄養計算はせず「確認質問が必要か」だけを判定する
-PRECHECK_PROMPT = """あなたは食事写真の事前チェック係です。栄養計算はせず、以下だけを判定して必ずJSONのみで回答してください（説明文・コードブロック不要）：
-{
-  "staple": { "present": trueまたはfalse, "food_name": "主食名（例：白米・パスタ・食パン）", "fixed_portion": trueまたはfalse },
-  "oil": { "possible": trueまたはfalse }
-}
-- staple.present：白米・ご飯・丼もののご飯・チャーハン・カレーのご飯・パン・麺類などの主食が写っているか。
-- staple.fixed_portion：量が確定できる場合のみtrue。おにぎり1個・食パン1枚など個数で分かる／栄養成分表示が写っている／主食が明らかに少量（100g未満）の場合。丼・皿盛りのご飯や麺は具や器で量が隠れるため必ずfalse。
-- oil.possible：炒め物・揚げ物・アヒージョ・オイル系ドレッシングなど、調理油を大さじ0.5以上使っていそうか。
-"""
-
-
-@app.route("/precheck", methods=["POST"])
-def precheck():
-    """本解析の前に「大盛り・油の確認質問が必要か」だけを高速・低コストで判定する。
-    ここで質問→回答を本解析のnote（補足）に含めることで、フル解析が1回で済む。"""
-    client = get_client()
-    if client is None:
-        return jsonify({"error": "APIキーが設定されていません。"}), 401
-    if "image" not in request.files:
-        return jsonify({"error": "画像が見つかりません"}), 400
-
-    file = request.files["image"]
-    image_data = file.read()
-    media_type = file.content_type
-    if media_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
-        media_type = "image/jpeg"
-    base64_image, media_type = prepare_image_for_api(image_data, media_type)
-
-    try:
-        result = create_and_parse(
-            client,
-            model="claude-haiku-4-5-20251001",   # 事前チェックは高速・低コストのHaiku
-            max_tokens=300,
-            system=[{"type": "text", "text": PRECHECK_PROMPT}],
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64_image}},
-                    {"type": "text", "text": "この写真を判定してください。"},
-                ],
-            }],
-        )
-        return jsonify(result)
-    except Exception as e:
-        # 事前チェックの失敗は致命的ではない（本解析後の確認でフォローされる）
-        return jsonify({"error": f"事前チェックに失敗しました: {e}"}), 502
-
+# ※ かつてここに /precheck（Haikuで「大盛り？油は？」を事前判定するエンドポイント）が
+#    あったが削除した（オーナー指示 2026-08）。Haikuでは大盛り判定の精度が出ず、
+#    事前チェック＋本解析で2回計算が走り、待ち時間もコストも二重になっていたため。
+#    栄養解析は初手からSonnetで1回だけ行う。二段階に戻さないこと。
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -5170,13 +5169,14 @@ def analyze():
         return jsonify(result)
 
     except EmptyAIResponse as e:
-        return jsonify({"error": f"解析結果を取得できませんでした（{e.detail}）。もう一度お試しください。"}), 502
+        print(f"[ANALYZE][EMPTY] {e.detail}")
+        return jsonify({"error": ANALYSIS_BUSY_MESSAGE}), 503
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。写真をもう一度撮り直してお試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
     except (anthropic.APITimeoutError, anthropic.APIConnectionError):
-        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
+        return jsonify({"error": ANALYSIS_BUSY_MESSAGE}), 503
     except anthropic.APIError as e:
         return jsonify({"error": _api_error_message(e, "ANALYZE")}), 503
     except Exception as e:
@@ -5298,13 +5298,14 @@ def reanalyze():
         return jsonify(result)
 
     except EmptyAIResponse as e:
-        return jsonify({"error": f"再計算の結果を取得できませんでした（{e.detail}）。もう一度お試しください。"}), 502
+        print(f"[REANALYZE][EMPTY] {e.detail}")
+        return jsonify({"error": ANALYSIS_BUSY_MESSAGE}), 503
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。"}), 401
     except (anthropic.APITimeoutError, anthropic.APIConnectionError):
-        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
+        return jsonify({"error": ANALYSIS_BUSY_MESSAGE}), 503
     except anthropic.APIError as e:
         return jsonify({"error": _api_error_message(e, "REANALYZE")}), 503
     except Exception as e:
@@ -5374,13 +5375,14 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
         return jsonify(result)
 
     except EmptyAIResponse as e:
-        return jsonify({"error": f"解析結果を取得できませんでした（{e.detail}）。もう一度お試しください。"}), 502
+        print(f"[ANALYZE][EMPTY] {e.detail}")
+        return jsonify({"error": ANALYSIS_BUSY_MESSAGE}), 503
     except json.JSONDecodeError as e:
         return jsonify({"error": f"分析結果の解析に失敗しました。もう一度お試しください。({e})"}), 500
     except anthropic.AuthenticationError:
         return jsonify({"error": "APIキーが無効です。設定画面で正しいキーを入力してください。"}), 401
     except (anthropic.APITimeoutError, anthropic.APIConnectionError):
-        return jsonify({"error": "AIサーバーが混み合っているようです。少し時間をおいて、もう一度お試しください。"}), 503
+        return jsonify({"error": ANALYSIS_BUSY_MESSAGE}), 503
     except anthropic.APIError as e:
         return jsonify({"error": _api_error_message(e, "ANALYZE-TEXT")}), 503
     except Exception as e:
