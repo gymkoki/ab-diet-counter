@@ -17,7 +17,7 @@ from email.mime.base import MIMEBase
 from email.header import Header
 from email import encoders
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory
 import anthropic
 from dotenv import load_dotenv, set_key
 
@@ -29,6 +29,10 @@ except ImportError:
 ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(ENV_PATH, override=True)
 app = Flask(__name__)
+
+# このプロセスが起動した時刻。/api/status と管理画面で「起動からの経過時間」を出し、
+# ワーカーが頻繁に再起動していないか（＝アプリが度々応答不能になっていないか）を見るために使う。
+_PROCESS_STARTED_AT = time.time()
 
 # アップロード上限（メモリ保護）。巨大ファイルはここで413にして受け付けない。
 # フロントは画像を圧縮して送るため通常は1MB未満。16MBは十分な余裕。
@@ -3789,10 +3793,68 @@ def _advice_context(gender, goal):
     )
 
 
+def _process_rss_mb():
+    """このプロセスのメモリ使用量(MB)。Linux以外や取得失敗時は None。"""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return round(int(line.split()[1]) / 1024, 1)
+    except Exception:
+        pass
+    return None
+
+
+@app.route("/api/admin/server-health")
+@_admin_required
+def admin_server_health():
+    """アプリが遅い原因を切り分けるための情報。
+
+    uptime_sec が何度見ても短い（数分〜数十分）＝ワーカーが再起動を繰り返している。
+    その間アプリは応答できず、利用者には「白い画面」「サーバー起動中…」と見える。
+    原因はたいてい (1) gunicorn の --max-requests による定期再起動、
+    (2) メモリ上限超過によるRenderの強制再起動 のどちらか。
+    """
+    uptime = int(time.time() - _PROCESS_STARTED_AT)
+    rss = _process_rss_mb()
+    if uptime < 30 * 60:
+        verdict = ("再起動が頻繁に起きている可能性があります。"
+                   "この表示を数分あけて何度か開き、毎回この値が短いままなら再起動が繰り返されています。")
+    elif uptime < 6 * 3600:
+        verdict = "起動から数時間が経過しています。おおむね安定しています。"
+    else:
+        verdict = "長時間安定して動いています。"
+    return jsonify({
+        "uptime_sec":   uptime,
+        "started_at":   datetime.datetime.fromtimestamp(_PROCESS_STARTED_AT, JST).isoformat(),
+        "rss_mb":       rss,
+        "db":           "PostgreSQL" if USE_PG else "SQLite",
+        "verdict":      verdict,
+    })
+
+
+@app.route("/sw.js")
+def service_worker():
+    """サービスワーカーをルート直下で配信する。
+
+    /static/sw.js のままだと制御できる範囲が /static/ 配下に限られ、
+    肝心のトップページ（HTML）をキャッシュできない。
+    SW自体はキャッシュさせない（更新や停止を即座に全端末へ届けるため）。
+    """
+    resp = send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 @app.route("/api/status")
 def status():
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    return jsonify({"configured": bool(key)})
+    return jsonify({
+        "configured": bool(key),
+        # 起動からの経過秒。短い値が何度も出る＝ワーカーが再起動を繰り返している合図。
+        "uptime_sec": int(time.time() - _PROCESS_STARTED_AT),
+    })
 
 
 @app.route("/ping")

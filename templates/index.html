@@ -801,7 +801,7 @@
 
 <div id="warmup-banner">
   <div class="ws"></div>
-  <span>サーバー起動中… 初回のみ30秒ほどかかります ☕</span>
+  <span>接続に時間がかかっています… そのままお待ちください ☕</span>
 </div>
 
 <div id="view-main">
@@ -5010,10 +5010,14 @@ function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// warmup
+// ── サーバーへの疎通確認 ──
+// 応答が返るまでに時間がかかっているときだけ案内を出す。
+// 以前は「初回のみ30秒ほどかかります」と出していたが、これは無料プランで
+// サーバーがスリープしていた頃の文言。有料プランではスリープしないため、
+// 実態に合った文言（混雑・回線状況）に変更した。
 (function() {
   const banner = document.getElementById('warmup-banner');
-  const t = setTimeout(() => { banner.style.display = 'flex'; }, 10000);
+  const t = setTimeout(() => { banner.style.display = 'flex'; }, 8000);
   function ping() {
     fetch('/api/status').then(r => r.json())
       .then(() => { clearTimeout(t); banner.style.display = 'none'; })
@@ -5021,6 +5025,15 @@ function esc(str) {
   }
   ping();
 })();
+
+// ── サービスワーカー登録（起動を速くする） ──
+// サーバーが一瞬でも応答しないとき（デプロイ直後・ワーカー再起動）に
+// 前回の画面をすぐ出して「真っ白な画面」を防ぐ。詳細は static/sw.js を参照。
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 
 // ═══════════════════════════════════════════
 //  ホーム画面追加バナー（各端末2回まで）
