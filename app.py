@@ -2121,6 +2121,19 @@ COACH_PROMPT = """あなたはABダイエットを運営するジムの減量コ
 - avg_b_7d：直近7日の1日平均Bカウント（食事の量的指標。減量中の目安は1日7回以内、少ないほど食事管理が良い）
 - recorded_days_7d：直近7日で食事記録をした日数（7が満点。少ない=サボり気味）
 - days_since：最後の記録からの経過日数（3以上は離脱リスク）
+- avg_meals_per_day_7d：直近7日の「1日あたり記録した食事の件数」。1日3件前後が普通。
+  1.5件未満は、食べたものの一部しか記録していない（記録漏れ）可能性が高い。
+- b_target：その会員の1日のBカウント目標の上限。
+
+【最重要・記録漏れの見抜き方（助言を間違えないために必ず判定する）】
+「Bカウントが目標を大きく下回っている（目安：avg_b_7d が b_target の6割未満）のに、
+体重が増えている・減っていない」場合、それは食べ過ぎではなく【記録漏れ】を疑う。
+avg_meals_per_day_7d が少ない（2件未満）ならほぼ確実に記録漏れ。
+- この人に「Bカウントをもっと減らしましょう」と助言してはいけない【禁止】。
+  申告より実際は多く食べているので、さらに減らす指示は逆効果で、やる気も損なう。
+- 正しい助言は「記録できていない食事がないか確認する」方向にする。
+  例：「間食や飲み物も含めて、食べたものを全部記録できていますか？まずは1日3食＋間食の記録を揃えましょう」
+- 逆に、Bカウントが目標を超えていて体重も増えている人には、通常どおり食事量の見直しを提案してよい。
 
 【出力形式】以下の3部構成の日本語プレーンテキスト（400〜600字・箇条書き中心・前置きや締めの挨拶は不要）：
 ■ 全体の状況（2行以内：ペース達成者/未達者の割合と今日の最重要テーマ）
@@ -2223,8 +2236,8 @@ def _collect_cut_member_stats():
     conn = _get_conn()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT user_id, display_name, height_cm FROM user_profile WHERE goal = 'cut'")
-        cut = {r[0]: {"name": r[1], "height_cm": r[2]} for r in cur.fetchall()}
+        cur.execute("SELECT user_id, display_name, height_cm, gender FROM user_profile WHERE goal = 'cut'")
+        cut = {r[0]: {"name": r[1], "height_cm": r[2], "gender": r[3]} for r in cur.fetchall()}
         if not cut:
             return []
 
@@ -2245,8 +2258,37 @@ def _collect_cut_member_stats():
 
         cur.execute("SELECT user_id, MAX(date) FROM daily_b_count GROUP BY user_id")
         last_by_uid = {r[0]: r[1] for r in cur.fetchall()}
+
+        # 直近7日の「1日あたり記録した食事の件数」。少なすぎる場合は記録漏れの疑い
+        # （Bカウントが低いのに痩せない人を、食べ過ぎと取り違えないための材料）。
+        cur.execute(
+            f"SELECT user_id, date, payload FROM daily_meals WHERE date>={PH}",
+            (d7_start,)
+        )
+        meal_rows = cur.fetchall()
     finally:
         conn.close()
+
+    MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+    meal_counts = {}   # uid -> [その日の記録件数, ...]
+    for uid, _dt, payload_str in meal_rows:
+        if uid not in cut:
+            continue
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        n = 0
+        for k in MEAL_KEYS:
+            sec = payload.get(k)
+            if isinstance(sec, dict):
+                for it in (sec.get("items") or []):
+                    if isinstance(it, dict) and it.get("result"):
+                        n += 1
+        if n:
+            meal_counts.setdefault(uid, []).append(n)
 
     members = []
     today_d = now.date()
@@ -2257,6 +2299,10 @@ def _collect_cut_member_stats():
         avg_b, rec_days = b7.get(uid, (None, 0))
         last = last_by_uid.get(uid)
         days_since = (today_d - datetime.date.fromisoformat(last)).days if last else None
+        counts = meal_counts.get(uid, [])
+        avg_meals = round(sum(counts) / len(counts), 1) if counts else None
+        # 1日のBカウント目標の上限（減量：女性4回以内／男性6回以内。性別未設定は5で概算）
+        b_target = {"female": 4, "male": 6}.get(prof.get("gender") or "", 5)
         members.append({
             "uid": uid,
             "name": prof["name"] or None,
@@ -2266,8 +2312,49 @@ def _collect_cut_member_stats():
             "avg_b_7d": avg_b,
             "recorded_days_7d": rec_days,
             "days_since": days_since,
+            "avg_meals_per_day_7d": avg_meals,
+            "b_target": b_target,
         })
     return members
+
+
+@app.route("/api/admin/attention-flags")
+@_admin_required
+def admin_attention_flags():
+    """【管理者専用】要注意メンバーを種類別に分けて返す。
+    ・記録漏れ疑い：ちゃんと記録しているのにBカウントが目標を大きく下回り、体重が減っていない人。
+      → 「食べ過ぎ」ではなく「記録できていない食事がある」可能性が高く、声かけの中身が逆になるため分ける。
+    ・長期離脱：14日以上まったく記録がない人。
+    ※このAPIは管理画面専用。会員向けアプリ(index.html)からは決して呼ばない。"""
+    members = _collect_cut_member_stats()
+
+    under_recording = []
+    long_absent = []
+    for mem in members:
+        days_since = mem.get("days_since")
+        if days_since is not None and days_since >= 14:
+            long_absent.append({k: v for k, v in mem.items() if k != "uid"} | {"user_id": mem["uid"]})
+            continue
+        avg_b   = mem.get("avg_b_7d")
+        target  = mem.get("b_target") or 5
+        change  = mem.get("change_30d_kg")
+        rec_days = mem.get("recorded_days_7d") or 0
+        # 「記録している(直近7日で3日以上)」かつ「Bが目標の6割未満」かつ「体重が減っていない」
+        if (rec_days >= 3 and avg_b is not None and avg_b < target * 0.6
+                and change is not None and change >= 0):
+            row = {k: v for k, v in mem.items() if k != "uid"} | {"user_id": mem["uid"]}
+            meals = mem.get("avg_meals_per_day_7d")
+            # 1日の記録件数が2件未満なら、記録漏れの確度が高い
+            row["confidence"] = "high" if (meals is not None and meals < 2) else "medium"
+            under_recording.append(row)
+
+    under_recording.sort(key=lambda x: (-(x.get("change_30d_kg") or 0)))
+    long_absent.sort(key=lambda x: -(x.get("days_since") or 0))
+    return jsonify({
+        "under_recording": under_recording,
+        "long_absent": long_absent,
+        "total_cut_members": len(members),
+    })
 
 
 def _get_or_generate_coach_advice():
@@ -4827,6 +4914,55 @@ def post_daily_meals():
         finally:
             conn.close()
     return jsonify({"ok": True})
+
+
+@app.route("/api/my-meal-counts")
+def my_meal_counts():
+    """【会員本人用】自分の直近数日の「1日あたりの記録件数」だけを軽量に返す。
+    記録漏れ（1日1件しか記録していない日が続く）をアプリ側でやさしく知らせるために使う。
+    写真(base64)は返さないので通信が軽い。自分のuser_idぶんしか返さない
+    （管理画面のデータや他の会員のデータは一切含まない）。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"days": []})
+    try:
+        days = max(1, min(14, int(request.args.get("days", 3))))
+    except (TypeError, ValueError):
+        days = 3
+    now = datetime.datetime.now(JST)
+    start = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    end = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")   # 今日は途中なので対象外
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT date, payload FROM daily_meals
+               WHERE user_id={PH} AND date>={PH} AND date<={PH} ORDER BY date""",
+            (uid, start, end),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+    out = []
+    for dt, payload_str in rows:
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        n = 0
+        for k in MEAL_KEYS:
+            sec = payload.get(k)
+            if isinstance(sec, dict):
+                for it in (sec.get("items") or []):
+                    if isinstance(it, dict) and it.get("result"):
+                        n += 1
+        out.append({"date": dt, "items": n})
+    return jsonify({"days": out})
 
 
 @app.route("/api/daily-meals")

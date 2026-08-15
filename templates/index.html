@@ -619,6 +619,12 @@
     .weight-inline-save:active { transform:scale(0.97); }
     #past-edit-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#FFF7E8; border:1px solid #F0DDAF; color:#8A6116; border-radius:var(--radius-md); margin:12px 16px 0; padding:10px 14px; font-size:17px; font-weight:700; }
     #past-edit-banner button { background:#8A6116; color:white; border:none; border-radius:var(--radius-sm); padding:8px 14px; font-size:16px; font-weight:700; cursor:pointer; white-space:nowrap; }
+    /* 記録漏れのやさしいお知らせ（責める表現にしない） */
+    #underrec-notice { display:flex; align-items:flex-start; gap:10px; background:#F0F6FF; border:1px solid #C9DDF7; color:#24507F; border-radius:var(--radius-md); margin:12px 16px 0; padding:12px 14px; }
+    #underrec-notice .ur-body { flex:1; }
+    #underrec-notice .ur-title { font-size:17px; font-weight:800; margin-bottom:4px; }
+    #underrec-notice .ur-desc { font-size:16px; line-height:1.6; opacity:0.9; }
+    #underrec-notice .ur-close { background:rgba(36,80,127,0.10); border:none; color:#24507F; width:28px; height:28px; border-radius:50%; font-size:16px; font-weight:800; cursor:pointer; flex-shrink:0; line-height:1; }
     .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:var(--radius-md); border:none; background:#0E9F6E; color:white; font-size:17px; font-weight:700; cursor:pointer; }
     .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; box-shadow:0 24px 48px rgba(0,0,0,0.18); }
     .weight-dialog h3 { font-size:18px; font-weight:800; margin-bottom:18px; }
@@ -807,6 +813,13 @@
   <div id="past-edit-banner" style="display:none">
     <span>📝 <span id="past-edit-date"></span> の記録を編集中</span>
     <button onclick="exitPastEdit()">編集を終える</button>
+  </div>
+  <div id="underrec-notice" style="display:none">
+    <div class="ur-body">
+      <div class="ur-title">🍽️ 記録できていない食事はありませんか？</div>
+      <div class="ur-desc" id="underrec-desc"></div>
+    </div>
+    <button class="ur-close" onclick="closeUnderRecNotice()" aria-label="閉じる">✕</button>
   </div>
   <div id="sub-food">
     <div id="panel-food" class="meal-panel active"></div>
@@ -1517,6 +1530,42 @@ async function backfillCharaLog() {
 // ═══════════════════════════════════════════
 //  端末の連携（連携コードの発行・入力）
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  記録漏れのやさしいお知らせ
+//  「記録は続けているのに1日1件しか登録がない」日が続くとき、
+//  食べたものを全部記録できているかをそっと確認する。
+//  ※ 参照するのは自分（USER_ID）の記録だけ。管理画面のデータは一切使わない。
+// ═══════════════════════════════════════════
+const UNDERREC_KEY = 'ab-diet-underrec-shown';   // 最後に表示した日付（1日1回まで）
+
+function closeUnderRecNotice() {
+  const el = document.getElementById('underrec-notice');
+  if (el) el.style.display = 'none';
+}
+
+async function checkUnderRecording() {
+  try {
+    const today = getTodayJST();
+    if (localStorage.getItem(UNDERREC_KEY) === today) return;   // 今日はもう出した
+    const r = await fetch(`/api/my-meal-counts?user_id=${encodeURIComponent(USER_ID)}&days=3`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const days = (d && d.days) || [];
+    // 記録がある日だけを見る（まったく記録していない日は対象外＝サボりを責めない）
+    const recorded = days.filter(x => x.items > 0);
+    if (recorded.length < 2) return;                    // 判断材料が足りない
+    const thin = recorded.filter(x => x.items <= 1);
+    if (thin.length < 2) return;                        // 十分に記録できている
+    const el = document.getElementById('underrec-notice');
+    const desc = document.getElementById('underrec-desc');
+    if (!el || !desc) return;
+    desc.textContent = `直近${recorded.length}日のうち${thin.length}日は、記録が1件だけでした。`
+      + '間食・飲み物も含めて記録すると、Bカウントや採点がより正確になります。';
+    el.style.display = 'flex';
+    localStorage.setItem(UNDERREC_KEY, today);
+  } catch (e) { /* 失敗しても通常利用には影響させない */ }
+}
+
 async function issueLinkCode() {
   const disp = document.getElementById('link-code-display');
   disp.style.display = '';
@@ -5177,6 +5226,7 @@ function _step(fn, label) {
   checkFeedbackReplies();         // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
   checkCoachMessages();           // コーチからの個別の応援メッセージ（未読があればモーダル表示）
   _syncHeightToServer();          // 身長をサーバーへ同期（管理画面のBMI表示用。既存会員も自動反映）
+  checkUnderRecording();          // 記録漏れが続いていないかを自分の記録だけで確認し、必要ならやさしく促す
 
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
