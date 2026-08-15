@@ -414,6 +414,17 @@
     </details>
   </div>
 
+  <!-- サーバーの状態（アプリが遅いときの原因切り分け用） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🩺 サーバーの状態</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      アプリを開いたときに「白い画面」や「接続に時間がかかっています」が出る主な原因は、
+      <b>サーバーの再起動</b>です。再起動中の数十秒はアプリが応答できません。
+      <b>時間をあけて何度か見ても「起動からの経過時間」が短いまま</b>なら、再起動が繰り返されています。
+    </div>
+    <div id="server-health"><div class="spinner"></div></div>
+  </div>
+
   <!-- 機能別の利用状況 -->
   <div class="card" style="margin-bottom:20px">
     <h2>🧭 機能別の利用状況（直近30日）</h2>
@@ -1231,6 +1242,50 @@
     await loadCoachMessages();
   }
 
+  // サーバーの状態（再起動が繰り返されていないかを見る）
+  function _fmtUptime(sec) {
+    if (sec < 60) return `${sec}秒`;
+    const m = Math.floor(sec / 60);
+    if (m < 60) return `${m}分`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}時間${m % 60}分`;
+    return `${Math.floor(h / 24)}日${h % 24}時間`;
+  }
+
+  async function loadServerHealth() {
+    const wrap = document.getElementById('server-health');
+    if (!wrap) return;
+    try {
+      const r = await fetch('/api/admin/server-health');
+      const d = await r.json();
+      const short = d.uptime_sec < 30 * 60;
+      const color = short ? '#DC2626' : '#10B981';
+      wrap.innerHTML = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:150px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+            <div style="font-size:11px;color:#6B7280;font-weight:700;margin-bottom:4px">起動からの経過時間</div>
+            <div style="font-size:24px;font-weight:900;color:${color};line-height:1">${escapeHtml(_fmtUptime(d.uptime_sec))}</div>
+            <div style="font-size:11px;color:#9CA3AF;margin-top:3px">${escapeHtml((d.started_at || '').slice(0, 16).replace('T', ' '))}</div>
+          </div>
+          <div style="flex:1;min-width:150px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+            <div style="font-size:11px;color:#6B7280;font-weight:700;margin-bottom:4px">メモリ使用量</div>
+            <div style="font-size:24px;font-weight:900;color:#374151;line-height:1">${d.rss_mb == null ? '—' : escapeHtml(String(d.rss_mb)) + ' MB'}</div>
+            <div style="font-size:11px;color:#9CA3AF;margin-top:3px">上限に近いと強制再起動されます</div>
+          </div>
+          <div style="flex:1;min-width:150px;background:#F9FAFB;border-radius:10px;padding:14px;text-align:center">
+            <div style="font-size:11px;color:#6B7280;font-weight:700;margin-bottom:4px">データベース</div>
+            <div style="font-size:24px;font-weight:900;color:#374151;line-height:1">${escapeHtml(d.db || '—')}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;background:${short ? '#FEF2F2' : '#F0FDF4'};border:1px solid ${short ? '#FECACA' : '#BBF7D0'};
+                    border-radius:8px;padding:10px 12px;font-size:12px;color:${short ? '#991B1B' : '#166534'};line-height:1.7">
+          ${escapeHtml(d.verdict || '')}
+        </div>`;
+    } catch (e) {
+      wrap.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+    }
+  }
+
   // 「指名して送る」の送信先リスト（会員一覧を流用。最終利用が新しい順のまま並べる）
   async function loadCoachRecipients() {
     const sel = document.getElementById('dm-pick-user');
@@ -1299,7 +1354,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

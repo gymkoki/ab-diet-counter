@@ -9,13 +9,20 @@ services:
     #   Settings → Instance Type から Standard を選ぶ必要がある。
     plan: standard
     buildCommand: pip install -r requirements.txt
-    # メモリ対策：
-    #  --workers 1 …… プロセスは1つに保ち基礎メモリを最小化（512MB枠向け）
-    #  --threads 4 …… 1プロセス内でスレッド並行。AI解析の待ち時間中も他の人が
-    #                  使えるようにし「一部の人が使えない」状態を防ぐ（メモリは共有で安価）
+    # 起動の速さとメモリのバランス：
+    #  --preload …… 【重要】アプリをマスタープロセスで1回だけ読み込み、ワーカーはforkで作る。
+    #                これが無いと、ワーカーが再起動するたびに app.py の import と init_db()
+    #                をやり直すため、その間の5〜25秒はアプリが一切応答せず、
+    #                利用者には「白い画面」→「サーバー起動中…」と見える。
+    #                preload ありならワーカー再起動はfork（ほぼ一瞬）で済む。
+    #  --workers 1 …… プロセスは1つに保ち基礎メモリを最小化
+    #  --threads 4 …… 1プロセス内でスレッド並行。AI解析の待ち時間中も他の人が使える
     #  --max-requests / jitter …… 一定リクエストごとにワーカーを緩やかに再起動し、
-    #                  じわじわ増えるメモリ（リーク）を定期的に解放してOOM再起動を防ぐ
-    startCommand: gunicorn app:app --timeout 300 --workers 1 --threads 4 --max-requests 300 --max-requests-jitter 60
+    #                じわじわ増えるメモリ（リーク）を定期的に解放してOOM再起動を防ぐ。
+    #                300回は頻繁すぎて（1日に何度も再起動が起きる）体感速度を大きく損なうため
+    #                2000回へ緩和する。preload と併用するので再起動しても待ち時間は生じない。
+    #  --graceful-timeout 30 …… 再起動時、処理中のリクエストを最大30秒待ってから終了する
+    startCommand: gunicorn app:app --preload --timeout 300 --workers 1 --threads 4 --max-requests 2000 --max-requests-jitter 200 --graceful-timeout 30
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
