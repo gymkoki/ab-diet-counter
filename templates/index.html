@@ -3180,18 +3180,37 @@ function _waitUntilVisible() {
 // 利用者に分かりやすい日本語メッセージの {error} を返す。
 // ※「エラーコード500」のような技術的な数字は利用者には出さない（意味が伝わらないため）。
 //   原因調査用にHTTPステータスはコンソールにだけ残す。
+// 再試行しても直らないエラー（利用者の操作が必要なもの）以外は、黙ってやり直す。
+// 状態コードで「待てば直る」かどうかを判定し、_retryable フラグとして返す。
+const RETRYABLE_STATUS = [408, 429, 500, 502, 503, 504, 522, 524];
+
 async function parseAnalyzeResponse(res) {
   let data = null;
   try { data = await res.json(); } catch (e) { data = null; }
   // サーバーが正しくJSONで返した場合はそのまま使う（＝運営が用意した分かりやすいメッセージ）
-  if (data && typeof data === 'object') return data;
+  if (data && typeof data === 'object') {
+    if (data.error && RETRYABLE_STATUS.includes(res.status)) data._retryable = true;
+    return data;
+  }
   // JSONでない応答（サーバー障害・タイムアウト等）のときは、状況別の平易な案内にする
   if (!res.ok) console.warn('analyze non-JSON response, status=', res.status);
   if (res.status === 413) {
     return { error: '写真のサイズが大きすぎるようです。もう一度撮影し直してお試しください。' };
   }
-  return { error: 'ただいま少し混み合っているようです。恐れ入りますが、少し時間をおいてもう一度お試しください。' };
+  // JSONが返らない＝サーバー側の一時的な不調。待てば直ることが多いので再試行対象にする。
+  return { error: ANALYZE_BUSY_MESSAGE, _retryable: true };
 }
+
+// サーバー側でも粘って駄目だったときにだけ見せる文言。
+// 「混み合っています／時間をおいて再試行を」とは書かない：写真は端末に保存済みで、
+// アプリを開き直せば自動で解析を再開するため、撮り直しの手間をかけさせない。
+const ANALYZE_BUSY_MESSAGE = '解析に少し時間がかかっています。写真は保存されているので、このままお待ちいただくか、アプリを開き直すと自動で続きから計算します。';
+
+// 一時的な失敗は、進捗表示を0に戻さず（＝利用者から見て1回の解析のまま）静かに再送する。
+// 以前は analyzeItem 自体を呼び直していたため、進捗バーが0%からやり直しになり
+// 「2回計算している」ように見えていた。
+const ANALYZE_CLIENT_RETRIES = 3;          // サーバー側の再試行に加えて、通信断などに備える
+const ANALYZE_RETRY_WAIT_MS  = [1500, 4000, 8000];
 
 async function fetchAnalyze(url, formData, maxRetries = 2) {
   let sawHidden = document.hidden;
@@ -3233,151 +3252,12 @@ function _analyzeFailureMessage(e, tag) {
 }
 
 // ═══════════════════════════════════════════
-//  解析後の確認質問（大盛り・油の量）
-//  写真から量が判定しにくいとAIが判断したとき、最終表示の前に
-//  ボタン選択で確認し、回答を反映して再計算する。
+//  ※ かつてここにあった「事前チェック(Haiku)→本解析(Sonnet)」の2段階処理と、
+//     解析後の確認質問→再計算のコードは削除した（オーナー指示 2026-08）。
+//     大盛り判定はHaikuでは精度が出ず、2回計算で待ち時間もコストも二重になったため、
+//     現在は初手からSonnetで1回だけ解析する（ANALYSIS_PROMPTが大盛り・油を厳しめに見積もる）。
+//     二段階に戻さないこと。tests/test_analysis_flow.py が回帰を検知する。
 // ═══════════════════════════════════════════
-let _clarifyResolve = null, _clarifyOptions = null;
-
-// 質問は1つずつ表示する（複数の写真を同時に解析しても衝突しないよう直列化）
-let _clarifyQueue = Promise.resolve();
-function askClarify(question, options, note) {
-  const show = () => new Promise(resolve => {
-    _clarifyResolve = resolve;
-    _clarifyOptions = options;
-    document.getElementById('clarify-question').textContent = question;
-    const noteEl = document.getElementById('clarify-note');
-    if (noteEl) { noteEl.textContent = note || ''; noteEl.style.display = note ? '' : 'none'; }
-    document.getElementById('clarify-buttons').innerHTML = options.map((o, i) =>
-      `<button class="btn-clarify" onclick="answerClarify(${i})">${esc(o.label)}</button>`).join('');
-    document.getElementById('clarify-overlay').style.display = 'flex';
-  });
-  const p = _clarifyQueue.then(show);
-  _clarifyQueue = p.catch(() => {});
-  return p;
-}
-
-function answerClarify(idx) {
-  document.getElementById('clarify-overlay').style.display = 'none';
-  const r = _clarifyResolve; _clarifyResolve = null;
-  if (r) r(_clarifyOptions[idx]);
-}
-
-// アプリ側の保険：AIが確認不要と判断していても、食事量として意味のある主食
-// （ご飯・パン・麺で約180kcal以上）が含まれていれば必ず大盛り確認を出す。
-// （丼ものなどは具でご飯が隠れて、AIが「並盛」と思い込みやすいため）
-const _STAPLE_RE = /(白米|ごはん|ご飯|ライス|米飯|丼|チャーハン|炒飯|ピラフ|おかゆ|雑炊|パン|ベーグル|うどん|そば|蕎麦|パスタ|スパゲ|ラーメン|中華麺|焼きそば|そうめん|麺)/;
-function _findStapleFallback(data) {
-  for (const f of ((data && data.foods) || [])) {
-    const name = String(f.name || '');
-    if (!_STAPLE_RE.test(name)) continue;
-    const kcal = parseFloat(f.kcal_per_serving) || 0;
-    if (kcal >= 180 || (parseFloat(f.b_count) || 0) >= 1) return name;
-  }
-  return null;
-}
-
-// 大盛り確認を出す対象か。男性、または（性別を問わず）体重60kg以上の人だけに聞く。
-// それ以外（体重60kg未満の女性など）は大盛りを食べる可能性が低いため確認しない。
-function shouldAskLargePortion() {
-  const p = getProfile() || {};
-  if (p.gender === 'male') return true;
-  const w = (p.weight != null && p.weight !== '') ? parseFloat(p.weight) : NaN;
-  return !isNaN(w) && w >= 60;
-}
-
-// 解析結果に確認フラグ（clarify）があれば順番に質問し、回答の文章を集めて返す。
-// 「普通盛り（1人前）」はAIの標準推定と同じなので noop（再計算せずそのまま確定）。
-async function collectClarifyAnswers(data) {
-  const c = (data && data.clarify) || {};
-  const answers = [];
-  // 大盛り確認は対象者（男性／体重60kg以上）のみに出す
-  const stapleName = shouldAskLargePortion()
-    ? ((c.staple && c.staple.needed)
-        ? (c.staple.food_name || 'ご飯・パン・麺').trim()
-        : _findStapleFallback(data))
-    : null;
-  if (stapleName) {
-    const name = stapleName;
-    answers.push(await askClarify(
-      `${name}は2人前くらいの大盛りでしたか？`,
-      [
-        { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です`, noop: true },
-        { label: 'やや大盛り（1.5人前くらい）',   text: `${name}は1.5人前ほどのやや大盛りです` },
-        { label: 'かなりの大盛り（2人前以上）',   text: `${name}は2人前以上のかなりの大盛りです` },
-      ],
-      '写真だけでは主食の量を正確に判定しにくいため、確認しています。'
-    ));
-  }
-  if (c.oil && c.oil.needed) {
-    answers.push(await askClarify('調理に使った油の量はどれぐらいですか？', [
-      { label: 'ほぼ使っていない',   text: '調理油はほとんど使っていません' },
-      { label: '大さじ0.5くらい',    text: '調理油は大さじ0.5程度です' },
-      { label: '大さじ1くらい',      text: '調理油は大さじ1程度です' },
-      { label: '大さじ2以上',        text: '調理油は大さじ2以上使っています' },
-    ]));
-  }
-  // noop（AIの推定どおり）の回答は再計算に回さない
-  return answers.filter(a => a && a.text && !a.noop).map(a => a.text);
-}
-
-// 確認の回答を反映して再計算した最終結果を返す（失敗したときは元の結果のまま）
-async function reanalyzeWithAnswers(item, draft, answers) {
-  let imageBlob = item.file;
-  if (!imageBlob && item.previewSrc) { try { imageBlob = dataURLtoBlob(item.previewSrc); } catch(e) {} }
-  if (!imageBlob) return draft;
-  const fd = new FormData();
-  fd.append('image', imageBlob, 'image.jpg');
-  fd.append('correction', answers.join('。'));
-  fd.append('previous', JSON.stringify(draft));
-  fd.append('user_id', USER_ID);
-  { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
-  try {
-    const res = await fetchAnalyze('/reanalyze', fd);
-    const data = await res.json();
-    if (data && !data.error) return data;
-  } catch(e) {}
-  return draft;
-}
-
-// 事前チェック（/precheck・低コストの高速AI）で大盛り・油の確認が必要かを判定し、
-// 必要なら先に質問して回答の文章を返す。返り値：回答の配列（質問なし＝[]）。
-// 事前チェック自体に失敗したときは null を返す（本解析後の確認でフォローする）。
-async function collectPrecheckAnswers(imageBlob) {
-  let pc;
-  try {
-    const fd = new FormData();
-    fd.append('image', imageBlob, 'image.jpg');
-    const res = await fetchAnalyze('/precheck', fd);
-    pc = await res.json();
-  } catch(e) { return null; }
-  if (!pc || pc.error) return null;
-
-  const answers = [];
-  const st = pc.staple || {};
-  if (st.present && !st.fixed_portion) {
-    const name = (st.food_name || 'ご飯・パン・麺').trim();
-    answers.push(await askClarify(
-      `${name}は2人前くらいの大盛りでしたか？`,
-      [
-        { label: '普通盛り（1人前）',            text: `${name}は普通盛り（1人前）です` },
-        { label: 'やや大盛り（1.5人前くらい）',   text: `${name}は1.5人前ほどのやや大盛りです` },
-        { label: 'かなりの大盛り（2人前以上）',   text: `${name}は2人前以上のかなりの大盛りです` },
-      ],
-      '量を先に教えてもらうことで、1回の解析で正確に計算できます。'
-    ));
-  }
-  if (pc.oil && pc.oil.possible) {
-    answers.push(await askClarify('調理に使った油の量はどれぐらいですか？', [
-      { label: 'ほぼ使っていない',   text: '調理油はほとんど使っていません' },
-      { label: '大さじ0.5くらい',    text: '調理油は大さじ0.5程度です' },
-      { label: '大さじ1くらい',      text: '調理油は大さじ1程度です' },
-      { label: '大さじ2以上',        text: '調理油は大さじ2以上使っています' },
-    ]));
-  }
-  // 事前チェックの回答は本解析にそのまま含めるため、「普通盛り」等もすべて伝える（追加コストなし）
-  return answers.filter(a => a && a.text).map(a => a.text);
-}
 
 async function analyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
@@ -3397,36 +3277,48 @@ async function analyzeItem(mealId, itemId) {
   // 事前チェック＋本解析で2回計算が走りコスト・待ち時間が二重になっていた。
   // 現在はサーバーのANALYSIS_PROMPTが大盛り・油を「厳しめ（多め）」に見積もるため、
   // 確認質問なしでも過小評価しない。ユーザーが手動で付けた補足(item.note)だけを渡す。
-  const formData = new FormData();
-  formData.append('image', imageBlob, 'image.jpg');
-  formData.append('user_id', USER_ID);
-  if (item.note) formData.append('note', item.note);
-  { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
-  try {
-    const res  = await fetchAnalyze('/analyze', formData);
-    const data = await parseAnalyzeResponse(res);
-    _stopProgress(mealId, itemId);
-    renderStrip(mealId);
-    await new Promise(r => setTimeout(r, 300));
-    item.loading = false;
-    if (data.error) {
-      // 一時的な失敗（サーバー混雑・AIのブレ等）は、写真を消さず自動で1回だけ再解析する
-      if (!item._retried) {
-        item._retried = true;
-        await new Promise(r => setTimeout(r, 1200));
-        return analyzeItem(mealId, itemId);
-      }
-      item.error = data.error; showError(mealId, data.error);
+  // フォームは送信のたびに作り直す（同じFormDataを再送すると一部端末で失敗するため）
+  const buildForm = () => {
+    const fd = new FormData();
+    fd.append('image', imageBlob, 'image.jpg');
+    fd.append('user_id', USER_ID);
+    if (item.note) fd.append('note', item.note);
+    const _p = getProfile();
+    if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); }
+    return fd;
+  };
+
+  // 一時的な失敗は、進捗を0に戻さずそのまま静かに再送する。
+  // 画面上は最初から最後まで「1回の解析」に見え、途中でエラー文言も出さない。
+  let data = null, fatal = null;
+  for (let attempt = 0; attempt <= ANALYZE_CLIENT_RETRIES; attempt++) {
+    try {
+      const res = await fetchAnalyze('/analyze', buildForm());
+      data = await parseAnalyzeResponse(res);
+      if (!data.error || !data._retryable) break;   // 成功、または再送しても直らないエラー
+    } catch (e) {
+      fatal = e; data = null;                        // 通信断など。次の周回で再送する
     }
-    else {
-      item._retried = false;
-      delete data.clarify;   // 確認フラグは保存データに持ち越さない
-      item.result = data;
+    if (attempt < ANALYZE_CLIENT_RETRIES) {
+      console.warn(`[photo-analyze] ${attempt + 1}回目が失敗。進捗はそのままに静かに再送します`);
+      await new Promise(r => setTimeout(r, ANALYZE_RETRY_WAIT_MS[attempt] || 8000));
     }
-  } catch(e) {
-    _stopProgress(mealId, itemId);
-    item.loading = false;
-    showError(mealId, _analyzeFailureMessage(e, 'photo-analyze'));
+  }
+
+  _stopProgress(mealId, itemId);
+  renderStrip(mealId);
+  await new Promise(r => setTimeout(r, 300));
+  item.loading = false;
+  if (data && !data.error) {
+    delete data.clarify;   // 確認フラグは保存データに持ち越さない
+    item.result = data;
+  } else {
+    // ここまで来るのは、サーバー側の再試行でも回復しなかった場合だけ。
+    // 写真は残るので、次にアプリを開いたとき resumePendingAnalyses が自動で続きを計算する。
+    const msg = data && data.error ? data.error
+              : (fatal ? _analyzeFailureMessage(fatal, 'photo-analyze') : ANALYZE_BUSY_MESSAGE);
+    item.error = msg;
+    showError(mealId, msg);
   }
   renderStrip(mealId);
   renderResults(mealId);

@@ -40,9 +40,13 @@ def test_credit_error_is_hidden_from_members():
 
 
 def test_generic_api_error_is_also_friendly():
+    """一般的なAPIエラーも生の英語を見せず、会員向けの案内にする。
+    2026-08：「混み合っています／時間をおいて再試行を」ではなく、
+    記録は保存されていて自動で再開する旨を伝える文言に統一した。"""
     msg = m._api_error_message(_api_error("Error code: 500 - internal"), "TEST")
     assert "Error code" not in msg
-    assert "もう一度お試しください" in msg
+    assert "混み合" not in msg, "「混み合っています」は表示しない方針"
+    assert msg == m.ANALYSIS_BUSY_MESSAGE
 
 
 def test_analyze_text_credit_error_returns_friendly_json(client, monkeypatch):

@@ -53,15 +53,20 @@ def test_analyze_text_empty_text_returns_400_json(client):
     assert "入力してください" in res.get_json()["error"]
 
 
-def test_analyze_text_ai_empty_response_returns_502_json(client, monkeypatch):
-    """AIが空応答を繰り返した場合でも、HTMLではなく日本語エラーJSONを返す。"""
+def test_analyze_text_ai_empty_response_returns_json_not_html(client, monkeypatch):
+    """AIが空応答を繰り返した場合でも、HTMLではなく日本語エラーJSONを返す。
+    2026-08：内部の理由コード（retry-exhausted等）を会員に見せず、写真/入力が
+    保存されている旨の案内に統一した（「混み合っています」とは出さない）。"""
     def _raise(*a, **k):
         raise m.EmptyAIResponse("retry-exhausted")
     monkeypatch.setattr(m, "create_and_parse", _raise)
     res = client.post("/analyze-text", data={"text": "カップラーメン1個", "user_id": "test-user"})
-    assert res.status_code == 502
+    assert res.status_code == 503
     assert res.is_json
-    assert "もう一度お試しください" in res.get_json()["error"]
+    err = res.get_json()["error"]
+    assert "retry-exhausted" not in err, "内部の理由コードが会員に見えています"
+    assert "混み合" not in err, "「混み合っています」は表示しない方針"
+    assert err == m.ANALYSIS_BUSY_MESSAGE
 
 
 def test_analyze_text_unexpected_error_returns_500_json(client, monkeypatch):
