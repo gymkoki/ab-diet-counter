@@ -350,6 +350,17 @@
     <div class="meal-modal-box" id="meal-modal-box"></div>
   </div>
 
+  <!-- 要注意メンバー（種類別）：記録漏れ疑い／長期離脱 -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🚩 要注意メンバー（種類別）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      声かけの内容が真逆になるため、原因の違う2種類を分けて表示します。
+      <b style="color:#D97706">記録漏れ疑い</b>＝記録は続けているのにBカウントが目標を大きく下回り、体重が減っていない人（食べ過ぎではなく「記録できていない食事がある」可能性が高い。<u>Bを減らす助言は逆効果</u>）。
+      <b style="color:#DC2626">長期離脱</b>＝14日以上まったく記録がない人。
+    </div>
+    <div id="attention-wrap"><div class="spinner"></div></div>
+  </div>
+
   <!-- 減量メンバーの詳細（日別Bカウント・記録状況・食事へのリンク） -->
   <div class="card" style="margin-bottom:20px">
     <h2>🔥 減量メンバーの詳細</h2>
@@ -549,6 +560,80 @@
   let chartCorr = null;
   const GOAL_LABEL = { cut: '🔥 減量', maintain: '⚖️ 維持', bulk: '💪 増量', none: '❔ 未設定' };
   const GOAL_COLOR = { cut: '#FF6B35', maintain: '#6366F1', bulk: '#059669', none: '#9CA3AF' };
+
+  // ── 要注意メンバー（種類別）：記録漏れ疑い／長期離脱 ──
+  // ※ /api/admin/attention-flags は管理画面専用API（会員アプリからは呼ばない）
+  async function loadAttentionFlags() {
+    const host = document.getElementById('attention-wrap');
+    if (!host) return;
+    let d;
+    try {
+      const r = await fetch('/api/admin/attention-flags');
+      if (!r.ok) { host.innerHTML = '<div class="no-data">読み込みに失敗しました</div>'; return; }
+      d = await r.json();
+    } catch (e) {
+      host.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+      return;
+    }
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const nameOf = m => esc(m.name || `匿名（${m.user_id_short}…）`);
+    const link = m => `<a href="${ADMIN_BASE}/user/${encodeURIComponent(m.user_id)}" style="color:#FF6B35;font-weight:700;text-decoration:none">詳細 ›</a>`;
+    const kg = v => (v == null ? '—' : (v > 0 ? `+${v}` : `${v}`) + 'kg');
+
+    const under = d.under_recording || [];
+    const away  = d.long_absent || [];
+
+    const underRows = under.map(m => `
+      <tr style="border-bottom:1px solid #F3F4F6">
+        <td style="padding:8px;font-weight:700">${nameOf(m)}
+          ${m.confidence === 'high' ? '<span style="margin-left:6px;background:#FEF3C7;color:#B45309;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800">確度高</span>' : ''}
+        </td>
+        <td style="padding:8px;text-align:center;font-weight:800;color:#DC2626">${kg(m.change_30d_kg)}</td>
+        <td style="padding:8px;text-align:center;font-weight:800;color:#FF6B35">${m.avg_b_7d == null ? '—' : m.avg_b_7d}<span style="color:#9CA3AF;font-weight:600;font-size:11px"> / 目標${m.b_target}</span></td>
+        <td style="padding:8px;text-align:center">${m.avg_meals_per_day_7d == null ? '—' : m.avg_meals_per_day_7d + '件'}</td>
+        <td style="padding:8px;text-align:right">${link(m)}</td>
+      </tr>`).join('');
+
+    const awayRows = away.map(m => `
+      <tr style="border-bottom:1px solid #F3F4F6">
+        <td style="padding:8px;font-weight:700">${nameOf(m)}</td>
+        <td style="padding:8px;text-align:center;font-weight:800;color:#DC2626">${m.days_since}日</td>
+        <td style="padding:8px;text-align:center">${kg(m.change_30d_kg)}</td>
+        <td style="padding:8px;text-align:right">${link(m)}</td>
+      </tr>`).join('');
+
+    host.innerHTML = `
+      <div style="margin-bottom:18px">
+        <div style="font-size:13px;font-weight:800;color:#B45309;margin-bottom:6px">
+          🍽️ 記録漏れ疑い（${under.length}名）
+          <span style="font-weight:600;color:#9CA3AF">— 「記録できていない食事はありませんか？」と声かけ</span>
+        </div>
+        ${under.length ? `<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">
+            <th style="padding:6px 8px;text-align:left">会員</th>
+            <th style="padding:6px 8px">30日の体重</th>
+            <th style="padding:6px 8px">平均B(7日)</th>
+            <th style="padding:6px 8px">記録件数/日</th>
+            <th></th>
+          </tr>${underRows}</table></div>`
+          : '<div class="no-data" style="padding:14px 0">該当なし</div>'}
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#DC2626;margin-bottom:6px">
+          🚪 長期離脱（14日以上・${away.length}名）
+          <span style="font-weight:600;color:#9CA3AF">— 再スタートのきっかけづくりを</span>
+        </div>
+        ${away.length ? `<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">
+            <th style="padding:6px 8px;text-align:left">会員</th>
+            <th style="padding:6px 8px">記録なし</th>
+            <th style="padding:6px 8px">30日の体重</th>
+            <th></th>
+          </tr>${awayRows}</table></div>`
+          : '<div class="no-data" style="padding:14px 0">該当なし</div>'}
+      </div>`;
+  }
 
   // ── 減量メンバーの詳細（直近7日の日別Bカウント・記録状況）──
   let _cutDetailOpen = false, _cutDetailLoaded = false;
@@ -1214,7 +1299,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
