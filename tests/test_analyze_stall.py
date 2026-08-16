@@ -48,15 +48,22 @@ def test_fetch_timeout_is_longer_than_server_budget():
     assert margin_ms >= 30000, f"端末の制限とサーバーの持ち時間の余裕が不足: {margin_ms / 1000:.0f}秒"
 
 
-def test_progress_shows_elapsed_seconds_not_stuck_percent():
-    """解析中の表示が『％』ではなく経過秒数であること。
-    ％は99%に張り付くため、遅いだけなのか固まったのかを利用者が区別できない。"""
+def test_progress_is_shown_as_percent():
+    """解析中の表示は『％』であること（オーナー指示 2026-08：秒数表示は分かりにくい）。
+    一度は経過秒数に変えたが、分かりにくいとの指摘を受けて％へ戻した。
+    ％が99%に張り付いて見えても、下の各テストが担保する締め切りと見張りによって
+    必ず有限時間で結論（結果かエラー）に到達する。"""
     html = _read("templates/index.html")
-    assert "function elapsedLabel" in html
-    assert "${elapsedLabel(item)}" in html, "サムネイルの表示が経過秒数になっていない"
+    assert "${fmtPct(item.loadingPct)}%" in html, "サムネイルの表示が％になっていない"
+    assert "elapsedLabel" not in html, "秒数表示の関数が残っている"
+
+
+def test_elapsed_time_is_still_recorded_for_diagnosis():
+    """画面には出さないが、かかった秒数はコンソールに残すこと（遅いときの調査用）。"""
+    html = _read("templates/index.html")
+    assert "function _elapsedSec" in html
+    assert "解析にかかった時間" in html
     assert "loadingStartedAt" in html
-    # 99%表示に戻っていないこと
-    assert "${fmtPct(item.loadingPct)}%" not in html
 
 
 def test_waiting_time_is_kept_short():

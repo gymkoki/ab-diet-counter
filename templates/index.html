@@ -3053,7 +3053,7 @@ function renderStrip(mealId) {
           ? `<img src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${item.isOil ? onigiriIcon(34) : item.isCopy ? '✏️' : item.isText ? '📝' : '📷'}</div>`}
         ${item.loading ? `<div class="th-spinner">
-          <div class="th-pct">${elapsedLabel(item)}</div>
+          <div class="th-pct">${fmtPct(item.loadingPct)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${item.loadingPct||0}%"></div></div>
         </div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
@@ -3142,16 +3142,13 @@ function _advanceProgress(item) {
 // （旧）進捗％の表示用。現在は経過秒数を表示するため、進捗バーの幅計算にのみ使う。
 function fmtPct(p) { return (p || 0).toFixed(1); }
 
-// 解析中は「％」ではなく【経過秒数】を出す（オーナー指摘 2026-08）。
-// ％は終盤で99%に張り付くため、時間がかかっているだけなのか本当に固まったのかが
-// 利用者に区別できなかった。秒数なら数字が必ず増え続けるので「動いている」ことが
-// 一目で分かり、遅いときは何秒かかったかをそのまま報告してもらえる。
-function elapsedLabel(item) {
-  const sec = Math.max(0, Math.round((Date.now() - (item.loadingStartedAt || Date.now())) / 1000));
-  return sec < 60 ? `${sec}秒` : `${Math.floor(sec / 60)}分${String(sec % 60).padStart(2, '0')}秒`;
+// 解析にかかった秒数（調査用）。画面には出さず、コンソールにだけ残す。
+// ※オーナー指示 2026-08：画面の表示は「％」に戻すこと。秒数表示は分かりにくい。
+function _elapsedSec(item) {
+  return Math.max(0, Math.round((Date.now() - (item.loadingStartedAt || Date.now())) / 1000));
 }
 
-// 進捗表示が生きていてよい最長時間。全体の締め切り(7分)より少し長くしておき、
+// 進捗表示が生きていてよい最長時間。全体の締め切り(4分)より少し長くしておき、
 // 万が一どこかの処理が進捗を止め忘れても、必ずここで止まるようにする。
 // これが「99%のまま永久に固まる」ことへの最後の歯止め（2026-08の障害対策）。
 // ※ ANALYZE_TOTAL_DEADLINE_MS(4分) より後に定義されるため、ここでは数値で書く
@@ -3164,7 +3161,7 @@ function _startProgress(mealId, itemId) {
   if (!item) return;
   item.loadingPct = 0;
   const startedAt = Date.now();
-  item.loadingStartedAt = startedAt;   // 経過秒数の表示に使う
+  item.loadingStartedAt = startedAt;   // かかった秒数の記録用（画面には出さない）
   _progressTimers[key] = setInterval(() => {
     // 見張り：長すぎる進捗は強制的に終わらせ、利用者に状況を伝える
     if (Date.now() - startedAt > PROGRESS_WATCHDOG_MS) {
@@ -3187,7 +3184,11 @@ function _stopProgress(mealId, itemId) {
   clearInterval(_progressTimers[key]);
   delete _progressTimers[key];
   const item = state[mealId].items.find(i => i.id === itemId);
-  if (item) item.loadingPct = 100;
+  if (item) {
+    // 画面には出さないが、かかった秒数はコンソールに残す（遅いときの調査用）
+    console.info(`[analyze] 解析にかかった時間: ${_elapsedSec(item)}秒`);
+    item.loadingPct = 100;
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -3474,16 +3475,15 @@ async function reanalyzeItem(mealId, itemId) {
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
 
-  // 経過秒数を表示（写真のサムネイルとボタンの両方）。
-  // ％だと99%に張り付いて「固まった」ように見えるため、秒数で動きを見せる。
+  // 進捗％を表示（写真のサムネイルとボタンの両方）
   item.loading = true;
   item.loadingPct = 0;
   item.loadingStartedAt = Date.now();
   renderStrip(mealId);
-  if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0秒'; }
+  if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0%'; }
   const timer = setInterval(() => {
     _advanceProgress(item);
-    if (btn) btn.textContent = `🔄 再計算中… ${elapsedLabel(item)}`;
+    if (btn) btn.textContent = `🔄 再計算中… ${fmtPct(item.loadingPct)}%`;
     renderStrip(mealId);
   }, 200);
 
@@ -3505,7 +3505,7 @@ async function reanalyzeItem(mealId, itemId) {
     const data = await parseAnalyzeResponse(res);
     clearInterval(timer);
     item.loadingPct = 100;
-    if (btn) btn.textContent = '🔄 再計算中… 完了';
+    if (btn) btn.textContent = '🔄 再計算中… 100%';
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
     item.loading = false;
