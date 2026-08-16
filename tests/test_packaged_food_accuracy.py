@@ -69,15 +69,20 @@ def test_web_search_tool_declared_with_current_type():
     """Web検索ツールが現行のツールタイプで宣言されていること。"""
     assert m.WEB_SEARCH_TOOL["type"] == "web_search_20260209"
     assert m.WEB_SEARCH_TOOL["name"] == "web_search"
-    assert m.WEB_SEARCH_TOOL["max_uses"] == 2   # 費用と時間の上限
+    assert m.WEB_SEARCH_TOOL["max_uses"] == 1   # 費用と時間の上限（1回だけ）
 
 
 def test_prompt_limits_web_search_to_packaged_products():
-    """検索は市販商品でカロリーが不確かなときだけ。手料理では検索しない。"""
+    """検索は市販商品でカロリーが不確かなときだけ。手料理・定食では検索しない。"""
     p = m.ANALYSIS_PROMPT
-    assert "web_search ツールで商品名＋「カロリー」を検索" in p
-    assert "手料理・家庭料理・一般的な食材（ご飯・肉・野菜など）では検索しない" in p
+    assert "商品名＋「カロリー」を検索" in p
+    assert "手料理・家庭料理・定食・一般的な食材（ご飯・肉・野菜など）では**絶対に検索しない**" in p
     assert "調べた実測kcalを reason 欄に必ず残す" in p
+
+
+def test_prompt_tolerates_missing_search_tool():
+    """ツールが渡されない経路（写真解析）では、検索せず推定に進むと明記すること。"""
+    assert "ツールが渡されていないときは検索せず" in m.ANALYSIS_PROMPT
 
 
 class _Blk:
@@ -126,8 +131,10 @@ def _png():
     )
 
 
-def test_analyze_declares_web_search_tool(client, monkeypatch):
-    """写真解析(/analyze)のリクエストにWeb検索ツールが付いていること。"""
+def test_analyze_has_no_web_search(client, monkeypatch):
+    """写真解析(/analyze)では検索しないこと（速さ最優先・オーナー指摘 2026-08）。
+    ここで検索を許すと、AIが手料理や定食の写真でも検索を始め、1回の解析で
+    APIとのやり取りが2〜4往復に増えて解析時間が何倍にもなる。"""
     captured = {}
 
     def fake_create_and_parse(_client, **kwargs):
@@ -139,7 +146,7 @@ def test_analyze_declares_web_search_tool(client, monkeypatch):
     r = client.post("/analyze", data={"image": (__import__("io").BytesIO(_png()), "a.png")},
                     content_type="multipart/form-data")
     assert r.status_code == 200
-    assert captured.get("tools") == [m.WEB_SEARCH_TOOL], "/analyze にWeb検索ツールが付いていません"
+    assert "tools" not in captured, "/analyze で検索すると解析が何倍も遅くなる"
 
 
 def test_reanalyze_declares_web_search_tool(client, monkeypatch):
@@ -174,11 +181,11 @@ def test_analyze_text_has_no_web_search(client, monkeypatch):
     assert captured.get("timeout") == 60.0
 
 
-def test_coach_ai_does_not_use_web_search():
-    """コーチAIなど解析以外の呼び出しに検索ツールを付けない（費用の無駄）。"""
+def test_web_search_is_only_on_reanalyze():
+    """検索ツールを渡すのは訂正時(/reanalyze)の1か所だけ。
+    写真解析・文章入力・コーチAIなど、待たせたくない経路には付けない。"""
     src = _read("app.py")
-    # tools=[WEB_SEARCH_TOOL] は写真解析まわりの2か所だけ
-    assert src.count("tools=[WEB_SEARCH_TOOL]") == 2
+    assert src.count("tools=[WEB_SEARCH_TOOL]") == 1
 
 
 # ── サーバー側ツールの中断(pause_turn)から自動で復帰する ────────────
