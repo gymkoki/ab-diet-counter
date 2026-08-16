@@ -122,3 +122,60 @@ def test_sw_js_is_reachable(client):
     assert r.headers.get("Service-Worker-Allowed") == "/"
     # SW自体が長期キャッシュされると、停止したくても止められなくなる
     assert "no-cache" in (r.headers.get("Cache-Control") or "")
+
+
+# ── 進捗表示は「整数の％」であること（オーナー指示 2026-08）──────────
+def test_progress_is_integer_percent():
+    """画面に出す進捗は整数％のみ。秒数表示・小数点は不可。"""
+    html = _read("templates", "index.html")
+    m = re.search(r"function fmtPct\(p\)\s*\{([^}]*)\}", html)
+    assert m, "fmtPct が見つかりません"
+    body = m.group(1)
+    assert "Math.round" in body, "進捗％が整数に丸められていません"
+    assert "toFixed" not in body, "進捗％に小数点が残っています"
+
+
+def test_progress_label_shows_percent_not_seconds():
+    """サムネイルの表示が「％」であり、「秒」になっていないこと。"""
+    html = _read("templates", "index.html")
+    m = re.search(r'<div class="th-pct">(.*?)</div>', html)
+    assert m, "進捗ラベルが見つかりません"
+    label = m.group(1)
+    assert "fmtPct" in label and "%" in label, f"％表示になっていません: {label}"
+    assert "秒" not in label, f"秒数表示に戻っています: {label}"
+    assert "_elapsedSec" not in label, f"経過秒数が表示されています: {label}"
+
+
+# ── 古い版が使われ続けない仕組み ────────────────────────────────
+def test_sw_notifies_when_newer_version_found():
+    """キャッシュを出したあとに新版を見つけたら画面へ知らせること。
+
+    これが無いと、回線が遅い端末だけ古い版を使い続け、
+    修正しても「反映されない」状態が続く（2026-08に実際に発生）。
+    """
+    sw = _read("static", "sw.js")
+    assert "shell-updated" in sw, "新版検出の通知が実装されていません"
+    assert "freshText !== cachedText" in sw, "新旧HTMLの比較が実装されていません"
+
+
+def test_page_reloads_only_when_safe():
+    """自動の読み直しが、作業中の人の邪魔をしないよう制限されていること。"""
+    html = _read("templates", "index.html")
+    assert "shell-updated" in html
+    m = re.search(r"function _canSafelyReload\(\)\s*\{(.*?)\n  \}", html, re.S)
+    assert m, "_canSafelyReload が見つかりません"
+    body = m.group(1)
+    assert "_progressTimers" in body, "解析中でも読み直してしまいます（結果が消えます）"
+    assert "TEXTAREA" in body, "入力中でも読み直してしまいます"
+
+
+def test_sw_keeps_alive_until_cache_is_written():
+    """キャッシュを先に返した後、更新が完了するまでSWを生かしておくこと。
+
+    waitUntil が無いと、ブラウザが更新の完了前にSWを止めてしまい、
+    キャッシュが永久に古いまま＝修正がいつまでも反映されない
+    （2026-08：％表示に直したのに端末では秒数のままだった真因）。
+    """
+    sw = _read("static", "sw.js")
+    assert "event.waitUntil" in sw, "waitUntil が無く、裏側の更新が打ち切られます"
+    assert "networkFirst(req, e)" in sw, "fetchイベントがnetworkFirstに渡されていません"

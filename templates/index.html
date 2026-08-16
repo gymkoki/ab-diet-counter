@@ -3142,11 +3142,11 @@ function _advanceProgress(item) {
   const p = item.loadingPct || 0;
   if (p < 99) item.loadingPct = Math.min(99, p + Math.max(0.05, (99 - p) * 0.012));
 }
-// （旧）進捗％の表示用。現在は経過秒数を表示するため、進捗バーの幅計算にのみ使う。
-function fmtPct(p) { return (p || 0).toFixed(1); }
+// 進捗％の表示用。
+// ※オーナー指示 2026-08：画面には「整数の％」だけを出す（秒数表示・小数点は不可）。
+function fmtPct(p) { return String(Math.round(p || 0)); }
 
 // 解析にかかった秒数（調査用）。画面には出さず、コンソールにだけ残す。
-// ※オーナー指示 2026-08：画面の表示は「％」に戻すこと。秒数表示は分かりにくい。
 function _elapsedSec(item) {
   return Math.max(0, Math.round((Date.now() - (item.loadingStartedAt || Date.now())) / 1000));
 }
@@ -5030,6 +5030,32 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
+
+  // キャッシュから表示したあとで「新しい版がある」と分かったら、そっと読み直す。
+  // これが無いと、回線が遅い端末だけ古い版を使い続けてしまう
+  // （2026-08：解析中の表示を％に戻したのに秒数のままだった原因）。
+  // ただし作業中の人の邪魔をしないよう、安全なときだけ読み直す。
+  const _shellLoadedAt = Date.now();
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'shell-updated') return;
+    if (!_canSafelyReload()) return;
+    console.info('[sw] 新しいバージョンを検出したため読み直します');
+    location.reload();
+  });
+
+  function _canSafelyReload() {
+    // 開いた直後だけ（＝まだ操作していない可能性が高いうち）に限る
+    if (Date.now() - _shellLoadedAt > 15000) return false;
+    // 解析中は絶対に読み直さない（結果が消える）
+    if (Object.keys(_progressTimers || {}).length) return false;
+    // 入力中・モーダル表示中も邪魔しない
+    const el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return false;
+    const openOverlay = Array.from(document.querySelectorAll('.overlay, [id$="-overlay"]'))
+      .some(o => getComputedStyle(o).display !== 'none');
+    if (openOverlay) return false;
+    return true;
+  }
 }
 
 // ═══════════════════════════════════════════
