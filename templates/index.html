@@ -3264,6 +3264,11 @@ const MIN_USEFUL_WAIT_MS = 3000;
 // 再送も含めた全体の上限。オーナー指示 2026-08：解析は長くても60秒以内に終わらせる。
 // サーバー側も1回50秒・合計55秒で打ち切るため、ここを超えることは通常ない。
 const ANALYZE_TOTAL_DEADLINE_MS = 60000;
+// 「計算し直す」はWeb検索で商品名を調べることがあり、写真解析より時間がかかる。
+// 利用者が自分で操作して結果を待つ場面なので、60秒より長い別枠の上限にする。
+// （2026-08：写真解析を60秒に縮めた際、ここまで巻き込んで再計算が反映されなくなった）
+const REANALYZE_FETCH_TIMEOUT_MS  = 120000;
+const REANALYZE_TOTAL_DEADLINE_MS = 150000;
 
 // 時間制限つきの fetch。時間切れは AbortError になり、通信断と同じ扱いで再送される。
 function _fetchWithTimeout(url, formData, limitMs) {
@@ -3280,7 +3285,7 @@ function _isTimeoutError(e) {
   return !!e && (e.name === 'AbortError' || e.name === 'TimeoutError');
 }
 
-async function fetchAnalyze(url, formData, maxRetries = 2, deadlineAt = null) {
+async function fetchAnalyze(url, formData, maxRetries = 2, deadlineAt = null, fetchLimitMs = ANALYZE_FETCH_TIMEOUT_MS) {
   // 呼び出し側が締め切りを渡さなかった場合も、必ず全体の上限を設ける。
   // どの解析（写真・文章・再計算）でも「永久に待ち続ける」ことが無いようにする。
   deadlineAt = deadlineAt || (Date.now() + ANALYZE_TOTAL_DEADLINE_MS);
@@ -3296,7 +3301,7 @@ async function fetchAnalyze(url, formData, maxRetries = 2, deadlineAt = null) {
       if (leftMs <= MIN_USEFUL_WAIT_MS) {
         throw new DOMException('deadline reached', 'AbortError');
       }
-      const limitMs = Math.min(ANALYZE_FETCH_TIMEOUT_MS, leftMs);
+      const limitMs = Math.min(fetchLimitMs, leftMs);
       try {
         return await _fetchWithTimeout(url, formData, limitMs);
       } catch (e) {
@@ -3523,7 +3528,8 @@ async function reanalyzeItem(mealId, itemId) {
   formData.append('user_id', USER_ID);
   { const _p = getProfile(); if (_p) { if (_p.gender) formData.append('gender', _p.gender); if (_p.goal) formData.append('goal', _p.goal); } }
   try {
-    const res = await fetchAnalyze('/reanalyze', formData);
+    const res = await fetchAnalyze('/reanalyze', formData, 2,
+      Date.now() + REANALYZE_TOTAL_DEADLINE_MS, REANALYZE_FETCH_TIMEOUT_MS);
     const data = await parseAnalyzeResponse(res);
     clearInterval(timer);
     item.loadingPct = 100;

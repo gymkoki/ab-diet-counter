@@ -178,7 +178,7 @@ def test_analyze_text_has_no_web_search(client, monkeypatch):
     r = client.post("/analyze-text", data={"text": "バナナ1本"})
     assert r.status_code == 200
     assert "tools" not in captured, "/analyze-text に検索ツールが付くとタイムアウトしやすくなります"
-    assert captured.get("timeout") == 60.0
+    assert captured.get("timeout") == m.ANALYZE_TIMEOUT_SEC
 
 
 def test_web_search_is_only_on_reanalyze():

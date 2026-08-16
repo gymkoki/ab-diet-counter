@@ -88,7 +88,9 @@ def test_analyze_text_no_api_key_returns_401_json(client, monkeypatch):
 
 
 def test_analyze_text_passes_per_request_timeout(client, monkeypatch):
-    """1回のAI試行に60秒の上限が指定されていること（スマホ側の通信タイムアウト対策）。"""
+    """1回のAI試行に上限が指定されていること（スマホ側の通信タイムアウト対策）。
+    2026-08：画面側の締め切り(60秒)より必ず短くする。以前は同じ60秒だったため、
+    遅いときに画面側が先に通信を切ってしまっていた。"""
     captured = {}
 
     def _capture(_client, **kwargs):
@@ -98,4 +100,5 @@ def test_analyze_text_passes_per_request_timeout(client, monkeypatch):
     monkeypatch.setattr(m, "create_and_parse", _capture)
     res = client.post("/analyze-text", data={"text": "サラダ", "user_id": "test-user"})
     assert res.status_code == 200
-    assert captured.get("timeout") == 60.0
+    assert captured.get("timeout") == m.ANALYZE_TIMEOUT_SEC
+    assert m.ANALYZE_TIMEOUT_SEC < 60.0, "画面側の締め切り(60秒)より短いこと"
