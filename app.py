@@ -206,18 +206,44 @@ def recompute_totals(result):
 WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 2}
 
 
-def _create_with_server_tools(client, **kwargs):
+def _remaining_timeout(deadline, requested=None):
+    """締め切りまでの残り秒数を返す。呼び出し側がtimeoutを指定していれば短い方を採る。
+    これにより「1回のAI呼び出しが、リクエスト全体の持ち時間を食い潰す」ことを防ぐ。"""
+    left = None if deadline is None else max(1.0, deadline - time.monotonic())
+    if requested is None:
+        return left
+    return requested if left is None else min(requested, left)
+
+
+def _create_with_server_tools(client, deadline=None, **kwargs):
     """messages.create を呼ぶ。Web検索などサーバー側ツールの実行が途中で
-    打ち切られた（stop_reason="pause_turn"）場合は、続きを自動で再開する。"""
-    response = client.messages.create(**kwargs)
+    打ち切られた（stop_reason="pause_turn"）場合は、続きを自動で再開する。
+
+    【重要】再開のたびにAPIを呼び直すため、締め切り(deadline)を必ず渡すこと。
+    渡さないと「140秒 × 再開4回 ＝ 560秒」となり、gunicornの --timeout=300秒に
+    引っかかってワーカーごと落ち、解析中の他の会員のリクエストまで巻き添えで
+    失敗する（画面が99%のまま止まる原因になる）。"""
+    requested = kwargs.pop("timeout", None)
+    def _call(msgs):
+        t = _remaining_timeout(deadline, requested)
+        call_kwargs = {**kwargs, "messages": msgs}
+        if t is not None:
+            call_kwargs["timeout"] = t
+        return client.messages.create(**call_kwargs)
+
+    messages = list(kwargs.get("messages") or [])
+    response = _call(messages)
     # pause_turn は「サーバー側ツールの実行途中で一区切りついた」状態。
     # そのまま返すと本文が未完成なので、同じ会話を送り直して続きを生成させる。
     for _ in range(3):
         if getattr(response, "stop_reason", None) != "pause_turn":
             break
-        messages = list(kwargs.get("messages") or [])
-        messages.append({"role": "assistant", "content": response.content})
-        response = client.messages.create(**{**kwargs, "messages": messages})
+        # 残り時間が乏しいときは再開せず、そこまでの応答で判断する
+        if deadline is not None and deadline - time.monotonic() < 15.0:
+            print("[SERVER-TOOL] 残り時間が少ないため、検索の再開を打ち切ります")
+            break
+        messages = messages + [{"role": "assistant", "content": response.content}]
+        response = _call(messages)
     return response
 
 
@@ -266,14 +292,21 @@ def create_and_parse(client, **kwargs):
     detail = ""
     last_json_err = None
     started = time.monotonic()
+    # このリクエストで使ってよい締め切り。1回のAI呼び出しも、Web検索の再開も、
+    # 必ずこの締め切りの中で終わらせる（gunicornに切られる前に自分で打ち切る）。
+    deadline = started + (RETRY_TIME_BUDGET_SEC - RETRY_RESERVE_SEC)
     for attempt in range(RETRY_MAX_ATTEMPTS):
         err = None
         try:
-            response = _create_with_server_tools(client, **kwargs)
+            response = _create_with_server_tools(client, deadline=deadline, **kwargs)
             result = recompute_totals(parse_ai_result(response))
             # foods が無い等、想定外の形なら生成し直す
             if not isinstance(result, dict) or "foods" not in result:
                 raise EmptyAIResponse("no-foods")
+            # 遅いときだけログに残す（「99%で止まる」の調査用）
+            took = time.monotonic() - started
+            if took > 45.0:
+                print(f"[SLOW-AI] 解析に {took:.1f}秒かかりました（試行{attempt + 1}回目）")
             return result
         except EmptyAIResponse as e:
             detail = e.detail
