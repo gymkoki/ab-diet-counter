@@ -39,13 +39,14 @@ def test_fetch_has_timeout():
 
 def test_fetch_timeout_is_longer_than_server_budget():
     """端末の時間制限は、サーバーが自分で答えを返す時間より長いこと。
-    短いと、正常に解析中のリクエストを端末側が先に切ってしまう。"""
+    短いと、正常に解析中のリクエストを端末側が先に切ってしまう。
+    写真解析は60秒以内という制約があるため（オーナー指示 2026-08）、
+    比較対象は写真解析専用の持ち時間 ANALYZE_TOTAL_BUDGET_SEC とする。"""
     html = _read("templates/index.html")
     fetch_ms = int(re.search(r"ANALYZE_FETCH_TIMEOUT_MS\s*=\s*(\d+)", html).group(1))
-    # 写真の送信・画像処理・応答の送信ぶんの余裕（30秒以上）を必ず確保する。
-    # ここが薄いと、正常に解析中のリクエストを端末が先に切ってしまう。
-    margin_ms = fetch_ms - m.RETRY_TIME_BUDGET_SEC * 1000
-    assert margin_ms >= 30000, f"端末の制限とサーバーの持ち時間の余裕が不足: {margin_ms / 1000:.0f}秒"
+    # 写真の送信・画像処理・応答の送信ぶんの余裕（10秒以上）を必ず確保する。
+    margin_ms = fetch_ms - m.ANALYZE_TOTAL_BUDGET_SEC * 1000
+    assert margin_ms >= 10000, f"端末の制限とサーバーの持ち時間の余裕が不足: {margin_ms / 1000:.0f}秒"
 
 
 def test_progress_is_shown_as_percent():
@@ -191,3 +192,66 @@ def test_total_budget_fits_in_gunicorn_timeout():
     render = _read("render.yaml")
     gunicorn_timeout = int(re.search(r"--timeout (\d+)", render).group(1))
     assert m.RETRY_TIME_BUDGET_SEC < gunicorn_timeout - 30
+
+
+# ── 解析は60秒以内に終える（オーナー指示 2026-08） ──────────────────
+def test_photo_analysis_finishes_within_60s():
+    """写真解析の待ち時間の上限が60秒以内に収まる設計であること。
+    「解析が60秒以上かかる」という指摘への対策。内訳は
+    アップロード＋画像処理 ＋ AI呼び出し(ANALYZE_TOTAL_BUDGET_SEC) ＋ 応答。"""
+    html = _read("templates/index.html")
+    total_ms = int(re.search(r"ANALYZE_TOTAL_DEADLINE_MS\s*=\s*(\d+)", html).group(1))
+    assert total_ms <= 60000, f"画面側の待ち時間の上限が60秒を超えています: {total_ms / 1000:.0f}秒"
+    # サーバーのAI呼び出しも、その中に収まること
+    assert m.ANALYZE_TIMEOUT_SEC <= m.ANALYZE_TOTAL_BUDGET_SEC
+    assert m.ANALYZE_TOTAL_BUDGET_SEC * 1000 < total_ms, \
+        "サーバーの持ち時間が画面側の上限に収まっていません"
+
+
+def test_photo_analysis_uses_its_own_short_budget():
+    """写真解析が、全体の既定予算ではなく専用の短い予算を使っていること。"""
+    src = _read("app.py")
+    assert "time_budget=ANALYZE_TOTAL_BUDGET_SEC" in src, \
+        "/analyze が60秒制限用の持ち時間を渡していません"
+    assert "timeout=ANALYZE_TIMEOUT_SEC" in src
+    assert "max_tokens=ANALYZE_MAX_TOKENS" in src
+
+
+def test_max_tokens_is_not_wastefully_large():
+    """max_tokens が実際の出力量に対して過大でないこと（生成時間が延びる原因）。"""
+    assert m.ANALYZE_MAX_TOKENS <= 6000, "max_tokensが大きすぎます（冗長な出力で遅くなる）"
+    src = _read("app.py")
+    assert "max_tokens=16000" not in src, "16000トークンの指定が残っています"
+
+
+def test_prompt_asks_for_concise_output():
+    """出力を簡潔にする指示が入っていること（出力が長いほど待ち時間が延びるため）。"""
+    src = _read("app.py")
+    assert "【簡潔に書くこと】" in src
+    assert "1行・100字以内" in src
+
+
+def test_no_minimum_wait_floor_that_overruns_deadline():
+    """通信の打ち切り時間に「最低◯秒」の下限を置かないこと。
+    2026-08の実測バグ：残り1秒でも Math.max(5000, limitMs) で5秒待ってしまい、
+    60秒の締め切りを超えて64秒かかっていた。"""
+    html = _read("templates/index.html")
+    assert "Math.max(5000, limitMs)" not in html, \
+        "5秒の下限が残っています（締め切りを超えて待つ原因）"
+    assert "MIN_USEFUL_WAIT_MS" in html, "残り時間が短いときに打ち切る判定がありません"
+
+
+def test_gives_up_when_little_time_remains():
+    """残り時間がわずかなときは、通信を始めず・再送もしないこと。"""
+    html = _read("templates/index.html")
+    assert "if (leftMs <= MIN_USEFUL_WAIT_MS)" in html, \
+        "残り時間が短いときに通信を始めない判定がありません"
+    assert "remainMs <= MIN_USEFUL_WAIT_MS" in html, \
+        "再送前に残り時間を確認していません"
+
+
+def test_deadline_starts_when_photo_is_picked():
+    """60秒の締め切りは、圧縮などの前処理も含めて写真を選んだ時点から数えること。"""
+    html = _read("templates/index.html")
+    assert "pickedAt: Date.now()" in html, "写真を選んだ時刻を記録していません"
+    assert "item.pickedAt" in html, "締め切りの起点に pickedAt を使っていません"

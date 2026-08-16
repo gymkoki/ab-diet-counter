@@ -2581,7 +2581,10 @@ async function doReset() {
 async function addFiles(mealId, files) {
   for (const file of files) {
     const id = nextItemId();
-    const item = { id, file:null, previewSrc:null, result:null, loading:false, error:null };
+    // 写真を選んだ時点を記録する。60秒の締め切りは、圧縮などの前処理も含めて
+    // 「利用者が待ち始めてから」で数える（オーナー指示 2026-08）。
+    const item = { id, file:null, previewSrc:null, result:null, loading:false, error:null,
+                   pickedAt: Date.now() };
     state[mealId].items.push(item);
     renderStrip(mealId);
     const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
@@ -3253,13 +3256,21 @@ const ANALYZE_RETRY_WAIT_MS  = [1500, 4000, 8000];
 // 【方針】待たせる時間は短くする（オーナー指摘 2026-08）。
 // 解析が長引いたときは、画面の前でいつまでも待たせるより、早めに区切りをつけて
 // 「写真は保存済み・開き直せば自動で続きから計算します」と伝えるほうが親切。
-const ANALYZE_FETCH_TIMEOUT_MS = 150000;   // 1回の通信の上限（2分30秒）
-const ANALYZE_TOTAL_DEADLINE_MS = 240000;  // 再送も含めた全体の上限（4分）
+// 1回の通信の上限。サーバーは1回50秒・合計55秒で必ず応答を返すため、
+// それを少しだけ上回る値にして、下の全体上限(60秒)を超えないようにする。
+const ANALYZE_FETCH_TIMEOUT_MS = 58000;
+// 残りがこれ未満なら、通信を始めても間に合わないので打ち切る
+const MIN_USEFUL_WAIT_MS = 3000;
+// 再送も含めた全体の上限。オーナー指示 2026-08：解析は長くても60秒以内に終わらせる。
+// サーバー側も1回50秒・合計55秒で打ち切るため、ここを超えることは通常ない。
+const ANALYZE_TOTAL_DEADLINE_MS = 60000;
 
 // 時間制限つきの fetch。時間切れは AbortError になり、通信断と同じ扱いで再送される。
 function _fetchWithTimeout(url, formData, limitMs) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), Math.max(5000, limitMs));
+  // 下限を設けると締め切りを超えて待ってしまうため、渡された制限をそのまま使う
+  // （呼び出し側が「残り時間が短すぎるなら試さない」を判断する）。
+  const timer = setTimeout(() => ctrl.abort(), Math.max(1000, limitMs));
   return fetch(url, { method: 'POST', body: formData, signal: ctrl.signal })
     .finally(() => clearTimeout(timer));
 }
@@ -3278,8 +3289,13 @@ async function fetchAnalyze(url, formData, maxRetries = 2, deadlineAt = null) {
   document.addEventListener('visibilitychange', onVis);
   try {
     for (let attempt = 0; ; attempt++) {
-      // 全体の締め切りが近いときは、その残り時間ぶんだけ待つ
+      // 全体の締め切りが近いときは、その残り時間ぶんだけ待つ。
+      // 残りがわずかなら、始めても間に合わないので試さずに打ち切る
+      // （ここで無理に投げると、締め切りを超えて待つことになる）。
       const leftMs = deadlineAt ? deadlineAt - Date.now() : Infinity;
+      if (leftMs <= MIN_USEFUL_WAIT_MS) {
+        throw new DOMException('deadline reached', 'AbortError');
+      }
       const limitMs = Math.min(ANALYZE_FETCH_TIMEOUT_MS, leftMs);
       try {
         return await _fetchWithTimeout(url, formData, limitMs);
@@ -3287,7 +3303,8 @@ async function fetchAnalyze(url, formData, maxRetries = 2, deadlineAt = null) {
         if (_isTimeoutError(e)) {
           console.warn(`[fetchAnalyze] ${url} が ${Math.round(limitMs / 1000)}秒で応答せず打ち切りました`);
         }
-        if (attempt >= maxRetries || (deadlineAt && Date.now() >= deadlineAt)) {
+        const remainMs = deadlineAt ? deadlineAt - Date.now() : Infinity;
+        if (attempt >= maxRetries || remainMs <= MIN_USEFUL_WAIT_MS) {
           console.error(`[fetchAnalyze] ${url} 通信失敗（自動再送${maxRetries}回でも回復せず）:`, e);
           throw e;
         }
@@ -3359,7 +3376,11 @@ async function analyzeItem(mealId, itemId) {
   // 一時的な失敗は、進捗を0に戻さずそのまま静かに再送する。
   // 画面上は最初から最後まで「1回の解析」に見え、途中でエラー文言も出さない。
   // 全体の締め切り。ここを過ぎたら、いつまでも99%を見せずに必ず結論を出す。
-  const deadlineAt = Date.now() + ANALYZE_TOTAL_DEADLINE_MS;
+  // 締め切りの起点は写真を選んだ時点。ただし再読み込み後の再開など、
+  // 選択から時間が経っている場合は現在時刻から数え直す。
+  const anchor = (item.pickedAt && Date.now() - item.pickedAt < ANALYZE_TOTAL_DEADLINE_MS)
+    ? item.pickedAt : Date.now();
+  const deadlineAt = anchor + ANALYZE_TOTAL_DEADLINE_MS;
   let data = null, fatal = null;
   // 【重要】try/finally で囲む（2026-08の「99%で止まる」障害対策）。
   // 途中で想定外のエラーが起きても finally で必ず進捗タイマーを止める。
@@ -3374,7 +3395,8 @@ async function analyzeItem(mealId, itemId) {
       } catch (e) {
         fatal = e; data = null;                        // 通信断など。次の周回で再送する
       }
-      if (Date.now() >= deadlineAt) {
+      // 残り時間がわずかなら、再送しても間に合わないので打ち切る
+      if (Date.now() + MIN_USEFUL_WAIT_MS >= deadlineAt) {
         console.warn('[photo-analyze] 全体の締め切りに達したため打ち切ります');
         break;
       }
