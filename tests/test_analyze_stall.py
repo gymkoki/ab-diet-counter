@@ -48,6 +48,27 @@ def test_fetch_timeout_is_longer_than_server_budget():
     assert margin_ms >= 30000, f"端末の制限とサーバーの持ち時間の余裕が不足: {margin_ms / 1000:.0f}秒"
 
 
+def test_progress_shows_elapsed_seconds_not_stuck_percent():
+    """解析中の表示が『％』ではなく経過秒数であること。
+    ％は99%に張り付くため、遅いだけなのか固まったのかを利用者が区別できない。"""
+    html = _read("templates/index.html")
+    assert "function elapsedLabel" in html
+    assert "${elapsedLabel(item)}" in html, "サムネイルの表示が経過秒数になっていない"
+    assert "loadingStartedAt" in html
+    # 99%表示に戻っていないこと
+    assert "${fmtPct(item.loadingPct)}%" not in html
+
+
+def test_waiting_time_is_kept_short():
+    """会員を待たせる時間の上限が、実用的な長さに収まっていること。"""
+    html = _read("templates/index.html")
+    fetch_ms = int(re.search(r"ANALYZE_FETCH_TIMEOUT_MS\s*=\s*(\d+)", html).group(1))
+    total_ms = int(re.search(r"ANALYZE_TOTAL_DEADLINE_MS\s*=\s*(\d+)", html).group(1))
+    assert fetch_ms <= 180000, "1回の通信で3分以上待たせない"
+    assert total_ms <= 300000, "全体で5分以上待たせない"
+    assert m.RETRY_TIME_BUDGET_SEC <= 120.0, "サーバーが粘りすぎている（会員が待たされる）"
+
+
 def test_total_deadline_exists_and_is_bounded():
     """再送も含めた全体の締め切りがあり、際限なく再送し続けないこと。"""
     html = _read("templates/index.html")
