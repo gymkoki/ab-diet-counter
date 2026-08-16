@@ -42,7 +42,10 @@ def test_fetch_timeout_is_longer_than_server_budget():
     短いと、正常に解析中のリクエストを端末側が先に切ってしまう。"""
     html = _read("templates/index.html")
     fetch_ms = int(re.search(r"ANALYZE_FETCH_TIMEOUT_MS\s*=\s*(\d+)", html).group(1))
-    assert fetch_ms > m.RETRY_TIME_BUDGET_SEC * 1000, "端末の制限がサーバーの持ち時間より短い"
+    # 写真の送信・画像処理・応答の送信ぶんの余裕（30秒以上）を必ず確保する。
+    # ここが薄いと、正常に解析中のリクエストを端末が先に切ってしまう。
+    margin_ms = fetch_ms - m.RETRY_TIME_BUDGET_SEC * 1000
+    assert margin_ms >= 30000, f"端末の制限とサーバーの持ち時間の余裕が不足: {margin_ms / 1000:.0f}秒"
 
 
 def test_total_deadline_exists_and_is_bounded():
