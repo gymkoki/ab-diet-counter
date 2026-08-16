@@ -3142,12 +3142,31 @@ function _advanceProgress(item) {
 // 表示用：小数1桁まで出して、終盤でも数字が動いているのが分かるようにする
 function fmtPct(p) { return (p || 0).toFixed(1); }
 
+// 進捗表示が生きていてよい最長時間。全体の締め切り(7分)より少し長くしておき、
+// 万が一どこかの処理が進捗を止め忘れても、必ずここで止まるようにする。
+// これが「99%のまま永久に固まる」ことへの最後の歯止め（2026-08の障害対策）。
+// ※ ANALYZE_TOTAL_DEADLINE_MS(7分) より後に定義されるため、ここでは数値で書く
+//   （後で定義される const をここで参照すると、読み込み時にエラーになりアプリ全体が止まる）。
+const PROGRESS_WATCHDOG_MS = 480000;   // 8分
+
 function _startProgress(mealId, itemId) {
   const key = `${mealId}-${itemId}`;
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
   item.loadingPct = 0;
+  const startedAt = Date.now();
   _progressTimers[key] = setInterval(() => {
+    // 見張り：長すぎる進捗は強制的に終わらせ、利用者に状況を伝える
+    if (Date.now() - startedAt > PROGRESS_WATCHDOG_MS) {
+      console.error('[progress] 進捗が長時間終わらないため強制的に打ち切りました', key);
+      _stopProgress(mealId, itemId);
+      item.loading = false;
+      item.error = ANALYZE_BUSY_MESSAGE;
+      renderStrip(mealId);
+      showError(mealId, ANALYZE_BUSY_MESSAGE);
+      saveState();
+      return;
+    }
     _advanceProgress(item);
     renderStrip(mealId);
   }, 200);
@@ -3212,16 +3231,47 @@ const ANALYZE_BUSY_MESSAGE = '解析に少し時間がかかっています。�
 const ANALYZE_CLIENT_RETRIES = 3;          // サーバー側の再試行に加えて、通信断などに備える
 const ANALYZE_RETRY_WAIT_MS  = [1500, 4000, 8000];
 
-async function fetchAnalyze(url, formData, maxRetries = 2) {
+// 【重要】1回の通信に必ず時間制限を設ける（2026-08の「99%で止まる」障害対策）。
+// fetch は既定では時間制限が無く、スマホの電波が切り替わった・回線が黙って切れた
+// といった場合に「成功も失敗もしないまま永久に待つ」ことがある。こうなると
+// 進捗表示が99%のまま二度と動かず、エラーも出ないので利用者は何も分からない。
+// サーバーは自分の持ち時間（約215秒）で必ず答えを返すので、それより少し長い
+// ところで打ち切り、切れた通信として静かに再送する。
+const ANALYZE_FETCH_TIMEOUT_MS = 240000;   // 1回の通信の上限（4分）
+const ANALYZE_TOTAL_DEADLINE_MS = 420000;  // 再送も含めた全体の上限（7分）
+
+// 時間制限つきの fetch。時間切れは AbortError になり、通信断と同じ扱いで再送される。
+function _fetchWithTimeout(url, formData, limitMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Math.max(5000, limitMs));
+  return fetch(url, { method: 'POST', body: formData, signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
+}
+
+// 通信の時間切れ・中断かどうか（＝待てば直る種類の失敗か）
+function _isTimeoutError(e) {
+  return !!e && (e.name === 'AbortError' || e.name === 'TimeoutError');
+}
+
+async function fetchAnalyze(url, formData, maxRetries = 2, deadlineAt = null) {
+  // 呼び出し側が締め切りを渡さなかった場合も、必ず全体の上限を設ける。
+  // どの解析（写真・文章・再計算）でも「永久に待ち続ける」ことが無いようにする。
+  deadlineAt = deadlineAt || (Date.now() + ANALYZE_TOTAL_DEADLINE_MS);
   let sawHidden = document.hidden;
   const onVis = () => { if (document.hidden) sawHidden = true; };
   document.addEventListener('visibilitychange', onVis);
   try {
     for (let attempt = 0; ; attempt++) {
+      // 全体の締め切りが近いときは、その残り時間ぶんだけ待つ
+      const leftMs = deadlineAt ? deadlineAt - Date.now() : Infinity;
+      const limitMs = Math.min(ANALYZE_FETCH_TIMEOUT_MS, leftMs);
       try {
-        return await fetch(url, { method: 'POST', body: formData });
+        return await _fetchWithTimeout(url, formData, limitMs);
       } catch (e) {
-        if (attempt >= maxRetries) {
+        if (_isTimeoutError(e)) {
+          console.warn(`[fetchAnalyze] ${url} が ${Math.round(limitMs / 1000)}秒で応答せず打ち切りました`);
+        }
+        if (attempt >= maxRetries || (deadlineAt && Date.now() >= deadlineAt)) {
           console.error(`[fetchAnalyze] ${url} 通信失敗（自動再送${maxRetries}回でも回復せず）:`, e);
           throw e;
         }
@@ -3245,7 +3295,9 @@ async function fetchAnalyze(url, formData, maxRetries = 2) {
 // ようにする（以前は両方とも「通信エラー」と表示され、原因調査ができなかった）。
 function _analyzeFailureMessage(e, tag) {
   console.error(`[${tag}] 解析処理でエラー:`, e);
-  const isNetwork = (e instanceof TypeError) || /fetch|network|load failed|通信/i.test(String((e && e.message) || ''));
+  // 時間切れ（AbortError）も通信の失敗として扱う。画面側の不具合ではない。
+  const isNetwork = _isTimeoutError(e) || (e instanceof TypeError)
+    || /fetch|network|load failed|通信/i.test(String((e && e.message) || ''));
   return isNetwork
     ? '通信エラーが発生しました。電波の良い場所で、もう一度お試しください。'
     : '画面の処理中に問題が発生しました。ページを再読み込みして、もう一度お試しください。';
@@ -3290,22 +3342,36 @@ async function analyzeItem(mealId, itemId) {
 
   // 一時的な失敗は、進捗を0に戻さずそのまま静かに再送する。
   // 画面上は最初から最後まで「1回の解析」に見え、途中でエラー文言も出さない。
+  // 全体の締め切り。ここを過ぎたら、いつまでも99%を見せずに必ず結論を出す。
+  const deadlineAt = Date.now() + ANALYZE_TOTAL_DEADLINE_MS;
   let data = null, fatal = null;
-  for (let attempt = 0; attempt <= ANALYZE_CLIENT_RETRIES; attempt++) {
-    try {
-      const res = await fetchAnalyze('/analyze', buildForm());
-      data = await parseAnalyzeResponse(res);
-      if (!data.error || !data._retryable) break;   // 成功、または再送しても直らないエラー
-    } catch (e) {
-      fatal = e; data = null;                        // 通信断など。次の周回で再送する
+  // 【重要】try/finally で囲む（2026-08の「99%で止まる」障害対策）。
+  // 途中で想定外のエラーが起きても finally で必ず進捗タイマーを止める。
+  // これが無いと、タイマーだけが回り続けて画面が99%のまま固まり、
+  // エラー表示も出ないため利用者は何が起きたか分からなくなる。
+  try {
+    for (let attempt = 0; attempt <= ANALYZE_CLIENT_RETRIES; attempt++) {
+      try {
+        const res = await fetchAnalyze('/analyze', buildForm(), 2, deadlineAt);
+        data = await parseAnalyzeResponse(res);
+        if (!data.error || !data._retryable) break;   // 成功、または再送しても直らないエラー
+      } catch (e) {
+        fatal = e; data = null;                        // 通信断など。次の周回で再送する
+      }
+      if (Date.now() >= deadlineAt) {
+        console.warn('[photo-analyze] 全体の締め切りに達したため打ち切ります');
+        break;
+      }
+      if (attempt < ANALYZE_CLIENT_RETRIES) {
+        console.warn(`[photo-analyze] ${attempt + 1}回目が失敗。進捗はそのままに静かに再送します`);
+        await new Promise(r => setTimeout(r, ANALYZE_RETRY_WAIT_MS[attempt] || 8000));
+      }
     }
-    if (attempt < ANALYZE_CLIENT_RETRIES) {
-      console.warn(`[photo-analyze] ${attempt + 1}回目が失敗。進捗はそのままに静かに再送します`);
-      await new Promise(r => setTimeout(r, ANALYZE_RETRY_WAIT_MS[attempt] || 8000));
-    }
+  } catch (e) {
+    fatal = fatal || e; data = null;
+  } finally {
+    _stopProgress(mealId, itemId);
   }
-
-  _stopProgress(mealId, itemId);
   renderStrip(mealId);
   await new Promise(r => setTimeout(r, 300));
   item.loading = false;
