@@ -255,3 +255,47 @@ def test_deadline_starts_when_photo_is_picked():
     html = _read("templates/index.html")
     assert "pickedAt: Date.now()" in html, "写真を選んだ時刻を記録していません"
     assert "item.pickedAt" in html, "締め切りの起点に pickedAt を使っていません"
+
+
+# ── 「計算し直す」が写真解析の60秒制限に巻き込まれないこと ─────────────
+def test_reanalyze_has_its_own_longer_deadline():
+    """再計算はWeb検索を使うため時間がかかる。写真解析の60秒とは別枠の上限を持つこと。
+    2026-08の障害：写真解析を60秒に縮めた際に再計算まで60秒で切られ、
+    100%まで進んでも結果が反映されず入力文字が残ったままになった。"""
+    html = _read("templates/index.html")
+    assert "REANALYZE_TOTAL_DEADLINE_MS" in html, "再計算専用の締め切りがありません"
+    assert "REANALYZE_FETCH_TIMEOUT_MS" in html, "再計算専用の通信上限がありません"
+    total = int(re.search(r"REANALYZE_TOTAL_DEADLINE_MS\s*=\s*(\d+)", html).group(1))
+    fetch = int(re.search(r"REANALYZE_FETCH_TIMEOUT_MS\s*=\s*(\d+)", html).group(1))
+    photo_total = int(re.search(r"ANALYZE_TOTAL_DEADLINE_MS\s*=\s*(\d+)", html).group(1))
+    assert total > photo_total, "再計算の締め切りが写真解析と同じ(60秒)では足りません"
+    assert fetch < total, "通信の上限が全体の締め切りを超えています"
+    # サーバーが答えを返しきる時間より長いこと
+    assert fetch / 1000 > m.RETRY_TIME_BUDGET_SEC - m.RETRY_RESERVE_SEC, \
+        "サーバーの持ち時間より短く、正常な再計算を画面側が切ってしまいます"
+
+
+def test_reanalyze_call_passes_its_deadline():
+    """再計算の通信が、専用の締め切りを実際に渡していること。"""
+    html = _read("templates/index.html")
+    start = html.index("async function reanalyzeItem(")
+    body = html[start:start + 4000]
+    assert "REANALYZE_TOTAL_DEADLINE_MS" in body, \
+        "reanalyzeItem が既定(60秒)の締め切りのまま通信しています"
+    assert "REANALYZE_FETCH_TIMEOUT_MS" in body
+
+
+def test_fetch_limit_is_per_call():
+    """1回の通信の上限を呼び出しごとに指定できること。"""
+    html = _read("templates/index.html")
+    assert "fetchLimitMs = ANALYZE_FETCH_TIMEOUT_MS" in html
+    assert "Math.min(fetchLimitMs, leftMs)" in html
+
+
+def test_text_analysis_fits_in_client_deadline():
+    """文章解析のサーバー持ち時間が、画面側の締め切り(60秒)に収まること。"""
+    src = _read("app.py")
+    # /analyze-text が写真解析と同じ持ち時間を使っている
+    assert src.count("time_budget=ANALYZE_TOTAL_BUDGET_SEC") >= 2, \
+        "/analyze-text に持ち時間が渡されていません"
+    assert "timeout=60.0" not in src, "1回60秒だと画面側の締め切りと同じで切られます"
