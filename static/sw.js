@@ -15,7 +15,7 @@
  *     self.addEventListener('install', () => self.registration.unregister());
  *     に差し替えてデプロイすれば全端末で自動的に解除される。
  */
-const CACHE = 'ab-diet-shell-v1';
+const CACHE = 'ab-diet-shell-v2';
 const NETWORK_TIMEOUT_MS = 1500;
 
 self.addEventListener('install', (e) => {
@@ -30,19 +30,41 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
-async function networkFirst(request) {
+async function notifyClients(msg) {
+  const clients = await self.clients.matchAll({ type: 'window' });
+  clients.forEach(c => { try { c.postMessage(msg); } catch (_) {} });
+}
+
+async function networkFirst(request, event) {
   const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  // 比較用に、いま持っているHTMLの中身を先に読んでおく（cached自体は消費しない）
+  const cachedText = cached ? await cached.clone().text().catch(() => null) : null;
 
   // ネットワークを試す。ただし NETWORK_TIMEOUT_MS を過ぎたらキャッシュに切り替える。
   const network = fetch(request).then(async (res) => {
     // 正常なHTMLのときだけ保存する（500やメンテ画面を保存しない）
     if (res && res.ok && res.status === 200) {
+      const freshText = await res.clone().text().catch(() => null);
       try { await cache.put(request, res.clone()); } catch (_) {}
+      // 【重要】キャッシュを出した後に「実は新しい版だった」と分かった場合は
+      // 画面側へ知らせる。これが無いと、回線が遅い端末だけ古い版を使い続け、
+      // 修正しても「反映されない」状態が延々と続く（2026-08に実際に発生）。
+      if (freshText && cachedText && freshText !== cachedText) {
+        notifyClients({ type: 'shell-updated' });
+      }
     }
     return res;
   });
 
-  const cached = await cache.match(request);
+  // 【最重要】キャッシュを先に返すと、この fetch イベントは終わったと見なされ、
+  // ブラウザはサービスワーカーを停止できる状態になる。waitUntil で寿命を延ばさないと、
+  // 裏で走らせたはずの更新（cache.put）が完了前に打ち切られ、
+  // 「いつまで経ってもキャッシュが古いまま＝修正が反映されない」状態になる。
+  if (event && typeof event.waitUntil === 'function') {
+    event.waitUntil(network.catch(() => {}));
+  }
+
   if (!cached) return network;   // 初回は待つしかない
 
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), NETWORK_TIMEOUT_MS));
@@ -65,6 +87,6 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.startsWith('/api/')) return;
 
   if (req.mode === 'navigate') {
-    e.respondWith(networkFirst(req));
+    e.respondWith(networkFirst(req, e));
   }
 });
