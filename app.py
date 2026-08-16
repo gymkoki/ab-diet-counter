@@ -264,6 +264,15 @@ RETRY_TIME_BUDGET_SEC = 110.0       # 再試行に使ってよい総時間（gun
 RETRY_RESERVE_SEC     = 20.0        # 応答生成・送信ぶんの取り置き
 RETRY_STATUS_CODES    = (429, 500, 502, 503, 529)
 
+# ── 写真解析の速度上限（オーナー指示 2026-08：長くても60秒以内） ──────────
+# 1回の試行を50秒で打ち切り、画面側の待ち時間の上限(60秒)に収まるようにする。
+# max_tokens は実際の出力（多くても2000トークン程度）に対して十分な余裕を持たせつつ、
+# AIが冗長に書き続けて生成時間が延びるのを防ぐ上限として効かせる。
+# 内訳：写真のアップロード＋画像処理(〜10秒) ＋ AI呼び出し(最大45秒) ＋ 応答 ≒ 60秒。
+ANALYZE_TIMEOUT_SEC      = 40.0   # AI呼び出し1回の上限
+ANALYZE_TOTAL_BUDGET_SEC = 45.0   # 再試行を含めたAI呼び出しの合計上限
+ANALYZE_MAX_TOKENS       = 4000   # 実際の出力は多くても2000程度。冗長化による遅延を防ぐ上限
+
 # サーバー側で粘っても解析し切れなかったときに、はじめて会員に見せる文言。
 # 「混み合っています／時間をおいて再試行してください」とは書かない：
 # 写真は端末に保存済みで、アプリを開き直せば自動で解析を再開するため、
@@ -288,18 +297,21 @@ def _retry_wait_seconds(err, attempt):
     return base + random.uniform(0, 0.4)        # 同時アクセスが重ならないよう軽く散らす
 
 
-def create_and_parse(client, **kwargs):
+def create_and_parse(client, time_budget=None, **kwargs):
     """messages.create を呼び、失敗しても数回まで自動リトライしてからJSONを返す。
     ・空応答／JSONが壊れていた場合は生成し直す（AIの一時的なブレ対策）
     ・レート制限・過負荷(529)・一時的なサーバーエラーは少し待って再試行
     ・Web検索などサーバー側ツールの中断(pause_turn)は自動で再開する
+    time_budget を渡すと、再試行を含めた総時間をその秒数以内に収める
+    （写真解析は画面側の60秒制限に合わせて短くする）。
     返却前に total_* を内訳(foods)の合計へ揃え、合計と明細の食い違いを防ぐ。"""
     detail = ""
     last_json_err = None
     started = time.monotonic()
     # このリクエストで使ってよい締め切り。1回のAI呼び出しも、Web検索の再開も、
     # 必ずこの締め切りの中で終わらせる（gunicornに切られる前に自分で打ち切る）。
-    deadline = started + (RETRY_TIME_BUDGET_SEC - RETRY_RESERVE_SEC)
+    budget = time_budget if time_budget else (RETRY_TIME_BUDGET_SEC - RETRY_RESERVE_SEC)
+    deadline = started + budget
     for attempt in range(RETRY_MAX_ATTEMPTS):
         err = None
         try:
@@ -325,10 +337,10 @@ def create_and_parse(client, **kwargs):
             if getattr(e, "status_code", None) not in RETRY_STATUS_CODES:
                 raise
             err = e
-        # 次を試す時間が残っているか（gunicornに切られる前に必ず自分で打ち切る）
+        # 次を試す時間が残っているか（締め切りを超える前に必ず自分で打ち切る）
         wait = _retry_wait_seconds(err, attempt)
-        elapsed = time.monotonic() - started
-        if elapsed + wait + RETRY_RESERVE_SEC >= RETRY_TIME_BUDGET_SEC:
+        if time.monotonic() + wait >= deadline:
+            elapsed = time.monotonic() - started
             print(f"[RETRY] 予算切れで打ち切り: attempt={attempt + 1} elapsed={elapsed:.1f}s")
             break
         print(f"[RETRY] {attempt + 1}回目が失敗。{wait:.1f}秒待って再試行します "
@@ -1545,6 +1557,11 @@ total_veg_g は 0〜10g 程度が正しい。
 
 必ず以下のJSON形式のみで回答してください。JSONの前後に説明文やコードブロックは不要です：
 【重要】categoryフィールドは "A" または "B" のみ使用すること。"Good B"・"グッドB" は使用禁止。
+【簡潔に書くこと】会員は解析結果を待っているため、出力が長いほど待ち時間が延びる。
+- reason は計算式が分かる範囲で1行・100字以内にまとめる（例：「豚バラ60g×366/100≒220kcal→200kcal超→B1」）。
+  同じ説明を繰り返さない。前置き・言い換え・感想は書かない。
+- advice は2〜3文（150字以内）にまとめる。
+- foods は実際に食べたものだけを挙げる。同種のものは1項目にまとめ、細かく分けすぎない。
 {
   "foods": [
     {
@@ -5254,7 +5271,14 @@ def analyze():
             # 撮った写真をその場で判定する経路は速さを最優先する。
             # 商品名を調べる必要があるときは、会員が「これは○○です」と訂正したときの
             # /reanalyze 側で検索する（そちらは待ってもらえる場面なので許容できる）。
-            max_tokens=16000,
+            #
+            # 【速度の上限】オーナー指示 2026-08：写真の解析は長くても60秒以内に収める。
+            #  ・timeout=50秒 …… 1回の試行が長引いてもここで打ち切る（既定90秒だと超える）
+            #  ・max_tokens …… 実際の出力は多くても2000トークン程度。16000は無意味に上限が
+            #    高く、AIが冗長に書き続けたときに生成時間がそのまま延びていた。
+            time_budget=ANALYZE_TOTAL_BUDGET_SEC,
+            timeout=ANALYZE_TIMEOUT_SEC,
+            max_tokens=ANALYZE_MAX_TOKENS,
             system=[
                 {
                     "type": "text",
@@ -5384,7 +5408,7 @@ def reanalyze():
             # Web検索で確認できるようにする。訂正は会員が意図して行う操作で、
             # 数秒余計にかかっても許容できるため、検索を許可するのはここだけにする。
             tools=[WEB_SEARCH_TOOL],
-            max_tokens=16000,
+            max_tokens=8000,   # 再計算はWeb検索の結果も入るため少し多め（16000は過大で遅延の原因）
             system=[
                 {
                     "type": "text",
@@ -5466,7 +5490,7 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
             # AI側が固まった場合でもリクエスト全体が長引かず、スマホのブラウザが持つ
             # 通信タイムアウト（約60〜100秒）を超えて「通信エラー」になるのを防ぐ。
             timeout=60.0,
-            max_tokens=16000,
+            max_tokens=ANALYZE_MAX_TOKENS,   # 文章入力は出力が小さい
             system=[
                 {
                     "type": "text",
