@@ -1172,19 +1172,19 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.27</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.28</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📷</span>
-        <span><b>記録を忘れた日でも、あとから写真をアップできます！</b>その日に何ひとつ記録していなくても、<b>3日前まで</b>ならさかのぼって食事写真を追加できるようになりました。</span>
+        <span style="font-size:20px;flex-shrink:0">✅</span>
+        <span><b>栄養解析でエラーが出る問題を解決しました。</b>昨日の夜から発生していましたが、無事に直っています。ご不便をおかけして申し訳ありませんでした。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🗓️</span>
-        <span>やり方は、下の<b>「履歴」</b>タブ →<b>「日付を選んで記入」</b>で日にちを選び、<b>「📷 この日の食事を追加する」</b>を押すだけ。いつもどおり写真を撮って登録できます。</span>
+        <span style="font-size:20px;flex-shrink:0">⚡</span>
+        <span>その過程で、<b>栄養解析にかかる時間も少し短縮</b>することができました。以前より早く結果が出るようになっています。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">💡</span>
-        <span>忙しくて記録できなかった日も、あとでまとめて入力できます。Bカウント・体重・日記は今までどおり、それより前の日でも記入できます。</span>
+        <span style="font-size:20px;flex-shrink:0">🙏</span>
+        <span>引き続きどうぞご利用ください。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -5148,7 +5148,7 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v29';
+const NOTICE_KEY = 'ab-diet-notice-v30';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
@@ -5185,6 +5185,11 @@ function _renderDailyTip(idx) {
   document.getElementById('daily-tip-text').textContent = DIET_TIPS[idx];
 }
 
+// アップデートお知らせを出した回は、コツ（栄養の一言アドバイス）を出さない。
+// ※オーナー指示 2026-08：お知らせを出すときは、続けてアドバイスまで出さなくてよい。
+// お知らせを閉じたあとも、その回はコツを出さない（次にアプリを開いたときから通常どおり）。
+let _noticeShownThisSession = false;
+
 // アプリを開くたびにコツを表示する。アップデートお知らせ・運営からの返信・
 // キャラ紹介が表示中のときは邪魔しないよう後回しにする
 // （それらを閉じたあと／次にアプリを開いたときに表示される）。
@@ -5192,6 +5197,7 @@ function maybeShowDailyTip() {
   try {
     if (typeof DIET_TIPS === 'undefined' || !DIET_TIPS.length) return;  // tips.js未読込でも壊さない
     if (_editingDate) return;   // 過去日の編集中は表示しない
+    if (_noticeShownThisSession) return;   // お知らせを出した回はコツを出さない
     const busy = ['update-notice-overlay', 'reply-notice-overlay', 'coach-msg-overlay', 'chara-intro-overlay']
       .some(id => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; });
     if (busy) return;
@@ -5266,7 +5272,7 @@ function _step(fn, label) {
 
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
-    if (ov) ov.style.display = 'flex';
+    if (ov) { ov.style.display = 'flex'; _noticeShownThisSession = true; }
   }
   _step(maybeShowDailyTip, 'maybeShowDailyTip');   // ABダイエットのコツ（開くたびに表示。お知らせ表示中は後回し）
   _step(maybeShowHomeBanner, 'maybeShowHomeBanner');
