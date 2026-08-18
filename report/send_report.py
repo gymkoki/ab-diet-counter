@@ -300,31 +300,8 @@ def chart_weight_loss(data: dict) -> str:
     return fig_to_png(fig)
 
 
-def chart_exercise(data: dict) -> str:
-    """運動によるBカウント消費：集団平均推移（棒グラフ）"""
-    dates = data["dates"]
-    avg   = data["ex_avg_trend"]
-
-    fig, ax = plt.subplots(figsize=(10, 3.2))
-
-    x = [j for j, v in enumerate(avg) if v is not None]
-    y = [v for v in avg if v is not None]
-    ax.bar(x, y, color=C_INDIGO + "CC", zorder=2)
-
-    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
-    ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
-    ax.set_ylabel("消費Bカウント / 日", fontsize=13)
-    ax.set_ylim(bottom=0)
-    latest = next((v for v in reversed(avg) if v is not None), None)
-    title_suffix = f"（直近: {latest:.1f}B）" if latest is not None else ""
-    ax.set_title(f"運動によるBカウント消費 集団平均（直近30日）{title_suffix}",
-                 fontsize=15, fontweight="bold", pad=8)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, zorder=0)
-    fig.tight_layout()
-    return fig_to_png(fig)
+# ※運動でのBカウント消費を集団平均で見せる棒グラフは、オーナー指示（2026-08）により削除した。
+#   会員ごとの推移は管理画面の個人ページで見られるため、レポートには載せない。
 
 
 def _axes_note(ax, msg: str):
@@ -338,56 +315,81 @@ def _axes_note(ax, msg: str):
 
 
 def chart_cut_corr(data: dict) -> bytes:
-    """減量希望者：平均Bカウント（左軸）× 平均減量幅（右軸）の推移。
-    Bカウントを抑えられている時期に減量が進んでいるか、相関を目視できる。"""
-    cc     = data.get("cut_corr") or {}
-    dates  = data["dates"]
-    b_tr   = cc.get("b_avg_trend") or []
-    l_tr   = cc.get("loss_avg_trend") or []
-    users  = cc.get("users", 0)
+    """減量希望者：横軸＝平均Bカウント、縦軸＝体重の変化 の散布図（1人1点）。
 
-    fig, ax1 = plt.subplots(figsize=(10, 4.2))
-    b_pts = [(i, v) for i, v in enumerate(b_tr) if v is not None]
-    l_pts = [(i, v) for i, v in enumerate(l_tr) if v is not None]
+    以前は「日ごとの集団平均B」と「集団平均の減量幅」を2本の折れ線で並べていたが、
+    横軸が日付だったため“BとBの結果の関係”が読み取れなかった（オーナー指摘 2026-08）。
+    会員1人を1点にすると「Bを抑えている人ほど減っているか」が一目で分かる。
+    縦軸はマイナスが減量（下にあるほど痩せている）。"""
+    cc      = data.get("cut_corr") or {}
+    members = cc.get("members") or []
+    users   = cc.get("users", 0)
+    min_days = cc.get("min_days", 3)
 
-    if users == 0 or (not b_pts and not l_pts):
-        ax1.set_title("減量希望者：平均Bカウント × 平均減量の推移",
-                      fontsize=15, fontweight="bold", pad=8)
-        _axes_note(ax1, "減量希望者のデータを収集中です。\n会員がアプリで食事解析または設定保存をすると\n目標（減量/維持）が自動で記録されます。")
+    fig, ax = plt.subplots(figsize=(10, 4.6))
+    title = "減量希望者：平均Bカウント × 体重の変化"
+
+    if not members:
+        ax.set_title(title, fontsize=15, fontweight="bold", pad=8)
+        _axes_note(ax, f"データを収集中です。\nBカウントの記録が{min_days}日以上あり、体重を2回以上記録した\n減量希望の会員が対象です。")
         fig.tight_layout()
         return fig_to_png(fig)
 
-    ax2 = ax1.twinx()
-    if b_pts:
-        xs, ys = zip(*b_pts)
-        ax1.plot(xs, ys, color=C_PRIMARY, linewidth=2.4, marker="o", markersize=4,
-                 label=f"平均Bカウント (直近: {ys[-1]:.1f}B)", zorder=3)
-    if l_pts:
-        xs, ys = zip(*l_pts)
-        latest = ys[-1]
-        lbl = f"{latest:.1f}kg減量" if latest >= 0 else f"{-latest:.1f}kg増加"
-        ax2.plot(xs, ys, color=C_GREEN, linewidth=2.4, marker="s", markersize=4,
-                 label=f"平均減量幅 (直近: {lbl})", zorder=3)
-        ax2.fill_between(xs, ys, alpha=0.10, color=C_GREEN, zorder=2)
-    ax2.axhline(0, color=C_GRAY, linewidth=1, zorder=1)
+    xs = [m["avg_b"] for m in members]
+    ys = [m["change_kg"] for m in members]
 
-    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
-    ax1.set_xticks(tick_idx)
-    ax1.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
-    ax1.set_ylabel("平均Bカウント / 日", fontsize=13, color=C_PRIMARY)
-    ax2.set_ylabel("初回体重からの平均減量 (kg)", fontsize=13, color=C_GREEN)
-    ax1.set_ylim(bottom=0)
-    ax1.tick_params(axis="y", colors=C_PRIMARY, labelsize=13)
-    ax2.tick_params(axis="y", colors=C_GREEN, labelsize=13)
-    ax1.set_title(f"減量希望者（{users}名）：平均Bカウント × 平均減量の推移（直近30日）",
-                  fontsize=15, fontweight="bold", pad=8)
-    h1, lb1 = ax1.get_legend_handles_labels()
-    h2, lb2 = ax2.get_legend_handles_labels()
-    ax1.legend(h1 + h2, lb1 + lb2, loc="upper left", fontsize=12)
-    for sp in ["top"]:
-        ax1.spines[sp].set_visible(False)
-        ax2.spines[sp].set_visible(False)
-    ax1.grid(axis="y", alpha=0.25, zorder=0)
+    # 減った人と増えた人で色を分ける（0kgちょうどは「維持」として増加側の色にしない）
+    lost = [(x, y) for x, y in zip(xs, ys) if y < 0]
+    gain = [(x, y) for x, y in zip(xs, ys) if y >= 0]
+    if lost:
+        ax.scatter(*zip(*lost), s=90, color=C_GREEN, alpha=0.75, zorder=3,
+                   edgecolors="white", linewidths=1.2, label=f"減量できている（{len(lost)}名）")
+    if gain:
+        ax.scatter(*zip(*gain), s=90, color=C_PRIMARY, alpha=0.75, zorder=3,
+                   edgecolors="white", linewidths=1.2, label=f"減っていない（{len(gain)}名）")
+
+    # 傾向線と相関係数（3人以上いて、Bカウントにばらつきがあるときだけ）
+    note = ""
+    if len(members) >= 3 and len(set(xs)) > 1:
+        n = len(xs)
+        mx, my = sum(xs) / n, sum(ys) / n
+        sxx = sum((x - mx) ** 2 for x in xs)
+        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        syy = sum((y - my) ** 2 for y in ys)
+        slope = sxy / sxx
+        intercept = my - slope * mx
+        x0, x1 = min(xs), max(xs)
+        ax.plot([x0, x1], [slope * x0 + intercept, slope * x1 + intercept],
+                color=C_GRAY, linewidth=2, linestyle="--", zorder=2,
+                label="傾向線")
+        if syy > 0:
+            r = sxy / ((sxx ** 0.5) * (syy ** 0.5))
+            # 正の相関＝Bが多いほど体重が増える方向。ABダイエットの狙いどおりの並び。
+            if r >= 0.3:
+                verdict = "Bが多い人ほど減っていない傾向"
+            elif r <= -0.3:
+                verdict = "Bが多い人ほど減っている（想定と逆）"
+            else:
+                verdict = "はっきりした関係は見られない"
+            note = f"相関 r = {r:+.2f}（{verdict}）"
+
+    ax.axhline(0, color=C_GRAY, linewidth=1.2, zorder=1)
+
+    ax.set_xlabel("平均Bカウント / 日（直近30日）", fontsize=13)
+    ax.set_ylabel("体重の変化 (kg)　※マイナス＝減量", fontsize=13)
+    ax.set_xlim(left=0)
+    # タイトルは短く保ち、内訳と相関はその下の1行にまとめる（重ならないよう pad を確保）
+    ax.set_title(title + "（1人1点・直近30日）", fontsize=15, fontweight="bold", pad=30)
+    detail = f"{len(members)}名（減量希望{users}名中・Bの記録が{min_days}日以上ある人）"
+    if note:
+        detail += f"　｜　{note}"
+    ax.text(0.5, 1.015, detail, transform=ax.transAxes, ha="center", va="bottom",
+            fontsize=12, color=C_GRAY)
+    ax.tick_params(axis="both", labelsize=13)
+    ax.legend(loc="best", fontsize=12)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(alpha=0.25, zorder=0)
     fig.tight_layout()
     return fig_to_png(fig)
 
@@ -494,7 +496,7 @@ def chart_goal_compare(data: dict) -> bytes:
 
 # ── メール HTML 本文 ────────────────────────────────────────────
 # 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
-# cid:chart_weight / cid:chart_weight_loss / cid:chart_exercise / cid:chart_credit で参照する（send_email() が
+# cid:chart_weight / cid:chart_weight_loss / cid:chart_credit で参照する（send_email() が
 # main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
 def has_credit_chart(credit: dict) -> bool:
     """コストの実データが取れたときだけグラフを出す（取れないときは案内文だけ）。"""
@@ -905,10 +907,9 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -
       <img class="chart" src="cid:chart_weight" alt="Weight Trend" style="margin-top:6px">
       <img class="chart" src="cid:chart_weight_loss" alt="Weight Loss Progress" style="margin-top:6px">
       <div style="font-size:12px;font-weight:700;color:#6B7280;margin:14px 0 4px">
-        減量希望者の「平均Bカウント」と「平均減量」の相関（Bを抑えた時期に減量が進んでいるか）
+        減量希望者の「平均Bカウント」と「体重の変化」の相関（Bを抑えている人ほど減っているか・1人1点）
       </div>
-      <img class="chart" src="cid:chart_cut_corr" alt="Cut Users B-Count vs Weight Loss">
-      <img class="chart" src="cid:chart_exercise" alt="Exercise B-Count Trend" style="margin-top:6px">
+      <img class="chart" src="cid:chart_cut_corr" alt="Cut Users B-Count vs Weight Change">
     </div>
 
     <!-- ③ 栄養素の平均摂取量 -->
@@ -1038,7 +1039,6 @@ def main():
         "chart_weight":   chart_weight(data),
         "chart_weight_loss": chart_weight_loss(data),
         "chart_cut_corr":  chart_cut_corr(data),
-        "chart_exercise": chart_exercise(data),
         "chart_nutrition": chart_nutrition(data),
         "chart_goal_compare": chart_goal_compare(data),
     }
