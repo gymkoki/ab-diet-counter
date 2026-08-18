@@ -22,6 +22,17 @@ def _report_src():
         return f.read()
 
 
+def _load_send_report():
+    """レポート本体を読み込む。グラフ描画用のライブラリ（matplotlib / requests）は
+    アプリ本体には不要で、GitHub Actionsのテストにも入れていない。
+    入っていない環境では、この描画テストだけを飛ばす（他のテストは文面で担保する）。"""
+    pytest.importorskip("requests", reason="レポート送信用の依存（テスト環境には未導入）")
+    pytest.importorskip("matplotlib", reason="グラフ描画用の依存（テスト環境には未導入）")
+    sys.path.insert(0, os.path.join(ROOT, "report"))
+    import send_report
+    return send_report
+
+
 @pytest.fixture
 def client():
     m.init_db()
@@ -128,8 +139,7 @@ def test_exercise_bar_chart_is_removed():
 
 def test_chart_renders_without_error():
     """実際にPNGを生成できること（データあり・なしの両方）。"""
-    sys.path.insert(0, os.path.join(ROOT, "report"))
-    import send_report as R
+    R = _load_send_report()
     members = [{"avg_b": 2.0 + i * 0.4, "change_kg": 0.3 * i - 1.0, "days": 10}
                for i in range(6)]
     png = R.chart_cut_corr({"cut_corr": {"users": 8, "min_days": 3, "members": members},
@@ -142,8 +152,7 @@ def test_chart_renders_without_error():
 
 def test_chart_handles_single_member():
     """1人しかいなくても（傾向線が引けなくても）エラーにならないこと。"""
-    sys.path.insert(0, os.path.join(ROOT, "report"))
-    import send_report as R
+    R = _load_send_report()
     png = R.chart_cut_corr({"cut_corr": {"users": 1, "min_days": 3,
                                          "members": [{"avg_b": 3.0, "change_kg": -1.0, "days": 5}]},
                             "dates": []})
