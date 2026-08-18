@@ -2070,8 +2070,28 @@ def admin_report_data():
                 break
         return None if w is None else initial_w - w
 
+    # 相関グラフ用の「1人1点」データ。
+    # 横軸＝その人の期間平均Bカウント、縦軸＝体重の変化（マイナス＝減量できた）。
+    # 日ごとの集団平均を2本の折れ線で並べる形だと「BとBの結果」の関係が読み取れないため、
+    # 会員1人を1点として散布図にする（オーナー指示 2026-08）。
+    CORR_MIN_DAYS = 3   # Bの記録が少なすぎる人は平均がぶれるので除外する
+    cut_members = []
+    for u in cut_uids:
+        days = b_by_user.get(u) or {}
+        if len(days) < CORR_MIN_DAYS or u not in latest_loss_by_user:
+            continue
+        cut_members.append({
+            # latest_loss_by_user は「初回 − 最新」＝減った量。
+            # グラフは「体重の変化」なので符号を反転し、マイナス＝減量にする。
+            "change_kg": round(-latest_loss_by_user[u], 2),
+            "avg_b": round(sum(days.values()) / len(days), 2),
+            "days": len(days),
+        })
+
     cut_corr = {
         "users": len(cut_uids),
+        "min_days": CORR_MIN_DAYS,
+        "members": cut_members,
         "b_avg_trend": [
             _avg([b_by_user[u][d] for u in cut_uids if u in b_by_user and d in b_by_user[u]], 2)
             for d in all_dates
