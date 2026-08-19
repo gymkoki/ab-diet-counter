@@ -1439,6 +1439,23 @@ async function syncTodayMealsFromServer() {
     }
   });
 
+  // 他の端末で「計算し直す」をした項目は、こちらの表示も新しい結果へ更新する。
+  // （2026-08-18：スマホで訂正したのにPC側が古い結果のままで「反映されない」と見えた。
+  //   これまでは"この端末に無い項目"しか取り込んでおらず、同じIDの中身は更新していなかった）
+  // 上書きするのは「サーバーのほうが新しいとき」だけ。さらに、いま解析中の項目は
+  // 触らない（計算し終わった結果を古い内容で塗り潰さないため）。
+  if (serverTime > localSavedAt + 2000) {
+    const serverById = new Map(serverItems.map(i => [i.id, i]));
+    state.food.items.forEach(i => {
+      const sv = serverById.get(i.id);
+      if (!sv || !sv.result || i.loading) return;
+      if (JSON.stringify(sv.result) === JSON.stringify(i.result)) return;
+      i.result = sv.result;
+      if (sv.note !== undefined) i.note = sv.note;
+      changed = true;
+    });
+  }
+
   // サーバーの方が新しい場合、他の端末で削除された項目をこちらでも消す。
   // 解析中の項目と、サーバー保存の直前以降にこの端末で追加した項目は残す
   // （IDは時刻ベースなので id/100 ≒ 追加時刻）。
