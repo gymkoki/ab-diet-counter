@@ -129,6 +129,130 @@ def test_no_days_left_when_no_usage():
     assert info["empty_date"] is None
 
 
+# ── オートリロード（自動チャージ）────────────────────────────────
+# 経緯：2026-08 にオーナーが Console で「残高が $5 を下回ったら $100 追加」を
+# 有効化した。単純な引き算のままだと入金ぶんが計算に入らず、残高がやがて
+# マイナスへ際限なくズレていくため、日別にチャージを再現するようにした。
+@pytest.mark.parametrize("raw,expected", [
+    ("5:100", (5.0, 100.0)),
+    (" $5 : $100 ", (5.0, 100.0)),
+    ("5：100", (5.0, 100.0)),          # 全角コロン
+    ("10:1,000", (10.0, 1000.0)),
+])
+def test_parse_auto_reload_ok(raw, expected):
+    assert ac.parse_auto_reload(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["", None, "100", "5:abc", "5:0", "5:-100"])
+def test_parse_auto_reload_ng(raw):
+    """追加額が 0 以下だと残高が戻らず無限ループになるので無効扱いにする。"""
+    assert ac.parse_auto_reload(raw) is None
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("300", 300.0), ("$300", 300.0), ("1,000", 1000.0),
+    ("", None), (None, None), ("abc", None), ("0", None), ("-5", None),
+])
+def test_parse_spend_limit(raw, expected):
+    assert ac.parse_spend_limit(raw) == expected
+
+
+def test_auto_reload_tops_up_balance():
+    """基準 $5.76 から毎日 $8 使っても、残高はマイナスにならずチャージされる。"""
+    daily = {f"2026-08-{d:02d}": 8.0 for d in range(1, 12)}
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k",
+             "ANTHROPIC_CREDIT_BASE": "2026-08-01:5.76",
+             "ANTHROPIC_AUTO_RELOAD": "5:100"},
+        fetcher=_fake_cost(daily),
+    )
+    # 8/1〜8/11 で $88 使用。5.76 - 88 + 100×N が残高
+    assert info["spend_since_base_usd"] == pytest.approx(88.0)
+    assert info["reload_count"] == 1
+    assert info["reload_total_usd"] == pytest.approx(100.0)
+    assert info["remaining_usd"] == pytest.approx(17.76)
+    assert info["remaining_usd"] > 0                # ← 以前はマイナスになっていた
+    # オートリロードがある間は「枯渇」ではなく「次のチャージ日」を出す
+    assert info["days_left"] is None and info["empty_date"] is None
+    assert info["next_reload_days"] == 1            # (17.76-5)//8 = 1
+    assert info["next_reload_date"] == "2026-08-13"
+
+
+def test_auto_reload_handles_multiple_topups_in_one_day():
+    """1日で追加額を超えて使っても、残高がしきい値以上に戻るまで繰り返す。"""
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k",
+             "ANTHROPIC_CREDIT_BASE": "2026-08-10:10",
+             "ANTHROPIC_AUTO_RELOAD": "5:100"},
+        fetcher=_fake_cost({"2026-08-10": 250.0}),
+    )
+    assert info["reload_count"] == 3                # 10-250 = -240 → +300
+    assert info["remaining_usd"] == pytest.approx(60.0)
+
+
+def test_without_auto_reload_behaviour_is_unchanged():
+    """未設定なら従来どおり「引き算だけ」「枯渇予測あり」。"""
+    daily = {f"2026-08-{d:02d}": 1.0 for d in range(1, 12)}
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k", "ANTHROPIC_CREDIT_BASE": "2026-08-01:100"},
+        fetcher=_fake_cost(daily),
+    )
+    assert info["reload_count"] is None
+    assert info["remaining_usd"] == pytest.approx(89.0)
+    assert info["days_left"] == 89
+    assert info["next_reload_days"] is None
+
+
+def test_spend_limit_projection_flags_risk():
+    """月間支出上限に達するとAPIが止まるので、月末見込みが上限を超えるなら警告する。"""
+    daily = {f"2026-08-{d:02d}": 10.0 for d in range(1, 12)}   # 今月 $110、7日平均 $10
+    env = {"ANTHROPIC_ADMIN_KEY": "k", "ANTHROPIC_CREDIT_BASE": "2026-08-01:100",
+           "ANTHROPIC_SPEND_LIMIT": "300"}
+    info = ac.build_credit_info(today=TODAY, env=env, fetcher=_fake_cost(daily))
+    assert info["spend_limit_usd"] == 300.0
+    assert info["spend_month_pct"] == pytest.approx(36.7, abs=0.1)   # 110/300
+    # 8/12〜8/31 の20日ぶんを上乗せ： 110 + 10×20 = 310
+    assert info["projected_month_usd"] == pytest.approx(310.0)
+    assert info["limit_risk"] is True
+
+    # 上限が十分高ければ警告しない
+    info2 = ac.build_credit_info(today=TODAY, fetcher=_fake_cost(daily),
+                                 env={**env, "ANTHROPIC_SPEND_LIMIT": "1000"})
+    assert info2["limit_risk"] is False
+
+    # 上限にぶつかると残高があってもAPIが止まるので、届く手前（9割）で警告を出す
+    near = ac.build_credit_info(today=TODAY, fetcher=_fake_cost(daily),
+                                env={**env, "ANTHROPIC_SPEND_LIMIT": "340"})
+    assert near["projected_month_usd"] == pytest.approx(310.0)   # 340 の 91%
+    assert near["limit_risk"] is True
+    far = ac.build_credit_info(today=TODAY, fetcher=_fake_cost(daily),
+                               env={**env, "ANTHROPIC_SPEND_LIMIT": "360"})
+    assert far["limit_risk"] is False                            # 360 の 86%
+
+
+def test_spend_limit_unset_leaves_fields_empty():
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k", "ANTHROPIC_CREDIT_BASE": "2026-08-01:100"},
+        fetcher=_fake_cost({"2026-08-11": 1.0}),
+    )
+    assert info["spend_limit_usd"] is None
+    assert info["projected_month_usd"] is None
+    assert info["limit_risk"] is False
+
+
+@pytest.mark.parametrize("day,expected", [
+    (datetime.date(2026, 8, 12), datetime.date(2026, 8, 31)),
+    (datetime.date(2026, 2, 3), datetime.date(2026, 2, 28)),
+    (datetime.date(2026, 12, 1), datetime.date(2026, 12, 31)),
+])
+def test_month_end(day, expected):
+    assert ac._month_end(day) == expected
+
+
 # ── メール本文への埋め込み ──────────────────────────────────────
 def test_credit_section_renders():
     pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
@@ -158,3 +282,36 @@ def test_credit_section_renders():
 
     # グラフは例外なく描ける
     assert send_report.chart_credit(ok)[:4] == b"\x89PNG"
+
+
+def test_credit_section_shows_auto_reload_and_limit():
+    """オートリロード中は「枯渇」ではなく「次の自動チャージ」と上限消化率を出す。"""
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    import send_report
+
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k",
+             "ANTHROPIC_CREDIT_BASE": "2026-08-01:5.76",
+             "ANTHROPIC_AUTO_RELOAD": "5:100",
+             "ANTHROPIC_SPEND_LIMIT": "200", "USD_JPY": "150"},
+        fetcher=_fake_cost({f"2026-08-{d:02d}": 8.0 for d in range(1, 12)}),
+    )
+    html = send_report._credit_section(info, 400)
+    assert "次の自動チャージ" in html
+    assert "枯渇" not in html
+    assert "$100.00" in html
+    assert "上限 $200.00" in html
+    # 今月 $88 ＋ 残り20日×$8 = $248 で上限 $200 を超えるので警告を出す
+    assert "月末見込み $248.00" in html
+    assert send_report.chart_credit(info)[:4] == b"\x89PNG"
+
+    # 上限に余裕があるときは警告を出さない
+    safe = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k",
+             "ANTHROPIC_CREDIT_BASE": "2026-08-01:5.76",
+             "ANTHROPIC_AUTO_RELOAD": "5:100", "ANTHROPIC_SPEND_LIMIT": "1000"},
+        fetcher=_fake_cost({f"2026-08-{d:02d}": 8.0 for d in range(1, 12)}),
+    )
+    assert "月末見込み" not in send_report._credit_section(safe, 400)

@@ -17,9 +17,17 @@ Anthropic には「クレジット残高そのものを返すAPI」は存在し�
      → 例: ANTHROPIC_CREDIT_BASE = "2026-08-01:100"
         （2026-08-01 時点で Console の残高が $100 だった、の意味）
 
+  3. オートリロード（自動チャージ）が有効なら、その入金も再現する。
+     単純な引き算だけだと、チャージされた瞬間から残高がズレて（やがてマイナスに）
+     なってしまうため、日別に「引く → 下回ったら足す」をシミュレートする。
+     → 例: ANTHROPIC_AUTO_RELOAD = "5:100"
+        （残高が $5 を下回ったら $100 追加する、の意味）
+
 環境変数：
   ANTHROPIC_ADMIN_KEY   … Admin APIキー（未設定なら残高セクションは案内文だけになる）
   ANTHROPIC_CREDIT_BASE … "YYYY-MM-DD:USD金額"（未設定なら使用額のみ表示）
+  ANTHROPIC_AUTO_RELOAD … "しきい値USD:追加USD"（未設定ならオートリロード無しとして計算）
+  ANTHROPIC_SPEND_LIMIT … 月間支出上限USD（未設定なら上限の表示・予測を出さない）
   USD_JPY               … 円換算レート（既定 155）
 """
 import datetime
@@ -38,6 +46,11 @@ AMOUNT_UNITS_PER_USD = 100.0
 MIN_LOOKBACK_DAYS = 30
 # 1d バケットは1リクエスト最大31件。念のためページングは上限を設けて回す
 MAX_PAGES = 24
+# 1日のうちに何度もオートリロードが走るケースの安全弁（無限ループ防止）
+MAX_RELOADS_PER_DAY = 20
+# 月末見込みが上限のこの割合に届いたら警告する。
+# 上限に達すると残高が残っていてもAPIが止まるので、ぶつかる前に気づけるよう手前で出す。
+LIMIT_WARN_RATIO = 0.9
 
 
 def parse_credit_base(raw):
@@ -61,6 +74,75 @@ def parse_credit_base(raw):
     except ValueError:
         return None
     return base_date, amount
+
+
+def parse_auto_reload(raw):
+    """"5:100" → (5.0, 100.0)（$5 を下回ったら $100 追加）。不正なら None。
+
+    "$5 : $100" のような表記ゆれも受け付ける。追加額が 0 以下なら無効扱い
+    （0 だと残高が戻らず、シミュレーションが無限ループになるため）。
+    """
+    if not raw:
+        return None
+    text = str(raw).strip().replace("＄", "$").replace("：", ":")
+    if ":" not in text:
+        return None
+    threshold_part, _, amount_part = text.partition(":")
+
+    def _num(part):
+        part = part.strip().lstrip("$").replace(",", "").replace(" ", "")
+        try:
+            return float(part)
+        except ValueError:
+            return None
+
+    threshold, amount = _num(threshold_part), _num(amount_part)
+    if threshold is None or amount is None or amount <= 0:
+        return None
+    return threshold, amount
+
+
+def parse_spend_limit(raw):
+    """"300" や "$300" → 300.0。不正・0以下なら None。"""
+    if raw is None:
+        return None
+    text = str(raw).strip().replace("＄", "$").lstrip("$").replace(",", "")
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def simulate_balance(base_date, base_usd, by_day, today, auto_reload=None):
+    """基準日から今日までを1日ずつ「使う → 下回ったら自動チャージ」で回す。
+
+    Anthropic のオートリロードは実時間で発火するが、Cost API は1日単位なので
+    「その日の使用を引いたあとに判定する」近似にしている（残高はやや低めに出る）。
+
+    戻り値: (残高USD, チャージ回数)
+    """
+    balance = float(base_usd)
+    reloads = 0
+    day = base_date
+    while day <= today:
+        balance -= by_day.get(day.isoformat(), 0.0)
+        if auto_reload:
+            threshold, amount = auto_reload
+            guard = 0
+            while balance < threshold and guard < MAX_RELOADS_PER_DAY:
+                balance += amount
+                reloads += 1
+                guard += 1
+        day += datetime.timedelta(days=1)
+    return balance, reloads
+
+
+def _month_end(day: datetime.date) -> datetime.date:
+    """その月の末日。"""
+    if day.month == 12:
+        return day.replace(day=31)
+    return day.replace(month=day.month + 1, day=1) - datetime.timedelta(days=1)
 
 
 def _amount_to_usd(amount) -> float:
@@ -133,6 +215,8 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
         usd_jpy = 155.0
 
     base = parse_credit_base(env.get("ANTHROPIC_CREDIT_BASE"))
+    auto_reload = parse_auto_reload(env.get("ANTHROPIC_AUTO_RELOAD"))
+    spend_limit = parse_spend_limit(env.get("ANTHROPIC_SPEND_LIMIT"))
     info = {
         "status": "no_key",
         "message": "",
@@ -150,6 +234,18 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
         "remaining_usd": None,
         "days_left": None,
         "empty_date": None,
+        # オートリロード（自動チャージ）
+        "auto_reload_threshold_usd": auto_reload[0] if auto_reload else None,
+        "auto_reload_amount_usd": auto_reload[1] if auto_reload else None,
+        "reload_count": None,
+        "reload_total_usd": None,
+        "next_reload_days": None,
+        "next_reload_date": None,
+        # 月間支出上限
+        "spend_limit_usd": spend_limit,
+        "spend_month_pct": None,
+        "projected_month_usd": None,
+        "limit_risk": False,
     }
 
     admin_key = (env.get("ANTHROPIC_ADMIN_KEY") or "").strip()
@@ -193,13 +289,33 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
     avg7 = sum(week) / 7.0
     info["spend_7d_avg_usd"] = round(avg7, 4)
 
+    # 月間支出上限（設定されていれば）：今月の使用ペースで月末までいくらになるか
+    if spend_limit:
+        month_spend = info["spend_month_usd"] or 0.0
+        info["spend_month_pct"] = round(month_spend / spend_limit * 100, 1)
+        days_left_in_month = (_month_end(today) - today).days + 1
+        projected = month_spend + avg7 * days_left_in_month
+        info["projected_month_usd"] = round(projected, 2)
+        info["limit_risk"] = projected >= spend_limit * LIMIT_WARN_RATIO
+
     if base:
         base_date, base_usd = base
         spent = _sum_from(by_day, base_date)
         info["spend_since_base_usd"] = round(spent, 4)
-        remaining = base_usd - spent
+        remaining, reloads = simulate_balance(base_date, base_usd, by_day, today,
+                                              auto_reload=auto_reload)
         info["remaining_usd"] = round(remaining, 2)
-        if avg7 > 0 and remaining > 0:
+
+        if auto_reload:
+            threshold, amount = auto_reload
+            info["reload_count"] = reloads
+            info["reload_total_usd"] = round(reloads * amount, 2)
+            # オートリロードがある間は「枯渇」しない。次にカードへ請求が走る日を出す
+            if avg7 > 0:
+                days = int(max(0.0, remaining - threshold) // avg7)
+                info["next_reload_days"] = days
+                info["next_reload_date"] = (today + datetime.timedelta(days=days)).isoformat()
+        elif avg7 > 0 and remaining > 0:
             days_left = int(remaining // avg7)
             info["days_left"] = days_left
             info["empty_date"] = (today + datetime.timedelta(days=days_left)).isoformat()
