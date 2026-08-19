@@ -157,3 +157,94 @@ def test_chart_handles_single_member():
                                          "members": [{"avg_b": 3.0, "change_kg": -1.0, "days": 5}]},
                             "dates": []})
     assert png[:4] == b"\x89PNG"
+
+
+# ── 痩せていない人の朝・昼・晩の記録状況（オーナー指示 2026-08） ──────────
+def _seed_usage(uid, hours_by_day):
+    """usage_log（解析の実行ログ）に時刻付きで記録を入れる。"""
+    with m._db_lock:
+        conn = m._get_conn(); cur = conn.cursor()
+        cur.execute(f"DELETE FROM usage_log WHERE user_id={m.PH}", (uid,))
+        for back, hours in hours_by_day.items():
+            for h in hours:
+                cur.execute(
+                    f"INSERT INTO usage_log (user_id, created_at) VALUES ({m.PH},{m.PH})",
+                    (uid, f"{_d(back)}T{h:02d}:30:00"))
+        conn.commit(); conn.close()
+
+
+def _fetch(client):
+    return client.get("/api/admin/report-data",
+                      headers={"X-Admin-Password": m.ADMIN_PASSWORD}).get_json()["cut_corr"]
+
+
+def test_slot_counts_are_split_by_time_of_day(client):
+    """朝・昼・晩それぞれで「記録できた日数」を数えること。"""
+    uid = "slot-a"
+    _seed_cut_member(uid, "朝が抜ける人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 71.5})
+    # 3日間、昼(12時)と晩(19時)だけ記録。朝は無し。
+    _seed_usage(uid, {1: [12, 19], 2: [12, 19], 3: [12]})
+    row = next(x for x in _fetch(client)["no_loss_members"] if x["name"] == "朝が抜ける人")
+    assert row["morning_days"] == 0, "朝の記録が無いのに0になっていない"
+    assert row["noon_days"] == 3
+    assert row["night_days"] == 2
+
+
+def test_same_slot_twice_a_day_counts_as_one_day(client):
+    """1日に同じ時間帯で2回記録しても「1日」と数えること。"""
+    uid = "slot-dup"
+    _seed_cut_member(uid, "昼に2回の人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 71.0})
+    _seed_usage(uid, {1: [11, 12, 13]})
+    row = next(x for x in _fetch(client)["no_loss_members"] if x["name"] == "昼に2回の人")
+    assert row["noon_days"] == 1
+
+
+def test_late_night_counts_as_night(client):
+    """深夜1時の記録は「晩」として数えること（夜食を朝に混ぜない）。"""
+    uid = "slot-late"
+    _seed_cut_member(uid, "夜更かしの人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 71.0})
+    _seed_usage(uid, {1: [1], 2: [23]})
+    row = next(x for x in _fetch(client)["no_loss_members"] if x["name"] == "夜更かしの人")
+    assert row["night_days"] == 2
+    assert row["morning_days"] == 0
+
+
+def test_picks_at_most_ten_worst_members(client):
+    """痩せていない順に、最大10名だけ載せること。"""
+    for i in range(13):
+        uid = f"slot-many-{i}"
+        _seed_cut_member(uid, f"人{i:02d}", {1: 3.0, 2: 3.0, 3: 3.0},
+                         {20: 70.0, 1: 70.0 + i * 0.3})
+        _seed_usage(uid, {1: [8]})
+    cc = _fetch(client)
+    nl = cc["no_loss_members"]
+    assert len(nl) == 10, f"10名ちょうどでない: {len(nl)}"
+    # 体重が増えた人が先頭（降順）
+    assert nl == sorted(nl, key=lambda z: -z["change_kg"])
+    assert nl[0]["change_kg"] >= nl[-1]["change_kg"]
+    assert cc["slot_days"] >= 7
+
+
+def test_slot_chart_renders():
+    """朝昼晩グラフがPNGとして生成できること（人数0でも落ちない）。"""
+    R = _load_send_report()
+    members = [{"name": f"会員{i}", "change_kg": 1.0 - i * 0.2, "avg_b": 3.0 + i * 0.2,
+                "morning_days": i, "noon_days": 14 - i, "night_days": 0} for i in range(10)]
+    png = R.chart_no_loss_slots({"cut_corr": {"slot_days": 14, "no_loss_members": members}})
+    assert png[:4] == b"\x89PNG"
+    empty = R.chart_no_loss_slots({"cut_corr": {"slot_days": 14, "no_loss_members": []}})
+    assert empty[:4] == b"\x89PNG"
+
+
+def test_slot_chart_avoids_emoji():
+    """グラフ内に絵文字を使わないこと（日本語フォントに無く豆腐□になる）。"""
+    src = _report_src()
+    fn = src[src.index("def chart_no_loss_slots"):src.index("def chart_nutrition")]
+    assert "🌅" not in fn and "🌞" not in fn and "🌙" not in fn
+
+
+def test_slot_chart_is_in_the_email():
+    """メール本文にグラフが差し込まれていること。"""
+    src = _report_src()
+    assert "cid:chart_no_loss_slots" in src
+    assert '"chart_no_loss_slots": chart_no_loss_slots(data)' in src

@@ -317,6 +317,83 @@ def chart_cut_corr(data: dict) -> bytes:
     return fig_to_png(fig)
 
 
+def chart_no_loss_slots(data: dict) -> bytes:
+    """痩せていない減量希望者10名が、朝・昼・晩に記録できているかの一覧（信号色の表）。
+
+    減量が進まない原因の多くは「食べ過ぎ」ではなく「記録していない食事がある」こと。
+    どの時間帯が抜けているかが一目で分かれば、声かけの内容を具体的にできる。
+    行＝会員（体重が増えた人が上）、列＝朝/昼/晩、色＝14日間で記録できた日数。"""
+    cc      = data.get("cut_corr") or {}
+    members = cc.get("no_loss_members") or []
+    days    = cc.get("slot_days", 14)
+
+    if not members:
+        fig, ax = plt.subplots(figsize=(10, 3.2))
+        ax.set_title("痩せていない減量希望者：朝・昼・晩の記録状況",
+                     fontsize=15, fontweight="bold", pad=8)
+        _axes_note(ax, "対象の会員がまだいません。\n減量希望で、体重とBカウントの記録がある会員が対象です。")
+        fig.tight_layout()
+        return fig_to_png(fig)
+
+    # ※絵文字は使わない：グラフの日本語フォント(IPAexGothic)に絵文字が無く、
+    #   メールでは豆腐（□）になってしまうため。時間帯は文字で明示する。
+    slots = [("morning_days", "朝 4〜10時"), ("noon_days", "昼 10〜16時"), ("night_days", "晩 16〜翌4時")]
+    n = len(members)
+    fig, ax = plt.subplots(figsize=(10, 1.05 * n + 1.8))
+
+    def _cell_color(ratio):
+        # 信号色：ほぼ毎日=緑／半分ぐらい=黄／ほとんど無い=赤
+        if ratio >= 0.7:
+            return C_GREEN, "white"
+        if ratio >= 0.35:
+            return C_AMBER, "white"
+        if ratio > 0:
+            return "#F87171", "white"
+        return "#FEE2E2", "#B91C1C"     # 0日はうっすら赤地に濃い文字（見落とさないように）
+
+    for row, mem in enumerate(members):
+        y = n - 1 - row                                  # 上から順に並べる
+        for col, (key, _lbl) in enumerate(slots):
+            d = mem.get(key, 0)
+            ratio = d / days if days else 0
+            face, fg = _cell_color(ratio)
+            ax.add_patch(mpatches.Rectangle((col, y - 0.42), 0.94, 0.84,
+                                            facecolor=face, edgecolor="white", linewidth=2))
+            ax.text(col + 0.47, y, f"{d}/{days}日", ha="center", va="center",
+                    fontsize=13, fontweight="bold", color=fg)
+
+        # 右側に体重の変化と平均Bカウントを添える
+        ch = mem.get("change_kg", 0)
+        ch_txt = f"+{ch:.1f}kg" if ch > 0 else (f"{ch:.1f}kg" if ch < 0 else "±0.0kg")
+        ax.text(3.55, y, ch_txt, ha="center", va="center", fontsize=13, fontweight="bold",
+                color=C_PRIMARY if ch >= 0 else C_GREEN)
+        ax.text(4.45, y, f"{mem.get('avg_b', 0):.1f}", ha="center", va="center",
+                fontsize=13, color=C_GRAY)
+
+    ax.set_xlim(-0.05, 4.9)
+    ax.set_ylim(-1.25, n - 0.35)
+    ax.set_xticks([c + 0.47 for c in range(len(slots))] + [3.55, 4.45])
+    ax.set_xticklabels([lbl for _k, lbl in slots] + ["体重の変化", "平均B"], fontsize=13)
+    ax.xaxis.set_ticks_position("top")
+    ax.set_yticks(range(n))
+    ax.set_yticklabels([m["name"] for m in reversed(members)], fontsize=13)
+    ax.tick_params(axis="both", length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+    ax.set_title(f"痩せていない減量希望者 {n}名：朝・昼・晩の記録状況（直近{days}日）",
+                 fontsize=15, fontweight="bold", pad=30)
+    # 凡例は表の下に置く（上に置くとタイトルと重なるため）
+    ax.text(2.2, -0.95,
+            "緑＝ほぼ毎日記録　／　黄＝半分ぐらい　／　赤＝ほとんど記録なし　"
+            "…… 赤い時間帯が「見えていない食事」",
+            ha="center", va="center", fontsize=12.5, color=C_GRAY)
+    ax.text(2.2, -1.15, f"※写真・文章入力どちらの記録も1件として数えています（{days}日中の記録できた日数）",
+            ha="center", va="center", fontsize=11, color=C_GRAY)
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
 def chart_nutrition(data: dict) -> bytes:
     """栄養素（タンパク質・野菜・果物）の平均摂取量推移（1人1日あたり・g）"""
     nut   = data.get("nutrition") or {}
@@ -834,6 +911,10 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -
         減量希望者の「平均Bカウント」と「体重の変化」の相関（Bを抑えている人ほど減っているか・1人1点）
       </div>
       <img class="chart" src="cid:chart_cut_corr" alt="Cut Users B-Count vs Weight Change">
+      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:14px 0 4px">
+        痩せていない人は、朝・昼・晩の写真をアップできているか（記録漏れの発見）
+      </div>
+      <img class="chart" src="cid:chart_no_loss_slots" alt="Meal Logging by Time Slot">
     </div>
 
     <!-- ③ 栄養素の平均摂取量 -->
@@ -958,6 +1039,7 @@ def main():
         "chart_hourly":   chart_hourly(data),
         "chart_weight_loss": chart_weight_loss(data),
         "chart_cut_corr":  chart_cut_corr(data),
+        "chart_no_loss_slots": chart_no_loss_slots(data),
         "chart_nutrition": chart_nutrition(data),
         "chart_goal_compare": chart_goal_compare(data),
     }

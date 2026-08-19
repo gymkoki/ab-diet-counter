@@ -1781,6 +1781,11 @@ def admin_report_data():
     target_end   = f"{target_date}T23:59:59"
     start_30d    = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
     start_30d_ts = f"{start_30d}T00:00:00"
+    # 朝昼晩の記録状況は「直近14日」で見る。30日だと昔の習慣が混ざって
+    # 「今どうなっているか」が読み取りにくいため。
+    SLOT_DAYS    = 14
+    start_14d    = (now - datetime.timedelta(days=SLOT_DAYS)).strftime("%Y-%m-%d")
+    start_14d_ts = f"{start_14d}T00:00:00"
 
     conn = _get_conn()
     try:
@@ -1939,6 +1944,26 @@ def admin_report_data():
         except Exception:
             pass  # goal列が無い旧スキーマでも動くように
 
+        # ── 表示名（レポートで会員を見分けるため） ──────────────
+        name_by_user: dict = {}
+        try:
+            cur.execute("SELECT user_id, display_name FROM user_profile")
+            name_by_user = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+        except Exception:
+            pass
+
+        # ── 朝・昼・晩それぞれの記録状況（直近14日・前日まで） ──────────
+        # usage_log は解析（写真・文章）を1件ずつ時刻付きで記録している。
+        # 「その日その時間帯に1件でも記録したか」を数え、朝昼晩の抜けを見えるようにする。
+        cur.execute(
+            f"""SELECT user_id, SUBSTR(created_at,1,10) AS dt, SUBSTR(created_at,12,2) AS hr,
+                       COUNT(*)
+               FROM usage_log WHERE created_at>={PH} AND created_at<={PH}
+               GROUP BY user_id, dt, hr""",
+            (start_14d_ts, target_end),
+        )
+        slot_rows = cur.fetchall()
+
         # ── 栄養素集計用に直近30日の食事明細を取得（前日まで） ────────────
         cur.execute(
             f"SELECT user_id, date, payload FROM daily_meals WHERE date>={PH} AND date<={PH}",
@@ -2076,6 +2101,7 @@ def admin_report_data():
     # 会員1人を1点として散布図にする（オーナー指示 2026-08）。
     CORR_MIN_DAYS = 3   # Bの記録が少なすぎる人は平均がぶれるので除外する
     cut_members = []
+    cut_member_uids = []   # cut_members と同じ並び（誰の点かを後で引くため）
     for u in cut_uids:
         days = b_by_user.get(u) or {}
         if len(days) < CORR_MIN_DAYS or u not in latest_loss_by_user:
@@ -2087,11 +2113,54 @@ def admin_report_data():
             "avg_b": round(sum(days.values()) / len(days), 2),
             "days": len(days),
         })
+        cut_member_uids.append(u)
+
+    # ── 痩せていない減量希望者が、朝・昼・晩に記録しているか ────────────
+    # 減量が進まない原因の多くは「食べ過ぎ」ではなく「記録していない食事がある」こと。
+    # どの時間帯が抜けているかが分かれば、声かけの内容を具体的にできる。
+    # 時間帯の区切り：朝 4〜10時／昼 10〜16時／晩 16〜翌4時。
+    SLOT_DEFS = (("morning", 4, 10), ("noon", 10, 16), ("night", 16, 28))
+
+    def _slot_of(hour: int):
+        # 深夜(0〜3時)の記録は前日の「晩」として扱う（24を足して判定する）
+        h = hour + 24 if hour < 4 else hour
+        for key, start, end in SLOT_DEFS:
+            if start <= h < end:
+                return key
+        return None
+
+    # uid -> slot -> 記録があった日付の集合（1日に何度記録しても1日と数える）
+    slots_by_user: dict = {}
+    for uid, dt, hr, _cnt in slot_rows:
+        try:
+            slot = _slot_of(int(hr))
+        except (TypeError, ValueError):
+            continue
+        if slot is None:
+            continue
+        slots_by_user.setdefault(uid, {}).setdefault(slot, set()).add(dt)
+
+    # 減量が進んでいない順（change_kg が大きい＝増えた人が先頭）に最大10名
+    ranked = sorted(zip(cut_members, cut_member_uids), key=lambda t: -t[0]["change_kg"])
+    no_loss_members = []
+    for mem, uid in ranked[:10]:
+        s = slots_by_user.get(uid) or {}
+        name = (name_by_user.get(uid) or "").strip() or f"会員{uid[:4]}"
+        no_loss_members.append({
+            "name": name[:12],
+            "change_kg": mem["change_kg"],
+            "avg_b": mem["avg_b"],
+            "morning_days": len(s.get("morning") or ()),
+            "noon_days":    len(s.get("noon") or ()),
+            "night_days":   len(s.get("night") or ()),
+        })
 
     cut_corr = {
         "users": len(cut_uids),
         "min_days": CORR_MIN_DAYS,
         "members": cut_members,
+        "slot_days": SLOT_DAYS,
+        "no_loss_members": no_loss_members,
         "b_avg_trend": [
             _avg([b_by_user[u][d] for u in cut_uids if u in b_by_user and d in b_by_user[u]], 2)
             for d in all_dates
