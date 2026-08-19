@@ -628,7 +628,7 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
 
     return f"""
     <div class="section">
-      <h2>💳 6. Claude API クレジット状況</h2>{head}{chart_html}{note_html}
+      <h2>💳 Claude API クレジット状況（昨日の推定コスト・残高）</h2>{head}{chart_html}{note_html}
       <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
         ※ 実コストは Anthropic の Cost API（実測値）。Anthropic には残高を返すAPIが無いため、
         残高は「基準日の残高 − 基準日以降の実使用額」で算出した推定値です。
@@ -825,6 +825,9 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -
   </div>
   <div class="body">
 
+    <!-- 最上部：昨日の推定コストとクレジット残高（オーナー指示 2026-08） -->
+    {credit_section}
+
     {_coach_section(coach_advice)}
     {_dev_proposal_section(dev_proposals)}
 
@@ -977,13 +980,10 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -
         </tr>
         <tr>
           <td style="padding:8px;color:#6B7280;font-weight:700">APIクレジット残高</td>
-          <td style="padding:8px;color:#9CA3AF">下の「6. Claude API クレジット状況」を参照</td>
+          <td style="padding:8px;color:#9CA3AF">上の「Claude API クレジット状況」を参照</td>
         </tr>
       </table>
     </div>
-
-    <!-- ⑥ Claude API クレジット状況 -->
-    {credit_section}
 
   </div>
   <div class="footer">
