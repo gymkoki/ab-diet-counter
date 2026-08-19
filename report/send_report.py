@@ -523,7 +523,9 @@ def chart_credit(credit: dict) -> bytes:
     remaining = credit.get("remaining_usd")
     if remaining is not None:
         suffix = f" — 残高 ¥{round(remaining * rate):,}"
-        if credit.get("days_left") is not None:
+        if credit.get("next_reload_days") is not None:
+            suffix += f"（約{credit['next_reload_days']}日後に自動チャージ）"
+        elif credit.get("days_left") is not None:
             suffix += f"（あと約{credit['days_left']}日）"
     else:
         suffix = f" — 今月の使用額 ¥{round((credit.get('spend_month_usd') or 0) * rate):,}"
@@ -576,13 +578,46 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         else:
             rem_val = _yen(remaining)
             rem_sub = f"{_usd(remaining)}（{credit.get('base_date')} 時点 {_usd(credit.get('base_usd'))} 基準）"
-            rem_color = "#10B981" if remaining > (credit.get("spend_7d_avg_usd") or 0) * 14 else "#EF4444"
+            if credit.get("auto_reload_amount_usd"):
+                # 自動チャージがある間は残高が少なくても止まらないので赤にしない
+                rem_color = "#10B981"
+            else:
+                rem_color = ("#10B981" if remaining > (credit.get("spend_7d_avg_usd") or 0) * 14
+                             else "#EF4444")
 
-        if credit.get("days_left") is not None:
-            days_val = f"約{credit['days_left']}日"
-            days_sub = f"この使用ペースだと {credit.get('empty_date')} 頃に枯渇"
+        reload_amount = credit.get("auto_reload_amount_usd")
+        if reload_amount:
+            # オートリロードが有効なら「枯渇」しない。次にカードへ請求が走る日を出す
+            next_days = credit.get("next_reload_days")
+            next_lbl = "🔁 次の自動チャージ"
+            if next_days is None:
+                days_val, days_sub = "—", "使用実績が不足"
+            else:
+                days_val = "まもなく" if next_days == 0 else f"約{next_days}日後"
+                days_sub = (f"{credit.get('next_reload_date')} 頃に "
+                            f"{_usd(reload_amount)}（{_yen(reload_amount)}）を自動チャージ")
+            count = credit.get("reload_count")
+            if count:
+                days_sub += f"／基準日以降 推定{count}回"
         else:
-            days_val, days_sub = "—", "残高または使用実績が不足"
+            next_lbl = "⏳ 残り日数の目安"
+            if credit.get("days_left") is not None:
+                days_val = f"約{credit['days_left']}日"
+                days_sub = f"この使用ペースだと {credit.get('empty_date')} 頃に枯渇"
+            else:
+                days_val, days_sub = "—", "残高または使用実績が不足"
+
+        # 月間支出上限：これに達すると残高があってもAPIが止まるので、超えそうなら赤で警告
+        limit = credit.get("spend_limit_usd")
+        month_color = ""
+        if limit:
+            pct = credit.get("spend_month_pct")
+            month_sub = f"{_usd(credit.get('spend_month_usd'))}／上限 {_usd(limit)}（{pct:.0f}%）"
+            if credit.get("limit_risk"):
+                month_color = ";color:#EF4444"
+                month_sub += f"｜月末見込み {_usd(credit.get('projected_month_usd'))}⚠"
+        else:
+            month_sub = _usd(credit.get("spend_month_usd"))
 
         head = f"""
       <div class="kpi-row">
@@ -592,7 +627,7 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
           <div class="kpi-sub">{rem_sub}</div>
         </div>
         <div class="kpi">
-          <div class="kpi-lbl">⏳ 残り日数の目安</div>
+          <div class="kpi-lbl">{next_lbl}</div>
           <div class="kpi-val" style="font-size:22px">{days_val}</div>
           <div class="kpi-sub">{days_sub}</div>
         </div>
@@ -605,8 +640,8 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         </div>
         <div class="kpi">
           <div class="kpi-lbl">今月の実コスト</div>
-          <div class="kpi-val" style="font-size:20px">{_yen(credit.get('spend_month_usd'))}</div>
-          <div class="kpi-sub">{_usd(credit.get('spend_month_usd'))}</div>
+          <div class="kpi-val" style="font-size:20px{month_color}">{_yen(credit.get('spend_month_usd'))}</div>
+          <div class="kpi-sub">{month_sub}</div>
         </div>
         <div class="kpi">
           <div class="kpi-lbl">1日あたり平均</div>
@@ -631,7 +666,7 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
       <h2>💳 Claude API クレジット状況（昨日の推定コスト・残高）</h2>{head}{chart_html}{note_html}
       <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
         ※ 実コストは Anthropic の Cost API（実測値）。Anthropic には残高を返すAPIが無いため、
-        残高は「基準日の残高 − 基準日以降の実使用額」で算出した推定値です。
+        残高は「基準日の残高 − 実使用額 ＋ オートリロードによる自動チャージ」で算出した推定値です。
         正確な残高は <a href="{credit.get('console_url')}">Anthropic Console</a> で確認できます。
         円換算レート: $1 = ¥{rate:.0f}
       </div>

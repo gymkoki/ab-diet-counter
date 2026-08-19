@@ -20,6 +20,12 @@ name: Daily Dashboard Report
 #       Anthropic には「残高を返すAPI」が無いため、Console の Billing で見た残高を
 #       いつ時点でいくらだったか控えて登録する。以降は実使用額を自動で差し引いて残高を出す。
 #       残高を追加購入したら、その日の残高で登録し直す。
+#   ANTHROPIC_AUTO_RELOAD : "しきい値USD:追加USD"（例: 5:100 ＝ $5 を下回ったら $100 追加）
+#       Console の Billing で「Auto reload」を設定しているなら必ず登録する。
+#       未登録だと自動チャージぶんが計算に入らず、残高がどんどんマイナスへズレていく。
+#   ANTHROPIC_SPEND_LIMIT : 月間支出上限USD（例: 300）
+#       Console の Spend limits と同じ値を入れると、今月の消化率と月末見込みが出る。
+#       上限に達すると残高があってもAPIが止まるため、超えそうな月は赤字で警告する。
 #   USD_JPY               : 円換算レート（未設定なら 155）
 #
 # 【Gmail アプリパスワード取得手順】
@@ -57,5 +63,7 @@ jobs:
           REPORT_TO:          ${{ secrets.REPORT_TO }}
           ANTHROPIC_ADMIN_KEY:   ${{ secrets.ANTHROPIC_ADMIN_KEY }}
           ANTHROPIC_CREDIT_BASE: ${{ secrets.ANTHROPIC_CREDIT_BASE }}
+          ANTHROPIC_AUTO_RELOAD: ${{ secrets.ANTHROPIC_AUTO_RELOAD }}
+          ANTHROPIC_SPEND_LIMIT: ${{ secrets.ANTHROPIC_SPEND_LIMIT }}
           USD_JPY:               ${{ secrets.USD_JPY }}
         run: python report/send_report.py
