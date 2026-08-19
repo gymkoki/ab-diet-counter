@@ -178,83 +178,6 @@ def chart_hourly(data: dict) -> str:
     return fig_to_png(fig)
 
 
-def chart_b_count(data: dict) -> str:
-    """Bカウント推移：スパゲッティ（個人）＋ 集団平均折れ線"""
-    dates  = data["dates"]
-    avg    = data["b_avg_trend"]
-    indivs = data["individual_b"]
-
-    fig, ax = plt.subplots(figsize=(10, 4.2))
-
-    cmap = plt.get_cmap("tab20")
-    for i, user in enumerate(indivs):
-        vals = user["values"]
-        pts  = [(j, v) for j, v in enumerate(vals) if v is not None]
-        if len(pts) < 2:
-            continue
-        xs, ys = zip(*pts)
-        ax.plot(xs, ys, color=cmap(i % 20), alpha=0.30, linewidth=1.3,
-                marker=".", markersize=4, zorder=2)
-
-    avg_pts = [(j, v) for j, v in enumerate(avg) if v is not None]
-    if avg_pts:
-        xs, ys = zip(*avg_pts)
-        ax.plot(xs, ys, color=C_PRIMARY, linewidth=2.8, zorder=4,
-                label=f"集団平均 (直近: {ys[-1]:.1f}B)")
-        ax.fill_between(xs, ys, alpha=0.12, color=C_PRIMARY, zorder=3)
-
-    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
-    ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
-    ax.set_ylabel("Bカウント / 日", fontsize=13)
-    ax.set_ylim(bottom=0)
-    ax.set_title("Bカウント推移（直近30日）— 個人 + 集団平均",
-                 fontsize=15, fontweight="bold", pad=8)
-    ax.legend(fontsize=13)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, zorder=0)
-    fig.tight_layout()
-    return fig_to_png(fig)
-
-
-def chart_weight(data: dict) -> str:
-    """体重推移：スパゲッティ（個人）＋ 集団平均折れ線"""
-    dates  = data["dates"]
-    avg    = data["w_avg_trend"]
-    indivs = data["individual_w"]
-
-    fig, ax = plt.subplots(figsize=(10, 4.2))
-
-    cmap = plt.get_cmap("tab20c")
-    for i, user in enumerate(indivs):
-        vals = user["values"]
-        pts  = [(j, v) for j, v in enumerate(vals) if v is not None]
-        if len(pts) < 2:
-            continue
-        xs, ys = zip(*pts)
-        ax.plot(xs, ys, color=cmap(i % 20), alpha=0.30, linewidth=1.3,
-                marker=".", markersize=4, zorder=2)
-
-    avg_pts = [(j, v) for j, v in enumerate(avg) if v is not None]
-    if avg_pts:
-        xs, ys = zip(*avg_pts)
-        ax.plot(xs, ys, color=C_GREEN, linewidth=2.8, zorder=4,
-                label=f"集団平均 (直近: {ys[-1]:.1f}kg)")
-        ax.fill_between(xs, ys, alpha=0.12, color=C_GREEN, zorder=3)
-
-    tick_idx = [i for i in range(len(dates)) if i % 5 == 0]
-    ax.set_xticks(tick_idx)
-    ax.set_xticklabels([dates[i][5:] for i in tick_idx], fontsize=13)
-    ax.set_ylabel("体重 (kg)", fontsize=13)
-    ax.set_title("体重推移（直近30日）— 個人 + 集団平均",
-                 fontsize=15, fontweight="bold", pad=8)
-    ax.legend(fontsize=13)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, zorder=0)
-    fig.tight_layout()
-    return fig_to_png(fig)
 
 
 def chart_weight_loss(data: dict) -> str:
@@ -495,8 +418,8 @@ def chart_goal_compare(data: dict) -> bytes:
 
 
 # ── メール HTML 本文 ────────────────────────────────────────────
-# 画像は cid:chart_usage / cid:chart_hourly / cid:chart_b_count /
-# cid:chart_weight / cid:chart_weight_loss / cid:chart_credit で参照する（send_email() が
+# 画像は cid:chart_usage / cid:chart_hourly / cid:chart_weight_loss /
+# cid:chart_credit などで参照する（send_email() が
 # main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
 def has_credit_chart(credit: dict) -> bool:
     """コストの実データが取れたときだけグラフを出す（取れないときは案内文だけ）。"""
@@ -903,9 +826,7 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -
           <div class="kpi-sub">初回記録比・{loss_users}名平均</div>
         </div>
       </div>
-      <img class="chart" src="cid:chart_b_count" alt="B-Count Trend" style="margin-top:12px">
-      <img class="chart" src="cid:chart_weight" alt="Weight Trend" style="margin-top:6px">
-      <img class="chart" src="cid:chart_weight_loss" alt="Weight Loss Progress" style="margin-top:6px">
+      <img class="chart" src="cid:chart_weight_loss" alt="Weight Loss Progress" style="margin-top:12px">
       <div style="font-size:12px;font-weight:700;color:#6B7280;margin:14px 0 4px">
         減量希望者の「平均Bカウント」と「体重の変化」の相関（Bを抑えている人ほど減っているか・1人1点）
       </div>
@@ -1035,8 +956,6 @@ def main():
     charts = {
         "chart_usage":    chart_usage(data),
         "chart_hourly":   chart_hourly(data),
-        "chart_b_count":  chart_b_count(data),
-        "chart_weight":   chart_weight(data),
         "chart_weight_loss": chart_weight_loss(data),
         "chart_cut_corr":  chart_cut_corr(data),
         "chart_nutrition": chart_nutrition(data),
