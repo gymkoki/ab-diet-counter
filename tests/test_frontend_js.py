@@ -58,7 +58,7 @@ def test_weight_tab_has_hint_above_input():
     with open(INDEX, encoding="utf-8") as f:
         html = f.read()
     assert 'class="weight-hint"' in html, "体重入力の説明テキストがありません"
-    assert "体重を記録すると、30日間の変化グラフで頑張りが見えます" in html
+    assert "体重を記録すると、直近50日間の変化グラフで頑張りが見えます" in html
     assert re.search(r"\.weight-hint\s*\{[^}]*color:var\(--text-muted\)", html), \
         "説明テキストがグレー系（--text-muted）で指定されていません"
     order = [html.index('id="weight-sub-title"'), html.index('class="weight-hint"'),
