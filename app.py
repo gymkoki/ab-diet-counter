@@ -4038,6 +4038,92 @@ def _process_rss_mb():
     return None
 
 
+def _credit_base_setting():
+    """管理画面で登録された「基準日の残高」を返す。未登録なら (None, None)。"""
+    date_s = (_get_setting("credit_base_date", "") or "").strip()
+    amt_s  = (_get_setting("credit_base_usd", "") or "").strip()
+    try:
+        datetime.date.fromisoformat(date_s)
+        return date_s, float(amt_s)
+    except (ValueError, TypeError):
+        return None, None
+
+
+@app.route("/api/admin/credit-base", methods=["GET", "POST"])
+@_admin_required
+def admin_credit_base():
+    """クレジット残高の「基準日と残高」を管理画面から登録・取得する。
+
+    Anthropic には残高を返すAPIが無いため、Console の Billing で見た残高を
+    一度だけ控えてもらう。以降は使用額を差し引いて残高を推定する。
+    GitHub Secrets を触らなくてよいように、アプリ側の設定として持たせる。
+    """
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        date_s = str(data.get("date") or "").strip()
+        try:
+            datetime.date.fromisoformat(date_s)
+        except ValueError:
+            return jsonify({"error": "日付は YYYY-MM-DD の形式で入力してください"}), 400
+        try:
+            amount = float(str(data.get("amount_usd")).replace("$", "").replace(",", "").strip())
+        except (TypeError, ValueError):
+            return jsonify({"error": "残高は数字で入力してください（例: 47.20）"}), 400
+        if amount < 0:
+            return jsonify({"error": "残高に負の数は入れられません"}), 400
+        _set_setting("credit_base_date", date_s)
+        _set_setting("credit_base_usd", str(amount))
+        return jsonify({"ok": True, "base_date": date_s, "base_usd": amount})
+
+    date_s, amount = _credit_base_setting()
+    return jsonify({"base_date": date_s, "base_usd": amount})
+
+
+# 残高推定で最低限さかのぼる日数（基準日がこれより古ければ基準日まで戻る）
+CREDIT_ESTIMATE_MIN_DAYS = 60
+
+
+@app.route("/api/admin/credit-estimate")
+@_admin_required
+def admin_credit_estimate():
+    """Admin APIキーが無くても「だいたいの残高」を出すための材料を返す。
+
+    Anthropic の Cost API（実額）が使えないとき、アプリ自身が持っている
+    「日別の解析回数 × 1回あたりの概算コスト」で使用額を見積もる。
+    実額ではないが、残高の目安としては十分に使える。
+    """
+    now = datetime.datetime.now(JST)
+    base_date, base_usd = _credit_base_setting()
+
+    start = (now - datetime.timedelta(days=CREDIT_ESTIMATE_MIN_DAYS)).date()
+    if base_date:
+        start = min(start, datetime.date.fromisoformat(base_date))
+    start_ts = f"{start.isoformat()}T00:00:00"
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT SUBSTR(created_at, 1, 10) AS dt, COUNT(*)
+               FROM usage_log WHERE created_at >= {PH}
+               GROUP BY dt ORDER BY dt""",
+            (start_ts,),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    daily_jpy = {r[0]: round(int(r[1]) * COST_PER_ANALYSIS_JPY, 2) for r in rows}
+    return jsonify({
+        "base_date":             base_date,
+        "base_usd":              base_usd,
+        "daily_jpy":             daily_jpy,
+        "cost_per_analysis_jpy": COST_PER_ANALYSIS_JPY,
+        "since":                 start.isoformat(),
+        "total_analyses":        sum(int(r[1]) for r in rows),
+    })
+
+
 @app.route("/api/admin/server-health")
 @_admin_required
 def admin_server_health():

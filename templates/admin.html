@@ -416,6 +416,30 @@
 
   <!-- サーバーの状態（アプリが遅いときの原因切り分け用） -->
   <div class="card" style="margin-bottom:20px">
+    <h2>💳 クレジット残高の基準</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      Anthropic には「残高を返すAPI」がありません。
+      <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Console の Billing</a>
+      で今の残高を見て、<b>その日付と金額を一度だけ</b>ここに登録してください。
+      以降は毎朝のレポートに、そこから使った分を引いた<b>残高の目安</b>が表示されます。
+      <b>クレジットを買い足したら、その日の残高で登録し直してください。</b>
+    </div>
+    <div id="credit-base-now" style="font-size:13px;color:#374151;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="date" id="credit-base-date"
+             style="padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit">
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:15px;font-weight:800;color:#6B7280">$</span>
+        <input type="number" id="credit-base-usd" step="0.01" min="0" placeholder="47.20"
+               style="width:120px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:13px;font-family:inherit">
+      </div>
+      <button class="apikey-save" style="width:auto;padding:8px 18px;font-size:13px" onclick="saveCreditBase()">保存</button>
+    </div>
+    <div id="credit-base-status" style="font-size:13px;margin-top:8px"></div>
+  </div>
+
+  <!-- サーバーの状態（アプリが遅いときの原因切り分け用） -->
+  <div class="card" style="margin-bottom:20px">
     <h2>🩺 サーバーの状態</h2>
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       アプリを開いたときに「白い画面」や「接続に時間がかかっています」が出る主な原因は、
@@ -1242,6 +1266,48 @@
     await loadCoachMessages();
   }
 
+  // クレジット残高の基準（Console で見た残高を一度だけ登録してもらう）
+  async function loadCreditBase() {
+    const now = document.getElementById('credit-base-now');
+    if (!now) return;
+    try {
+      const d = await (await fetch('/api/admin/credit-base')).json();
+      if (d.base_date) {
+        now.innerHTML = `現在の登録：<b>${escapeHtml(d.base_date)}</b> 時点で <b>$${Number(d.base_usd).toFixed(2)}</b>`;
+        document.getElementById('credit-base-date').value = d.base_date;
+        document.getElementById('credit-base-usd').value = d.base_usd;
+      } else {
+        now.innerHTML = '<span style="color:#DC2626;font-weight:700">未登録です。</span>登録すると毎朝のレポートに残高の目安が出ます。';
+        const el = document.getElementById('credit-base-date');
+        if (el && !el.value) el.value = new Date().toISOString().slice(0, 10);
+      }
+    } catch (e) {
+      now.textContent = '読み込みに失敗しました';
+    }
+  }
+
+  async function saveCreditBase() {
+    const st = document.getElementById('credit-base-status');
+    const date = document.getElementById('credit-base-date').value;
+    const amount_usd = document.getElementById('credit-base-usd').value;
+    if (!date || amount_usd === '') {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 日付と残高の両方を入力してください'; return;
+    }
+    try {
+      const r = await fetch('/api/admin/credit-base', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, amount_usd }),
+      });
+      const d = await r.json();
+      if (!r.ok) { st.style.color = '#DC2626'; st.textContent = '⚠️ ' + (d.error || '保存に失敗しました'); return; }
+      st.style.color = '#065F46';
+      st.textContent = '✅ 保存しました。明日のレポートから、この残高を基準に計算されます。';
+      await loadCreditBase();
+    } catch (e) {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 通信エラーが発生しました';
+    }
+  }
+
   // サーバーの状態（再起動が繰り返されていないかを見る）
   function _fmtUptime(sec) {
     if (sec < 60) return `${sec}秒`;
@@ -1354,7 +1420,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth(), loadCreditBase()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

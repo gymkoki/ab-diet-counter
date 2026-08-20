@@ -499,8 +499,10 @@ def chart_goal_compare(data: dict) -> bytes:
 # cid:chart_credit などで参照する（send_email() が
 # main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
 def has_credit_chart(credit: dict) -> bool:
-    """コストの実データが取れたときだけグラフを出す（取れないときは案内文だけ）。"""
-    return bool(credit) and credit.get("status") == "ok" and bool(credit.get("dates"))
+    """日別のコストが分かるときだけグラフを出す（分からないときは案内文だけ）。
+    実額（Cost API）でも推定（アプリの解析回数）でも出す。"""
+    return (bool(credit) and credit.get("status") in ("ok", "estimated")
+            and bool(credit.get("dates")))
 
 
 def chart_credit(credit: dict) -> bytes:
@@ -529,7 +531,8 @@ def chart_credit(credit: dict) -> bytes:
             suffix += f"（あと約{credit['days_left']}日）"
     else:
         suffix = f" — 今月の使用額 ¥{round((credit.get('spend_month_usd') or 0) * rate):,}"
-    ax.set_title(f"Claude API 日別コスト（直近30日）{suffix}",
+    kind = "推定" if credit.get("estimated") else "実額"
+    ax.set_title(f"Claude API 日別コスト（直近30日・{kind}）{suffix}",
                  fontsize=15, fontweight="bold", pad=8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -555,8 +558,11 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
     status = credit.get("status")
     note = ""
 
-    if status != "ok":
-        # 実額が取れないときは、アプリ側の解析回数ベースの推定値だけ出す
+    est = bool(credit.get("estimated"))
+    kind = "推定" if est else "実額"
+
+    if status not in ("ok", "estimated"):
+        # 実額も推定も出せないときだけ、簡易表示にする
         head = f"""
       <div class="kpi-row">
         <div class="kpi">
@@ -622,7 +628,7 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         head = f"""
       <div class="kpi-row">
         <div class="kpi">
-          <div class="kpi-lbl">💳 クレジット残高（推定）</div>
+          <div class="kpi-lbl">💳 クレジット残高（{kind}）</div>
           <div class="kpi-val" style="font-size:24px;color:{rem_color}">{rem_val}</div>
           <div class="kpi-sub">{rem_sub}</div>
         </div>
@@ -634,12 +640,12 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
       </div>
       <div class="kpi-row" style="margin-top:10px">
         <div class="kpi">
-          <div class="kpi-lbl">昨日の実コスト</div>
+          <div class="kpi-lbl">昨日のコスト（{kind}）</div>
           <div class="kpi-val" style="font-size:20px">{_yen(credit.get('spend_yesterday_usd'))}</div>
           <div class="kpi-sub">{_usd(credit.get('spend_yesterday_usd'))}</div>
         </div>
         <div class="kpi">
-          <div class="kpi-lbl">今月の実コスト</div>
+          <div class="kpi-lbl">今月のコスト（{kind}）</div>
           <div class="kpi-val" style="font-size:20px{month_color}">{_yen(credit.get('spend_month_usd'))}</div>
           <div class="kpi-sub">{month_sub}</div>
         </div>
@@ -651,11 +657,25 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
       </div>"""
         note = credit.get("message") or ""
 
+    # 見出しの右に「実額 / 推定」を出して、数字の性格が一目で分かるようにする
+    if status == "ok":
+        badge = ('<span style="margin-left:8px;background:#ECFDF5;color:#047857;border-radius:999px;'
+                 'padding:2px 10px;font-size:11px;font-weight:800;vertical-align:2px">実額</span>')
+    elif status == "estimated":
+        badge = ('<span style="margin-left:8px;background:#EFF6FF;color:#1D4ED8;border-radius:999px;'
+                 'padding:2px 10px;font-size:11px;font-weight:800;vertical-align:2px">推定</span>')
+    else:
+        badge = ""
+
     note_html = ""
     if note:
+        # 残高が出せているときの補足は落ち着いた色、出せていないときだけ注意色にする
+        calm = status in ("ok", "estimated") and credit.get("remaining_usd") is not None
+        bg, border, fg = (("#F8FAFC", "#E2E8F0", "#475569") if calm
+                          else ("#FFFBEB", "#FDE68A", "#92400E"))
         note_html = f"""
-      <div style="margin-top:10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;
-                  padding:10px 12px;font-size:12px;color:#92400E;line-height:1.7">{note}</div>"""
+      <div style="margin-top:10px;background:{bg};border:1px solid {border};border-radius:8px;
+                  padding:10px 12px;font-size:12px;color:{fg};line-height:1.7">{note}</div>"""
 
     chart_html = ""
     if has_credit_chart(credit):
@@ -663,9 +683,10 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
 
     return f"""
     <div class="section">
-      <h2>💳 Claude API クレジット状況（昨日の推定コスト・残高）</h2>{head}{chart_html}{note_html}
+      <h2>💳 Claude API クレジット状況{badge}</h2>{head}{chart_html}{note_html}
       <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
-        ※ 実コストは Anthropic の Cost API（実測値）。Anthropic には残高を返すAPIが無いため、
+        ※ 「推定」は、アプリの解析回数から見積もった金額です（実額は Anthropic の Cost API）。
+        Anthropic には残高を返すAPIが無いため、
         残高は「基準日の残高 − 実使用額 ＋ オートリロードによる自動チャージ」で算出した推定値です。
         正確な残高は <a href="{credit.get('console_url')}">Anthropic Console</a> で確認できます。
         円換算レート: $1 = ¥{rate:.0f}
@@ -725,6 +746,25 @@ def _dev_proposal_section(proposals) -> str:
         気になるものが無ければ、何もしなくて大丈夫です。
       </div>{cards}
     </div>"""
+
+
+def fetch_credit_estimate():
+    """残高推定の材料（アプリ自身の日別解析回数＋登録済みの基準残高）を取得する。
+
+    Admin APIキーが無くても「だいたいの残高」を出すために使う。
+    取れなくてもレポートは送る（実額が取れていればそちらが優先される）。
+    """
+    try:
+        r = requests.get(
+            f"{APP_URL}/api/admin/credit-estimate",
+            auth=(ADMIN_USER, ADMIN_PASS),
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"credit-estimate skipped: {e}")
+        return None
 
 
 def fetch_dev_proposals():
@@ -1081,7 +1121,7 @@ def main():
 
     print("Fetching Claude API credit / cost...")
     try:
-        credit = build_credit_info()
+        credit = build_credit_info(estimate=fetch_credit_estimate())
     except Exception as e:   # noqa: BLE001 — クレジット取得の失敗でレポートを落とさない
         print(f"  credit info failed: {e}")
         credit = {"status": "error", "message": f"クレジット情報の取得に失敗しました（{e}）。"}
