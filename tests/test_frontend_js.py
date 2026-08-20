@@ -50,3 +50,17 @@ def test_critical_functions_exist():
         "showError",
     ]:
         assert re.search(rf"(async\s+)?function\s+{name}\s*\(", html), f"function {name} が見つかりません"
+
+
+def test_weight_tab_has_hint_above_input():
+    """体重タブ：入力フォームの上のひとこと説明が消えていないこと。
+    （見出し → 説明 → 入力欄 の順。控えめなグレー・本文より小さい文字で表示する）"""
+    with open(INDEX, encoding="utf-8") as f:
+        html = f.read()
+    assert 'class="weight-hint"' in html, "体重入力の説明テキストがありません"
+    assert "体重を記録すると、30日間の変化グラフで頑張りが見えます" in html
+    assert re.search(r"\.weight-hint\s*\{[^}]*color:var\(--text-muted\)", html), \
+        "説明テキストがグレー系（--text-muted）で指定されていません"
+    order = [html.index('id="weight-sub-title"'), html.index('class="weight-hint"'),
+             html.index('class="weight-inline-row"')]
+    assert order == sorted(order), "見出し → 説明 → 入力欄 の並びになっていません"

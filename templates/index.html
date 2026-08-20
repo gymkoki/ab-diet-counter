@@ -613,6 +613,8 @@
     .rsub-btn { flex:1; padding:11px 4px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); font-size:16px; font-weight:700; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; white-space:nowrap; transition:all 0.15s; box-shadow:var(--shadow-sm); }
     .rsub-btn.active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary-dark); }
     .rsub-emoji { font-size:18px; }
+    /* 体重入力の上のひとこと説明（記録する動機づけ）。本文より一段小さく、控えめなグレー。 */
+    .weight-hint { font-size:15px; color:var(--text-muted); line-height:1.5; }
     .weight-inline-row { display:flex; align-items:center; gap:10px; margin-top:12px; }
     .weight-inline-row .weight-input { width:120px; text-align:center; }
     .weight-inline-save { padding:12px 22px; border:none; border-radius:var(--radius-md); background:var(--primary); color:white; font-size:17px; font-weight:700; cursor:pointer; white-space:nowrap; transition:transform 0.1s; }
@@ -827,6 +829,7 @@
   <div id="sub-weight" style="display:none">
     <div class="ex-card" style="margin-top:10px">
       <h3 id="weight-sub-title">⚖️ 今日の体重を記録</h3>
+      <p class="weight-hint">体重を記録すると、30日間の変化グラフで頑張りが見えます📉</p>
       <div class="weight-inline-row">
         <input type="number" step="any" min="20" max="200" id="weight-input-today" class="weight-input" placeholder="例：60" inputmode="decimal">
         <span class="weight-unit">kg</span>
