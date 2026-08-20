@@ -88,10 +88,11 @@ def test_base_date_before_lookback_is_included():
     assert info["spend_month_usd"] == pytest.approx(5.0)
 
 
-def test_no_admin_key_returns_guidance():
+def test_no_admin_key_and_no_estimate_returns_guidance():
+    """実額も推定材料も無いときだけ、何も出せない旨を案内する。"""
     info = ac.build_credit_info(today=TODAY, env={}, fetcher=_fake_cost({}))
     assert info["status"] == "no_key"
-    assert "ANTHROPIC_ADMIN_KEY" in info["message"]
+    assert info["message"]
     assert info["remaining_usd"] is None
 
 
@@ -104,7 +105,8 @@ def test_key_without_base_shows_spend_only():
     assert info["status"] == "ok"
     assert info["remaining_usd"] is None
     assert info["spend_yesterday_usd"] == pytest.approx(3.0)
-    assert "ANTHROPIC_CREDIT_BASE" in info["message"]
+    # 基準残高の登録先は GitHub Secrets ではなくダッシュボードに変更した
+    assert "ダッシュボード" in info["message"]
 
 
 def test_api_failure_does_not_raise():
@@ -274,7 +276,7 @@ def test_credit_section_renders():
     ng = ac.build_credit_info(today=TODAY, env={}, fetcher=_fake_cost({}))
     html_ng = send_report._credit_section(ng, 400)
     assert "取得できず" in html_ng
-    assert "ANTHROPIC_ADMIN_KEY" in html_ng
+    assert "残高" in html_ng
     # 実データが無いときはグラフを出さない（案内文だけ）
     assert "cid:chart_credit" not in html_ng
     assert send_report.has_credit_chart(ok) is True
@@ -315,3 +317,98 @@ def test_credit_section_shows_auto_reload_and_limit():
         fetcher=_fake_cost({f"2026-08-{d:02d}": 8.0 for d in range(1, 12)}),
     )
     assert "月末見込み" not in send_report._credit_section(safe, 400)
+
+
+# ── 実額が取れないときの「推定残高」（オーナー指示 2026-08）──────────
+# 「クレジット残高が取得できない場合は予測でも良いので、だいたいあとどれくらい
+#   残高があるか教えて」への対応。アプリ自身の解析回数から使用額を見積もる。
+def _estimate(daily_jpy, base_date="2026-08-01", base_usd=100.0):
+    return {"daily_jpy": daily_jpy, "base_date": base_date, "base_usd": base_usd,
+            "cost_per_analysis_jpy": 4}
+
+
+def test_estimates_balance_without_admin_key():
+    """Admin APIキーが無くても、残高の目安が出ること。"""
+    # 8/1〜8/11 の11日間、毎日 ¥1,550（＝$10）使った
+    daily = {f"2026-08-{d:02d}": 1550 for d in range(1, 12)}
+    info = ac.build_credit_info(today=TODAY, env={"USD_JPY": "155"},
+                                estimate=_estimate(daily))
+    assert info["status"] == "estimated"
+    assert info["estimated"] is True
+    assert info["spend_since_base_usd"] == pytest.approx(110.0)
+    assert info["remaining_usd"] == pytest.approx(-10.0)
+    assert info["spend_yesterday_usd"] == pytest.approx(10.0)
+    assert "推定" in info["message"]
+
+
+def test_estimate_gives_days_left():
+    """残りが何日もつかの目安も出ること。"""
+    daily = {f"2026-08-{d:02d}": 155 for d in range(1, 12)}   # 毎日 $1
+    info = ac.build_credit_info(today=TODAY, env={"USD_JPY": "155"},
+                                estimate=_estimate(daily, base_usd=100.0))
+    assert info["remaining_usd"] == pytest.approx(89.0)
+    assert info["days_left"] == 89
+    assert info["empty_date"] == "2026-11-09"
+
+
+def test_real_cost_wins_over_estimate():
+    """Admin APIキーがあるときは実額を使う（推定で上書きしない）。"""
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k", "USD_JPY": "155"},
+        fetcher=_fake_cost({"2026-08-11": 2.0}),
+        estimate=_estimate({"2026-08-11": 99999}),
+    )
+    assert info["status"] == "ok"
+    assert info["estimated"] is False
+    assert info["spend_yesterday_usd"] == pytest.approx(2.0)
+
+
+def test_falls_back_to_estimate_when_api_fails():
+    """実額の取得に失敗したら、推定に切り替えて残高を出し続けること。"""
+    def _boom(admin_key, start_date, timeout=30):
+        raise RuntimeError("401 Unauthorized")
+
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"ANTHROPIC_ADMIN_KEY": "k", "USD_JPY": "155"},
+        fetcher=_boom,
+        estimate=_estimate({"2026-08-11": 1550}),
+    )
+    assert info["status"] == "estimated"
+    assert info["remaining_usd"] is not None
+    assert "401" in info["message"]      # 失敗した事実も残す
+
+
+def test_dashboard_base_is_used_when_secret_is_absent():
+    """基準残高はダッシュボード登録ぶんでも効くこと（Secrets必須にしない）。"""
+    info = ac.build_credit_info(today=TODAY, env={"USD_JPY": "155"},
+                                estimate=_estimate({"2026-08-11": 1550},
+                                                   base_date="2026-08-10", base_usd=50.0))
+    assert info["base_date"] == "2026-08-10"
+    assert info["remaining_usd"] == pytest.approx(40.0)
+
+
+def test_secret_base_wins_over_dashboard():
+    info = ac.build_credit_info(
+        today=TODAY,
+        env={"USD_JPY": "155", "ANTHROPIC_CREDIT_BASE": "2026-08-10:70"},
+        estimate=_estimate({"2026-08-11": 1550}, base_date="2026-08-10", base_usd=50.0),
+    )
+    assert info["base_usd"] == pytest.approx(70.0)
+
+
+def test_estimated_section_uses_the_full_layout():
+    """推定でも「取得できず」ではなく、実額と同じ体裁で残高を出すこと。"""
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
+    import send_report
+
+    info = ac.build_credit_info(today=TODAY, env={"USD_JPY": "155"},
+                                estimate=_estimate({f"2026-08-{d:02d}": 155 for d in range(1, 12)}))
+    html = send_report._credit_section(info, 400)
+    assert "取得できず" not in html, "推定できるのに『取得できず』になっています"
+    assert "クレジット残高（推定）" in html
+    assert ">推定<" in html, "実額か推定かのバッジが出ていません"
+    assert "¥13,795" in html          # 残高 $89 × 155
+    assert "約89日" in html

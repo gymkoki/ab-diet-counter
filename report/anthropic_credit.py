@@ -199,11 +199,31 @@ def _sum_from(by_day: dict, first_day: datetime.date) -> float:
     return sum(v for d, v in by_day.items() if d >= key)
 
 
-def build_credit_info(today=None, env=None, fetcher=None) -> dict:
+def estimate_daily_usd(estimate, usd_jpy):
+    """アプリ自身の解析回数から見積もった日別コスト(円)を USD に直す。
+
+    Admin APIキーが無くても「だいたいの残高」を出すために使う。
+    estimate は /api/admin/credit-estimate の応答。
+    """
+    daily_jpy = (estimate or {}).get("daily_jpy") or {}
+    if not usd_jpy:
+        return {}
+    out = {}
+    for day, jpy in daily_jpy.items():
+        try:
+            out[str(day)[:10]] = float(jpy) / usd_jpy
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def build_credit_info(today=None, env=None, fetcher=None, estimate=None) -> dict:
     """デイリーレポートに載せるクレジット情報を組み立てる。
 
     fetcher は差し替え可能（テスト用）。シグネチャは fetch_cost_by_day と同じ。
-    戻り値の status は "ok" / "no_key" / "error"。
+    estimate は /api/admin/credit-estimate の応答。Admin APIキーが無い（または
+    取得に失敗した）ときに、アプリ自身の解析回数から残高を推定するために使う。
+    戻り値の status は "ok"（実額）/ "estimated"（推定）/ "no_key" / "error"。
     """
     env = os.environ if env is None else env
     fetcher = fetch_cost_by_day if fetcher is None else fetcher
@@ -215,6 +235,14 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
         usd_jpy = 155.0
 
     base = parse_credit_base(env.get("ANTHROPIC_CREDIT_BASE"))
+    # 管理画面（ダッシュボード）で登録された基準残高。GitHub Secrets を触らなくても
+    # オーナーが自分で更新できるようにするための経路。両方あれば Secrets を優先する。
+    if not base and estimate:
+        try:
+            base = (datetime.date.fromisoformat(str(estimate.get("base_date"))),
+                    float(estimate.get("base_usd")))
+        except (TypeError, ValueError):
+            base = None
     auto_reload = parse_auto_reload(env.get("ANTHROPIC_AUTO_RELOAD"))
     spend_limit = parse_spend_limit(env.get("ANTHROPIC_SPEND_LIMIT"))
     info = {
@@ -222,6 +250,7 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
         "message": "",
         "usd_jpy": usd_jpy,
         "console_url": CONSOLE_BILLING_URL,
+        "estimated": False,
         "daily": {},
         "dates": [],
         "values": [],
@@ -248,27 +277,45 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
         "limit_risk": False,
     }
 
-    admin_key = (env.get("ANTHROPIC_ADMIN_KEY") or "").strip()
-    if not admin_key:
-        info["message"] = (
-            "Admin APIキーが未設定のため、実際の使用額を取得できませんでした。"
-            "Console → Settings → Admin keys でキーを発行し、GitHub Secrets に "
-            "ANTHROPIC_ADMIN_KEY として登録すると、ここに実額が表示されます。"
-        )
-        return info
-
     lookback_start = today - datetime.timedelta(days=MIN_LOOKBACK_DAYS)
     start_date = min(base[0], lookback_start) if base else lookback_start
 
-    try:
-        by_day = fetcher(admin_key, start_date)
-    except Exception as e:  # noqa: BLE001 — レポート全体を落とさない
-        info["status"] = "error"
-        info["message"] = f"Cost API の取得に失敗しました（{type(e).__name__}: {e}）。"
+    # ① 実額（Admin APIキーがあるとき）→ ② 推定（アプリ自身の解析回数）の順に試す。
+    # オーナー指示 2026-08：実額が取れないときも「だいたいの残高」を出すこと。
+    by_day, source, api_error = None, None, None
+    admin_key = (env.get("ANTHROPIC_ADMIN_KEY") or "").strip()
+    if admin_key:
+        try:
+            by_day = fetcher(admin_key, start_date)
+            source = "ok"
+        except Exception as e:  # noqa: BLE001 — レポート全体を落とさない
+            api_error = f"Cost API の取得に失敗しました（{type(e).__name__}: {e}）。"
+
+    if by_day is None:
+        est = estimate_daily_usd(estimate, usd_jpy)
+        if est:
+            by_day, source = est, "estimated"
+
+    if by_day is None:
+        info["status"] = "error" if api_error else "no_key"
+        info["message"] = api_error or (
+            "使用額を取得できませんでした。アプリの解析記録がまだ無いか、"
+            "アプリに接続できていない可能性があります。"
+        )
         return info
 
-    info["status"] = "ok"
+    info["status"] = source
     info["daily"] = by_day
+    info["estimated"] = (source == "estimated")
+    if source == "estimated":
+        per = (estimate or {}).get("cost_per_analysis_jpy")
+        info["message"] = (
+            "実額ではなく、アプリの解析回数からの推定値です"
+            + (f"（1回あたり約¥{per:g}で計算）" if per else "")
+            + "。"
+            + (api_error + " " if api_error else "")
+            + "正確な実額を出すには Admin APIキーの登録が必要です。"
+        )
 
     # 直近30日ぶんを日付順に並べる（データが無い日は 0 として埋める）
     dates, values = [], []
@@ -321,8 +368,10 @@ def build_credit_info(today=None, env=None, fetcher=None) -> dict:
             info["empty_date"] = (today + datetime.timedelta(days=days_left)).isoformat()
     else:
         info["message"] = (
-            "残高の基準値が未設定です。Console の Billing で現在の残高を確認し、"
-            'GitHub Secrets に ANTHROPIC_CREDIT_BASE = "YYYY-MM-DD:残高USD"'
-            "（例: 2026-08-01:100）を登録すると、残高と使い切り予測が表示されます。"
+            (info["message"] + " " if info["message"] else "")
+            + "残高の基準値が未登録のため、残りいくらかは出せません。"
+            "Console の Billing で今の残高を見て、ダッシュボードの"
+            "「💳 クレジット残高の基準」に一度だけ登録してください。"
+            "以降は毎朝そこから使用額を引いた残高が表示されます。"
         )
     return info
