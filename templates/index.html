@@ -95,6 +95,16 @@
     @keyframes spin { to { transform:rotate(360deg); } }
 
     /* ── 写真追加エリア ── */
+    /* 記録方法の4つのカード（写真／文章／コピーご飯／Bだけ追加）。
+       オーナー指示 2026-08：どれも同じ大きさ・同じデザインの大きめカードにして、
+       「Bだけ追加」が埋もれないようにする。2列×2段でタップしやすくする。 */
+    .rec-grid { display:grid; grid-template-columns:1fr 1fr; grid-auto-rows:1fr; gap:10px; margin:10px 0 4px; }
+    .rec-card { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:120px; padding:16px 10px; cursor:pointer; border:1.5px dashed #D8D2CB; border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-sm); font-family:inherit; font-size:18px; font-weight:700; color:var(--text); text-align:center; line-height:1.35; transition:border-color 0.2s, background 0.2s, color 0.2s; }
+    .rec-card:hover { border-color:var(--primary); background:var(--primary-soft); }
+    .rec-card:active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
+    .rec-ic { font-size:26px; line-height:1; }
+    .rec-sub { display:block; font-size:14px; font-weight:600; color:var(--text-muted); margin-top:2px; }
+    .rec-card:active .rec-sub { color:var(--primary); }
     .meal-add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:22px; cursor:pointer; border:1.5px dashed #D8D2CB; border-radius:var(--radius); background:var(--surface); margin:10px 0 4px; transition:border-color 0.2s, background 0.2s; position:relative; box-shadow:var(--shadow-sm); }
     .meal-add:hover { border-color:var(--primary); background:var(--primary-soft); }
     .meal-add-icon { font-size:24px; }
@@ -1740,14 +1750,33 @@ function buildPanel(m) {
   panel.innerHTML = `
     <div class="container">
       <div id="strip-${m.id}" class="meal-strip"></div>
-      <div class="meal-add" id="add-${m.id}" onclick="openFileInput('${m.id}')">
-        <div class="meal-add-icon">📷</div>
-        <h3>写真を追加</h3>
+      <!-- 記録方法は4つとも同じ大きさのカードで並べる（オーナー指示 2026-08）。
+           以前は「手動追加」を押してからでないと文章・コピーご飯が出ず、
+           Bだけの追加にいたっては入口が無くなっていた。 -->
+      <div class="rec-grid">
+        <div class="rec-card" id="add-${m.id}" onclick="openFileInput('${m.id}')">
+          <span class="rec-ic">📷</span>写真を追加
+        </div>
+        <button class="rec-card" onclick="chooseManualText('${m.id}')">
+          <span class="rec-ic">✏️</span>文章で手動入力
+        </button>
+        <button class="rec-card" onclick="chooseManualCopy('${m.id}')">
+          <span class="rec-ic">🍚</span>コピーご飯を追加
+        </button>
+        <button class="rec-card" onclick="toggleOilMenu('${m.id}')">
+          <span class="rec-ic">🍙</span>Bだけ追加<span class="rec-sub">お菓子・ドリンクなど</span>
+        </button>
       </div>
-      <button class="text-add-btn" onclick="toggleManualMenu('${m.id}')"><span class="add-menu-ic">✏️</span>手動追加</button>
-      <div class="add-menu" id="manualmenu-${m.id}" style="display:none">
-        <button class="add-menu-opt" onclick="chooseManualText('${m.id}')"><span class="add-menu-ic">✏️</span>文章で手動入力</button>
-        <button class="add-menu-opt" onclick="chooseManualCopy('${m.id}')"><span class="add-menu-ic">🍚</span>コピーご飯を追加</button>
+      <!-- 「Bだけ追加」で開くBの選択欄。OIL_OPTIONS は後方で定義されるが、
+           buildPanel が呼ばれるのは読み込み完了後なので参照して問題ない。 -->
+      <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
+        <div class="oil-menu-row">
+          ${OIL_OPTIONS.map((o, i) => `
+            <button class="oil-opt" id="oilopt-${m.id}-${i}" onclick="selectOil('${m.id}',${i})">${o.label}<span>${o.kcal}</span></button>`).join('')}
+        </div>
+        <input type="text" id="oilnote-${m.id}" class="oil-note-input" maxlength="30"
+               placeholder="何を食べたか（例：チョコ、カフェラテ）">
+        <button class="btn-oil-save" id="oilsave-${m.id}" onclick="saveOil('${m.id}')" disabled>この内容で追加する</button>
       </div>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
@@ -2640,6 +2669,8 @@ function toggleOilMenu(mealId) {
   const menu = document.getElementById(`oilmenu-${mealId}`);
   if (!menu) return;
   const opening = getComputedStyle(menu).display === 'none';
+  // 開くときは文章入力など他の欄を閉じてから（同時に2つ開かないように）
+  if (opening) closeMealInputs(mealId);
   menu.style.display = opening ? 'flex' : 'none';
   if (!opening) {
     oilSelection[mealId] = null;
@@ -2975,23 +3006,23 @@ async function onCopyFileChange(input) {
 // ═══════════════════════════════════════════
 //  手動追加メニュー（文章で手動入力 / コピーご飯を追加 の2択）
 // ═══════════════════════════════════════════
-function toggleManualMenu(mealId) {
-  const menu = document.getElementById(`manualmenu-${mealId}`);
-  if (!menu) return;
-  const opening = getComputedStyle(menu).display === 'none';
-  menu.style.display = opening ? 'flex' : 'none';
-  // メニューを開くときは文章フォームは閉じておく
-  if (opening) { const f = document.getElementById(`textform-${mealId}`); if (f) f.style.display = 'none'; }
+// ※「手動追加」の中間メニュー(toggleManualMenu)は廃止した（オーナー指示 2026-08）。
+//   文章・コピーご飯・Bだけ追加は、写真と同列のカードから直接開く。
+
+// 開いている入力欄を閉じる（同時に2つ開かないようにする）
+function closeMealInputs(mealId) {
+  const f = document.getElementById(`textform-${mealId}`);
+  if (f) f.style.display = 'none';
+  const oil = document.getElementById(`oilmenu-${mealId}`);
+  if (oil) oil.style.display = 'none';
 }
 function chooseManualText(mealId) {
-  const menu = document.getElementById(`manualmenu-${mealId}`);
-  if (menu) menu.style.display = 'none';
+  closeMealInputs(mealId);
   const f = document.getElementById(`textform-${mealId}`);
   if (f) { f.style.display = 'block'; document.getElementById(`textinput-${mealId}`)?.focus(); }
 }
 function chooseManualCopy(mealId) {
-  const menu = document.getElementById(`manualmenu-${mealId}`);
-  if (menu) menu.style.display = 'none';
+  closeMealInputs(mealId);
   openCopyPicker(mealId);
 }
 
