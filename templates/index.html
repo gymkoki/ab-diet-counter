@@ -615,16 +615,8 @@
     .diary-row input { flex:1; min-width:0; padding:11px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:16px; font-family:inherit; }
     .diary-row button { padding:11px 16px; border:none; border-radius:var(--radius-sm); background:var(--primary); color:#fff; font-size:16px; font-weight:800; cursor:pointer; white-space:nowrap; }
     .diary-note { font-size:15px; color:var(--primary-dark); font-weight:700; margin-top:6px; min-height:18px; }
-    #weight-overlay, #hist-edit-overlay, #copy-picker-overlay, #snack-batch-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(23,19,16,0.5); backdrop-filter:blur(2px); align-items:center; justify-content:center; padding:24px; }
-    #weight-overlay.show, #hist-edit-overlay.show, #copy-picker-overlay.show, #snack-batch-overlay.show { display:flex; }
-    /* 間食まとめ記録モーダル */
-    .snack-cat-row { display:flex; gap:8px; margin:4px 0 12px; }
-    .snack-cat-btn { flex:1; padding:12px 6px; border:1.5px solid #E3DDD6; border-radius:12px; background:var(--surface); font-family:inherit; font-size:15px; font-weight:700; color:var(--text); cursor:pointer; line-height:1.3; transition:border-color .15s, background .15s, color .15s; }
-    .snack-cat-btn.selected { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
-    .snack-batch-ta { width:100%; min-height:120px; box-sizing:border-box; border:1.5px solid #E3DDD6; border-radius:12px; padding:12px; font-family:inherit; font-size:16px; line-height:1.6; resize:vertical; }
-    .snack-batch-hint { font-size:12px; color:var(--text-muted); line-height:1.6; margin:8px 2px 0; text-align:left; }
-    .btn-snack-batch-go { width:100%; margin-top:12px; padding:14px; border:none; border-radius:12px; background:var(--primary); color:#fff; font-family:inherit; font-size:17px; font-weight:800; cursor:pointer; }
-    .btn-snack-batch-go:disabled { opacity:.5; cursor:default; }
+    #weight-overlay, #hist-edit-overlay, #copy-picker-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(23,19,16,0.5); backdrop-filter:blur(2px); align-items:center; justify-content:center; padding:24px; }
+    #weight-overlay.show, #hist-edit-overlay.show, #copy-picker-overlay.show { display:flex; }
     .hist-edit-btn { background:var(--surface); border:1px solid var(--primary-line); color:var(--primary-dark); border-radius:var(--radius-sm); padding:8px 14px; font-size:15px; font-weight:800; cursor:pointer; flex-shrink:0; margin-left:10px; white-space:nowrap; }
     .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:var(--primary-soft); }
     .record-subnav { display:flex; gap:8px; padding:12px 16px 4px; }
@@ -913,24 +905,6 @@
     <h3>🍚 コピーご飯を選ぶ</h3>
     <div id="copy-picker-list"></div>
     <button class="weight-cancel" onclick="closeCopyPicker()">閉じる</button>
-  </div>
-</div>
-
-<!-- 間食まとめ記録モーダル -->
-<div id="snack-batch-overlay" onclick="if(event.target===this)closeSnackBatch()">
-  <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:380px">
-    <h3>🍬 間食をまとめて記録</h3>
-    <label class="setting-label" style="text-align:left">いつの間食？</label>
-    <div class="snack-cat-row" id="snack-cat-row">
-      <button type="button" class="snack-cat-btn" onclick="selectSnackCategory('午前の間食')">午前<br>の間食</button>
-      <button type="button" class="snack-cat-btn" onclick="selectSnackCategory('午後の間食')">午後<br>の間食</button>
-      <button type="button" class="snack-cat-btn" onclick="selectSnackCategory('夜の間食')">夜<br>の間食</button>
-    </div>
-    <label class="setting-label" style="text-align:left">食べた間食（1行に1つ）</label>
-    <textarea id="snack-batch-input" class="snack-batch-ta" oninput="_updateSnackBatchGo()" placeholder="チョコ2個&#10;カフェラテ&#10;せんべい3枚"></textarea>
-    <div class="snack-batch-hint">1行ずつ書いた間食を、まとめて1回でAI解析します。写真より手早く、費用も抑えられます。</div>
-    <button class="btn-snack-batch-go" id="snack-batch-go" onclick="submitSnackBatch()" disabled>まとめて計算する</button>
-    <button class="weight-cancel" onclick="closeSnackBatch()">閉じる</button>
   </div>
 </div>
 
@@ -1359,7 +1333,7 @@ function buildMealsPayload(includePending) {
     data[m.id] = {
       items: state[m.id].items
         .filter(i => i.result || (includePending && (i.previewSrc || (i.isText && i.text))))
-        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, note:i.note, isOil:i.isOil, oilLabel:i.oilLabel, isCopy:i.isCopy, isSnack:i.isSnack, snackCategory:i.snackCategory, pending: i.result ? undefined : true }))
+        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, note:i.note, isOil:i.isOil, oilLabel:i.oilLabel, isCopy:i.isCopy, pending: i.result ? undefined : true }))
     };
   });
   return data;
@@ -1791,12 +1765,6 @@ function buildPanel(m) {
         </button>
         <button class="rec-card" onclick="toggleOilMenu('${m.id}')">
           <span class="rec-ic">🍙</span>Bだけ追加<span class="rec-sub">お菓子・ドリンクなど</span>
-        </button>
-        <!-- 間食まとめ記録：複数の間食を1回のAI解析にまとめて送る（費用を抑えられる）。
-             幅いっぱいのカードにして写真・文章などの4枚と区別する。 -->
-        <button class="rec-card rec-card-wide" onclick="openSnackBatch('${m.id}')"
-                style="grid-column:1 / -1; min-height:64px; flex-direction:row; gap:10px; font-size:17px">
-          <span class="rec-ic" style="font-size:24px">🍬</span>間食をまとめて記録<span class="rec-sub">午前・午後・夜／複数まとめてAI解析</span>
         </button>
       </div>
       <!-- 「Bだけ追加」で開くBの選択欄。OIL_OPTIONS は後方で定義されるが、
@@ -3174,7 +3142,7 @@ function renderResults(mealId) {
         ${item.previewSrc
           ? `<img class="result-photo" src="${item.previewSrc}" alt="" onclick="openLightbox('${item.previewSrc}')" style="cursor:zoom-in">`
           : (item.text && item.text.trim())
-            ? `<div class="text-entry-recap">📝 ${item.isSnack && item.snackCategory ? esc(item.snackCategory) + '：' : '入力内容：'}${esc(item.text)}</div>`
+            ? `<div class="text-entry-recap">📝 入力内容：${esc(item.text)}</div>`
             : ''}
         ${(item.previewSrc && item.note && item.note.trim()) ? `<div class="text-entry-recap">📝 補足：${esc(item.note)}</div>` : ''}
         ${item.result.advice ? `<div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice)}</p></div>` : ''}
@@ -3348,11 +3316,6 @@ const ANALYZE_TOTAL_DEADLINE_MS = 60000;
 // （2026-08：写真解析を60秒に縮めた際、ここまで巻き込んで再計算が反映されなくなった）
 const REANALYZE_FETCH_TIMEOUT_MS  = 120000;
 const REANALYZE_TOTAL_DEADLINE_MS = 150000;
-// 間食まとめ解析：品数ぶんの出力を1回で生成するため単発より少し長い。
-// 利用者が自分でまとめて送って結果を待つ場面なので、再計算と同じ別枠にする。
-const SNACK_BATCH_MAX_ITEMS         = 8;
-const SNACK_BATCH_FETCH_TIMEOUT_MS  = 120000;
-const SNACK_BATCH_TOTAL_DEADLINE_MS = 150000;
 
 // 時間制限つきの fetch。時間切れは AbortError になり、通信断と同じ扱いで再送される。
 function _fetchWithTimeout(url, formData, limitMs) {
@@ -3566,129 +3529,6 @@ function toggleRecalcForm(mealId, itemId) {
   if (!form) return;
   form.classList.toggle('open');
   if (form.classList.contains('open')) document.getElementById(`recalc-text-${mealId}-${itemId}`)?.focus();
-}
-
-// ═══════════════════════════════════════════
-//  間食まとめ記録（複数の間食を1回のAI解析にまとめて送る）
-//  大きな判定ルール（システムプロンプト）を品数ぶん繰り返さないので、
-//  1品ずつ解析するより費用が下がる。送信は品数によらず1回。
-// ═══════════════════════════════════════════
-let _snackBatchMeal = null;
-let _snackBatchCategory = null;
-
-function openSnackBatch(mealId) {
-  _snackBatchMeal = mealId || 'food';
-  _snackBatchCategory = null;
-  const ta = document.getElementById('snack-batch-input');
-  if (ta) ta.value = '';
-  document.getElementById('snack-batch-overlay').classList.add('show');
-  // 時間帯からそれっぽい区分を初期選択（午前<11時 / 午後<17時 / 夜）。変更は自由。
-  const h = new Date().getHours();
-  selectSnackCategory(h < 11 ? '午前の間食' : (h < 17 ? '午後の間食' : '夜の間食'));
-  setTimeout(() => ta && ta.focus(), 50);
-}
-
-function closeSnackBatch() {
-  document.getElementById('snack-batch-overlay').classList.remove('show');
-}
-
-function selectSnackCategory(cat) {
-  _snackBatchCategory = cat;
-  document.querySelectorAll('#snack-cat-row .snack-cat-btn').forEach(btn => {
-    // ボタン文言は改行入りなので、選択状態は onclick の引数（区分名）で判定する
-    btn.classList.toggle('selected', (btn.getAttribute('onclick') || '').includes(`'${cat}'`));
-  });
-  _updateSnackBatchGo();
-}
-
-function _snackBatchLines() {
-  const ta = document.getElementById('snack-batch-input');
-  if (!ta) return [];
-  return ta.value.split('\n').map(s => s.trim()).filter(Boolean);
-}
-
-function _updateSnackBatchGo() {
-  const go = document.getElementById('snack-batch-go');
-  if (go) go.disabled = !(_snackBatchCategory && _snackBatchLines().length);
-}
-
-async function submitSnackBatch() {
-  const mealId = _snackBatchMeal || 'food';
-  const category = _snackBatchCategory;
-  let entries = _snackBatchLines();
-  if (!category || !entries.length) return;
-
-  if (entries.length > SNACK_BATCH_MAX_ITEMS) {
-    alert(`一度にまとめられる間食は${SNACK_BATCH_MAX_ITEMS}個までです。最初の${SNACK_BATCH_MAX_ITEMS}個を計算します。`);
-    entries = entries.slice(0, SNACK_BATCH_MAX_ITEMS);
-  }
-  closeSnackBatch();
-
-  // 各間食を「解析待ちの文章項目（isSnack付き）」として作る。
-  // 途中で再読み込みされても resumePendingAnalyses が1品ずつ拾って復帰できる。
-  const items = entries.map(text => {
-    const id = nextItemId();
-    const item = { id, file:null, previewSrc:null, result:null, loading:true, error:null,
-                   isText:true, text, isSnack:true, snackCategory:category, loadingPct:0 };
-    state[mealId].items.push(item);
-    _startProgress(mealId, id);
-    return item;
-  });
-  renderStrip(mealId);
-  saveState();   // 解析前に保存（計算中に再読み込みされても消えないように）
-
-  const fd = new FormData();
-  fd.append('items', JSON.stringify(entries));
-  fd.append('category', category);
-  fd.append('user_id', USER_ID);
-  { const _p = getProfile(); if (_p) { if (_p.gender) fd.append('gender', _p.gender); if (_p.goal) fd.append('goal', _p.goal); } }
-
-  // 個別解析へのフォールバック（結果が欠けた品・通信ごと失敗した品を確実に埋める）。
-  const fallback = it => { _stopProgress(mealId, it.id); it.loading = false; if (!it.result) resumeTextItem(mealId, it); };
-
-  const deadlineAt = Date.now() + SNACK_BATCH_TOTAL_DEADLINE_MS;
-  let data = null;
-  try {
-    const res = await fetchAnalyze('/analyze-batch', fd, 2, deadlineAt, SNACK_BATCH_FETCH_TIMEOUT_MS);
-    data = await parseAnalyzeResponse(res);
-  } catch(e) {
-    // まとめ送信が通信ごと失敗：品を消さず、1品ずつの個別解析に切り替える
-    // （費用削減は効かないが、入力した間食は無駄にならない）。
-    console.warn('[snack-batch] まとめ解析に失敗、個別解析にフォールバックします', e);
-    items.forEach(fallback);
-    return;
-  }
-
-  const results = (data && Array.isArray(data.results)) ? data.results : null;
-  if (!results) {
-    if (data && data.error && !data._retryable) {
-      // 恒久的なエラー（キー未設定など）は表示し、作った品は取り消す
-      items.forEach(it => _stopProgress(mealId, it.id));
-      state[mealId].items = state[mealId].items.filter(i => !items.includes(i));
-      showError(mealId, data.error);
-      renderStrip(mealId); renderResults(mealId); saveState();
-    } else {
-      // 一時的な不調：個別解析でリカバリする
-      items.forEach(fallback);
-    }
-    return;
-  }
-
-  // 結果を入力順に各品へ割り当てる。欠けている品は個別解析で補う。
-  items.forEach((it, idx) => {
-    const r = results[idx];
-    if (r && Array.isArray(r.foods)) {
-      _stopProgress(mealId, it.id);
-      it.loading = false;
-      it.result = r;
-    } else {
-      fallback(it);
-    }
-  });
-  renderStrip(mealId);
-  renderResults(mealId);
-  saveState();
-  loadStats();
 }
 
 function dataURLtoBlob(dataUrl) {
