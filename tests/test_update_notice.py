@@ -4,7 +4,8 @@
 そのとき No. と NOTICE_KEY を必ずセットで更新する（片方だけ変えると
 既存の端末に出ない／同じ内容が二度出る、といった事故になる）。
 
-オーナー指示 2026-08：お知らせを出す回は「栄養の一言アドバイス」を出さない。
+オーナー指示 2026-08：コツ（TODAY'S TIP）はアプリ起動時ではなく、
+写真の栄養解析が終わったタイミングで表示する。お知らせの上には重ねない。
 """
 import os
 import re
@@ -44,21 +45,11 @@ def test_notice_body_is_not_empty():
     assert len(text) >= 30, "お知らせ本文が短すぎます"
 
 
-def test_daily_tip_is_skipped_when_notice_is_shown():
-    """お知らせを出した回は、栄養の一言アドバイスを出さないこと。"""
+def test_daily_tip_never_covers_the_notice():
+    """お知らせが出ている間は、コツをその上に重ねないこと。"""
     html = _html()
-    assert "_noticeShownThisSession = true" in html, \
-        "お知らせ表示時にフラグが立っていません"
     m = re.search(r"function maybeShowDailyTip\(\)\s*\{(.*?)\n\}", html, re.S)
     assert m, "maybeShowDailyTip が見つかりません"
-    assert "_noticeShownThisSession" in m.group(1), \
-        "お知らせを出した回にアドバイスを止める処理が入っていません"
-
-
-def test_tip_still_shows_on_normal_open():
-    """お知らせが出ない通常の起動では、これまでどおりアドバイスを出すこと。"""
-    html = _html()
-    # 初期値が false であること（常に抑制されてしまわないように）
-    assert re.search(r"let _noticeShownThisSession\s*=\s*false", html), \
-        "フラグの初期値が false になっていません"
-    assert "_step(maybeShowDailyTip" in html, "起動時のアドバイス表示が消えています"
+    body = m.group(1)
+    assert "update-notice-overlay" in body, \
+        "お知らせ表示中にコツを見送る処理が入っていません"
