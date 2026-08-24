@@ -3465,7 +3465,8 @@ async function analyzeItem(mealId, itemId) {
   renderStrip(mealId);
   await new Promise(r => setTimeout(r, 300));
   item.loading = false;
-  if (data && !data.error) {
+  const analyzed = !!(data && !data.error);
+  if (analyzed) {
     delete data.clarify;   // 確認フラグは保存データに持ち越さない
     item.result = data;
   } else {
@@ -3480,6 +3481,10 @@ async function analyzeItem(mealId, itemId) {
   renderResults(mealId);
   saveState();
   loadStats();
+  // 解析が終わるたびに「今日のコツ」を表示する（オーナー指示 2026-08）。
+  // 結果が出たときだけ。失敗したときはエラーの案内を隠さないよう出さない。
+  // 少し待つのは、Bカウントの結果が画面に出てから重ねるため。
+  if (analyzed) setTimeout(maybeShowDailyTip, 600);
 }
 
 // 文章入力（写真なし）の解析を再開する。リロードで中断された文章項目の復帰に使う。
@@ -5205,8 +5210,7 @@ const NOTICE_KEY = 'ab-diet-notice-v31';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
-  // アップデートお知らせを閉じたら、続けてコツを表示する
-  setTimeout(maybeShowDailyTip, 350);
+  // ※コツはここでは出さない。写真の解析が終わったときに出す（オーナー指示 2026-08）。
 }
 
 // ═══════════════════════════════════════════
@@ -5238,24 +5242,24 @@ function _renderDailyTip(idx) {
   document.getElementById('daily-tip-text').textContent = DIET_TIPS[idx];
 }
 
-// アップデートお知らせを出した回は、コツ（栄養の一言アドバイス）を出さない。
-// ※オーナー指示 2026-08：お知らせを出すときは、続けてアドバイスまで出さなくてよい。
-// お知らせを閉じたあとも、その回はコツを出さない（次にアプリを開いたときから通常どおり）。
-let _noticeShownThisSession = false;
-
-// アプリを開くたびにコツを表示する。アップデートお知らせ・運営からの返信・
-// キャラ紹介が表示中のときは邪魔しないよう後回しにする
-// （それらを閉じたあと／次にアプリを開いたときに表示される）。
+// コツを表示する。オーナー指示 2026-08：アプリを開いた瞬間ではなく、
+// 写真の栄養解析が終わるたびに表示する（結果を見たあとの“ごほうび”にする）。
+// アップデートお知らせ・運営からの返信・キャラ紹介が出ているときは、
+// その上に重ねず見送る。
 function maybeShowDailyTip() {
   try {
     if (typeof DIET_TIPS === 'undefined' || !DIET_TIPS.length) return;  // tips.js未読込でも壊さない
     if (_editingDate) return;   // 過去日の編集中は表示しない
-    if (_noticeShownThisSession) return;   // お知らせを出した回はコツを出さない
+    const tipEl = document.getElementById('daily-tip-overlay');
+    if (!tipEl) return;
+    // すでにコツが出ているときは中身を差し替えない
+    // （写真を複数枚まとめて解析すると、読んでいる最中に文章が変わってしまうため）
+    if (getComputedStyle(tipEl).display !== 'none') return;
     const busy = ['update-notice-overlay', 'reply-notice-overlay', 'coach-msg-overlay', 'chara-intro-overlay']
       .some(id => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; });
     if (busy) return;
     _renderDailyTip(_pickDailyTipIndex());
-    document.getElementById('daily-tip-overlay').style.display = 'flex';
+    tipEl.style.display = 'flex';
   } catch(e) { console.warn('daily tip failed', e); }
 }
 
@@ -5325,26 +5329,22 @@ function _step(fn, label) {
 
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
-    if (ov) { ov.style.display = 'flex'; _noticeShownThisSession = true; }
+    if (ov) ov.style.display = 'flex';
   }
-  _step(maybeShowDailyTip, 'maybeShowDailyTip');   // ABダイエットのコツ（開くたびに表示。お知らせ表示中は後回し）
+  // ※コツはアプリ起動時には出さない（オーナー指示 2026-08）。
+  //   写真の栄養解析が終わったタイミングで analyzeItem から呼び出す。
   _step(maybeShowHomeBanner, 'maybeShowHomeBanner');
 })();
 
 // 画面に戻ってきたとき（スマホでアプリを開き直したとき等）にもサーバーと同期し、
 // デスクトップ⇔スマホの表示が揃うようにする。
-// コツは「アプリを開き直した」とみなせる5分以上の離脱後のみ表示する
-// （カメラ撮影やアプリ切り替えで数秒〜数分離れただけの復帰では、操作の邪魔になるので出さない）。
-const TIP_REOPEN_MS = 5 * 60 * 1000;
-let _tipHiddenAt = 0;
+// ※ここでもコツは出さない（表示は写真の解析が終わったときだけ）。
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { _tipHiddenAt = Date.now(); return; }
   if (document.visibilityState === 'visible' && !_editingDate) {
     syncTodayMealsFromServer();
     syncHistoryFromServer();
     checkFeedbackReplies();
     checkCoachMessages();
-    if (_tipHiddenAt && Date.now() - _tipHiddenAt >= TIP_REOPEN_MS) maybeShowDailyTip();
   }
 });
 
