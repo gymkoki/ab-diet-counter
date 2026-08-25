@@ -449,6 +449,17 @@
     <div id="server-health"><div class="spinner"></div></div>
   </div>
 
+  <!-- 記録方法ごとの1日あたり利用人数 -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🍙 記録方法の使われ方（1日あたり）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      「写真」「文章」「Bだけ追加」「コピーご飯」のどれが、<b>1日に何人ぐらい</b>使われているかです。
+      食事の明細は5日で自動削除されるため、これとは別に「いつ・誰が・どの方法で記録したか」だけを
+      残して数えています（この集計を入れた日からの記録です）。
+    </div>
+    <div id="action-usage"><div class="spinner"></div></div>
+  </div>
+
   <!-- 機能別の利用状況 -->
   <div class="card" style="margin-bottom:20px">
     <h2>🧭 機能別の利用状況（直近30日）</h2>
@@ -1101,6 +1112,69 @@
     </div>`;
   }
 
+  // ── 記録方法ごとの1日あたり利用人数 ──
+  async function loadActionUsage() {
+    const box = document.getElementById('action-usage');
+    if (!box) return;
+    const r = await fetch('/api/admin/action-usage');
+    if (!r.ok) throw new Error('action-usage');
+    const d = await r.json();
+
+    const anyData = (d.summary || []).some(t => t.total_count > 0);
+    if (!anyData) {
+      box.innerHTML = '<div class="no-data">まだ記録がありません。'
+        + '会員が記録するたびに数え始めるので、1〜2日お待ちください。</div>';
+      return;
+    }
+
+    const rows = (d.summary || []).map(t => `
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;color:#374151;white-space:nowrap">${escapeHtml(t.label)}</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:800;color:#FF6B35;white-space:nowrap">${t.avg_users_per_day}名 / 日</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:700;color:#6B7280;white-space:nowrap">${t.avg_count_per_day}回 / 日</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700;color:#374151;white-space:nowrap">${t.total_users}名 / ${t.total_count.toLocaleString()}回</td>
+      </tr>`).join('');
+
+    const dayRows = (d.daily || []).slice().reverse().map(x => `
+      <tr${x.partial ? ' style="opacity:0.6"' : ''}>
+        <td style="padding:6px 10px;color:#6B7280;white-space:nowrap">${x.date.slice(5)}${x.partial ? '（今日・途中）' : ''}</td>
+        <td style="padding:6px 10px;text-align:center">${x.photo.users}</td>
+        <td style="padding:6px 10px;text-align:center">${x.text.users}</td>
+        <td style="padding:6px 10px;text-align:center;font-weight:800;color:#FF6B35">${x.manual_b.users}</td>
+        <td style="padding:6px 10px;text-align:center">${x.copy.users}</td>
+      </tr>`).join('');
+
+    box.innerHTML = `
+      <div style="font-size:12px;color:#6B7280;margin-bottom:8px">
+        ${d.counted_days ? `記録があった<b>${d.counted_days}日</b>の平均（${d.since || ''} 以降）`
+                         : '平均はまだ出せません（今日ぶんは途中のため、明日から平均が出ます）'}
+      </div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#F9FAFB;color:#6B7280;font-size:12px">
+          <th style="padding:8px 12px;text-align:left">記録方法</th>
+          <th style="padding:8px 12px">1日あたり人数</th>
+          <th style="padding:8px 12px">1日あたり回数</th>
+          <th style="padding:8px 12px;text-align:right">期間合計</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </div>
+      <div style="margin-top:20px;font-size:13px;font-weight:800;color:#374151">📅 日ごとの利用人数（直近14日）</div>
+      <div style="overflow-x:auto;margin-top:6px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#F9FAFB;color:#6B7280;font-size:12px">
+          <th style="padding:6px 10px;text-align:left">日付</th>
+          <th style="padding:6px 10px">📷写真</th>
+          <th style="padding:6px 10px">✏️文章</th>
+          <th style="padding:6px 10px">🍙Bだけ</th>
+          <th style="padding:6px 10px">🍚コピー</th>
+        </tr></thead>
+        <tbody>${dayRows}</tbody>
+      </table>
+      </div>`;
+  }
+
   // ── 機能別の利用状況 ──
   async function loadFeatureUsage() {
     const box = document.getElementById('feature-usage');
@@ -1420,7 +1494,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth(), loadCreditBase()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth(), loadCreditBase()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

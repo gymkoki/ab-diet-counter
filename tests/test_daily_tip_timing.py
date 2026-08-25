@@ -31,7 +31,7 @@ def test_tip_is_shown_after_photo_analysis():
 def test_tip_is_not_shown_when_analysis_failed():
     """解析に失敗したときは出さないこと（エラーの案内を隠さない）。"""
     body = _fn("analyzeItem")
-    m = re.search(r"if \(analyzed\) setTimeout\(maybeShowDailyTip", body)
+    m = re.search(r"if \(analyzed\) \{[^}]*setTimeout\(maybeShowDailyTip", body, re.S)
     assert m, "成功したときだけ出す形になっていません"
     # analyzed は「結果があり、かつエラーでない」で決まること
     assert re.search(r"const analyzed = !!\(data && !data\.error\)", body)

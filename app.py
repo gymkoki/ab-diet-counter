@@ -531,6 +531,18 @@ def init_db():
                     created_at TEXT   NOT NULL
                 )
             """)
+            # どの記録方法（写真／文章／Bだけ追加／コピーご飯）が使われたかの記録。
+            # 食事の明細(daily_meals)は5日で自動削除されるため、それとは別に
+            # 「いつ・誰が・どの方法で記録したか」だけを軽量に残す。
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS action_log (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    action     TEXT   NOT NULL,
+                    created_at TEXT   NOT NULL
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_action_log_created ON action_log (created_at)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS daily_b_count (
                     id          SERIAL PRIMARY KEY,
@@ -597,6 +609,16 @@ def init_db():
                     created_at TEXT    NOT NULL
                 )
             """)
+            # 記録方法の利用記録（PG側と同じ。daily_meals の5日削除に影響されない）
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS action_log (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    action     TEXT    NOT NULL,
+                    created_at TEXT    NOT NULL
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_action_log_created ON action_log (created_at)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS daily_b_count (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3302,6 +3324,131 @@ def admin_spotlight():
         "lost":        lost,
         "not_lost":    not_lost,
     })
+
+
+# ── 記録方法の利用記録（写真／文章／Bだけ追加／コピーご飯） ──────────────
+# 「Bだけ追加は毎日何人が使っているのか」に答えられるようにするための記録。
+# 食事の明細(daily_meals)は5日で自動削除されるため、そこから数えると
+# 直近5日ぶんしか分からず、日ごとの人数も追えなかった（オーナー指摘 2026-08）。
+ACTION_KINDS = {
+    "photo":    "📷 写真で記録",
+    "text":     "✏️ 文章で記録",
+    "manual_b": "🍙 Bだけ追加",
+    "copy":     "🍚 コピーご飯",
+}
+ACTION_RETAIN_DAYS = 400   # 1年以上さかのぼれるようにする（行が小さいので負担は小さい）
+
+
+@app.route("/api/log-action", methods=["POST"])
+def post_log_action():
+    """会員のアプリから「どの方法で記録したか」を1件記録する。
+    失敗してもアプリ側の動作は止めない（記録が取れないだけ）。"""
+    data = request.get_json(silent=True) or {}
+    uid    = (data.get("user_id") or "").strip()[:64]
+    action = (data.get("action") or "").strip()
+    if not uid or action not in ACTION_KINDS:
+        return jsonify({"ok": False}), 400
+    now = datetime.datetime.now(JST)
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO action_log (user_id, action, created_at) VALUES ({PH},{PH},{PH})",
+                    (uid, action, now.isoformat()))
+                # 古い記録を間引く（毎回ではなく、たまに実行して負荷を避ける）
+                if now.minute == 0:
+                    cutoff = (now - datetime.timedelta(days=ACTION_RETAIN_DAYS)).isoformat()
+                    cur.execute(f"DELETE FROM action_log WHERE created_at < {PH}", (cutoff,))
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.warning("action_log insert failed (non-fatal): %s", e)
+        return jsonify({"ok": False}), 200
+    return jsonify({"ok": True})
+
+
+def _collect_action_usage(days: int = 30):
+    """記録方法ごとの「1日あたりの利用人数・回数」を返す（管理用）。"""
+    now = datetime.datetime.now(JST)
+    start = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT SUBSTR(created_at,1,10) AS dt, action, user_id
+               FROM action_log WHERE created_at >= {PH}""",
+            (f"{start}T00:00:00",))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    # 日付 → 方法 → その日に使った人の集合
+    by_day: dict = {}
+    for dt, action, uid in rows:
+        if action not in ACTION_KINDS:
+            continue
+        by_day.setdefault(dt, {}).setdefault(action, {"users": set(), "count": 0})
+        by_day[dt][action]["users"].add(uid)
+        by_day[dt][action]["count"] += 1
+
+    # 当日も表には出す（ただし「途中の日」なので平均には入れない）
+    today = now.strftime("%Y-%m-%d")
+    dates = []
+    d = (now - datetime.timedelta(days=days)).date()
+    end = now.date()
+    while d <= end:
+        dates.append(d.strftime("%Y-%m-%d"))
+        d += datetime.timedelta(days=1)
+
+    daily = [
+        {
+            "date": dt,
+            "partial": dt == today,          # 今日はまだ途中
+            **{k: {"users": len(by_day.get(dt, {}).get(k, {}).get("users", ())),
+                   "count": by_day.get(dt, {}).get(k, {}).get("count", 0)}
+               for k in ACTION_KINDS},
+        }
+        for dt in dates
+    ]
+    # 平均は「終わった日」かつ「記録が1件でもあった日」だけで出す。
+    # 誰も使っていない日や、途中の今日で平均が薄まらないようにする。
+    active_days = [row for row in daily
+                   if not row["partial"] and any(row[k]["count"] for k in ACTION_KINDS)]
+    n = len(active_days) or 1
+    summary = [
+        {
+            "key": k,
+            "label": ACTION_KINDS[k],
+            "avg_users_per_day": round(sum(row[k]["users"] for row in active_days) / n, 1),
+            "avg_count_per_day": round(sum(row[k]["count"] for row in active_days) / n, 1),
+            # 期間合計は今日も含める（人数と回数で対象期間がずれないようにする）
+            "total_users": len({uid for _dt, a, uid in rows if a == k}),
+            "total_count": sum(row[k]["count"] for row in daily),
+        }
+        for k in ACTION_KINDS
+    ]
+    summary.sort(key=lambda s: -s["avg_users_per_day"])
+    return {
+        "period_days":  days,
+        "counted_days": len(active_days),
+        "since":        dates[0] if dates else None,
+        "summary":      summary,
+        "daily":        daily[-14:],     # 直近14日ぶんを表で出す
+    }
+
+
+@app.route("/api/admin/action-usage")
+@_admin_required
+def admin_action_usage():
+    """ダッシュボード用：記録方法ごとの1日あたり利用人数。"""
+    try:
+        days = max(7, min(90, int(request.args.get("days", 30))))
+    except (TypeError, ValueError):
+        days = 30
+    return jsonify(_collect_action_usage(days))
 
 
 @app.route("/api/admin/feature-usage")

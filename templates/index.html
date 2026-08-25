@@ -1270,6 +1270,21 @@ function openFileInput(mealId) {
   document.getElementById('input-file').click();
 }
 
+// どの記録方法が使われたかをサーバーに1件だけ知らせる（集計用）。
+// 「Bだけ追加は毎日何人が使っているか」を後から数えられるようにするため。
+// 食事の明細は5日で消えるので、こちらに軽い記録だけを残す。
+// 失敗してもアプリの動作には一切影響させない（送りっぱなし）。
+function logAction(action) {
+  try {
+    fetch('/api/log-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, action }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // 【重要・調べた結果】「アプリを開いたら自動で写真の選択シートを出す」はできない。
 // ブラウザは、指のタップ（ユーザー操作）なしにファイル選択を開くことを禁止している。
 // 実際に起動時 openFileInput() を呼ぶコードを入れて試したところ、処理自体は動くのに
@@ -2735,6 +2750,7 @@ function saveOil(mealId) {
   renderResults(mealId);
   updateDailyTotal();
   saveState();
+  logAction('manual_b');   // 「Bだけ追加」の利用を記録（集計用）
   // 手動でBを選んだときは栄養計算（AI解析）は行わず、選んだBをそのまま反映する。
 }
 
@@ -2814,6 +2830,7 @@ function addCopyMealToRecord(copyId) {
   renderResults(mealId);
   updateDailyTotal();
   saveState();
+  logAction('copy');       // 「コピーご飯」の利用を記録（集計用）
   // タンパク質・野菜が未計算のコピーご飯なら、名前からAIで推定して補い、
   // 今追加した記録にも、保存済みのコピーご飯（今後の追加）にも反映する。
   fillCopyMealNutrition(cm, item, mealId);
@@ -3090,6 +3107,7 @@ async function submitTextEntry(mealId) {
       showError(mealId, data.error);
     } else {
       item.result = data;
+      logAction('text');     // 「文章で記録」の利用を記録（集計用）
     }
   } catch(e) {
     _stopProgress(mealId, id);
@@ -3502,7 +3520,10 @@ async function analyzeItem(mealId, itemId) {
   // 解析が終わるたびに「今日のコツ」を表示する（オーナー指示 2026-08）。
   // 結果が出たときだけ。失敗したときはエラーの案内を隠さないよう出さない。
   // 少し待つのは、Bカウントの結果が画面に出てから重ねるため。
-  if (analyzed) setTimeout(maybeShowDailyTip, 600);
+  if (analyzed) {
+    logAction('photo');    // 「写真で記録」の利用を記録（集計用）
+    setTimeout(maybeShowDailyTip, 600);
+  }
 }
 
 // 文章入力（写真なし）の解析を再開する。リロードで中断された文章項目の復帰に使う。
