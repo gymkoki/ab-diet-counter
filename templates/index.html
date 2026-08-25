@@ -266,6 +266,15 @@
     .chara-score-unit { font-size:22px; font-weight:800; color:var(--primary); }
     .chara-breakdown { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:12px; }
     .chara-bd-chip { background:#F9FAFB; border:1px solid var(--border); border-radius:999px; padding:6px 12px; font-size:14px; font-weight:700; color:#5C564F; }
+    /* 体重の記録がしばらく無い人への誘導（キャラの上に出す） */
+    #weight-nudge { display:flex; align-items:center; justify-content:space-between; gap:10px;
+      margin:12px 16px 0; padding:13px 16px; border-radius:var(--radius-md);
+      background:#FFF3EB; border:1px solid #FFD9C2; cursor:pointer;
+      font-size:15px; font-weight:700; color:#B4460F; line-height:1.5;
+      -webkit-tap-highlight-color:transparent; }
+    #weight-nudge:active { background:#FFE7D6; }
+    #weight-nudge .wn-cta { flex-shrink:0; font-size:14px; font-weight:800; color:var(--primary); white-space:nowrap; }
+
     .chara-stage { position:relative; margin:12px 16px; border-radius:var(--radius); box-shadow:var(--shadow); padding:22px 12px 16px; text-align:center; overflow:hidden; min-height:250px; cursor:pointer; }
     /* ステージの背景色はイラストの地の色と揃えて、キャラが舞台に溶け込むようにする */
     .chara-stage.tier-happy { background:#FDF4E7; }
@@ -1024,6 +1033,11 @@
       <span class="chara-score-unit">点</span>
     </div>
     <div class="chara-breakdown" id="chara-breakdown"></div>
+  </div>
+  <!-- 直近7日間に体重の記録が1件も無い人にだけ、キャラの上に出す誘導 -->
+  <div id="weight-nudge" style="display:none" onclick="openWeightRecord()" role="button" tabindex="0">
+    <span class="wn-text">体重を記録するとグラフが動きます！</span>
+    <span class="wn-cta">⚖️ 記録する→</span>
   </div>
   <div class="chara-stage" id="chara-stage" onclick="onCharaStageTap()"></div>
   <div class="chara-advice-card">
@@ -2471,6 +2485,46 @@ const CHARA_PATTERNS = [
     ] }
 ];
 
+// ═══════════════════════════════════════════
+//  体重記録の誘導（進捗タブ）
+//  直近7日間（今日を含む）に体重の記録が1件も無い人にだけ、キャラの上に出す。
+//  1件でもあれば出さない（記録している人の画面を邪魔しないため）。
+// ═══════════════════════════════════════════
+const WEIGHT_NUDGE_DAYS = 7;
+
+function hasRecentWeight(days = WEIGHT_NUDGE_DAYS) {
+  const log = getWeightLog();
+  const today = new Date(getTodayJST() + 'T00:00:00');
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const v = log[key];
+    if (v !== undefined && v !== null && v !== '' && !isNaN(parseFloat(v))) return true;
+  }
+  return false;
+}
+
+function updateWeightNudge() {
+  const el = document.getElementById('weight-nudge');
+  if (!el) return;
+  el.style.display = hasRecentWeight() ? 'none' : 'flex';
+}
+
+// 誘導をタップしたとき：記録タブの「体重/日記」を開いて、すぐ入力できる状態にする
+function openWeightRecord() {
+  switchView('main');
+  switchRecordSub('weight');
+  const inp = document.getElementById('weight-input-today');
+  if (inp) {
+    // タブ切り替え後に画面がスクロールするので、落ち着いてからフォーカスする
+    setTimeout(() => {
+      try { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+      inp.focus();
+    }, 350);
+  }
+}
+
 function renderChara() {
   const s = calcCharaScore();
   document.getElementById('chara-score-num').textContent = s.score;
@@ -2479,6 +2533,7 @@ function renderChara() {
     <span class="chara-bd-chip">🥩 タンパク質 ${s.pPct}%</span>
     <span class="chara-bd-chip">🥗 野菜 ${s.vPct}%</span>`;
   document.getElementById('chara-advice-text').textContent = charaAdvice(s);
+  updateWeightNudge();
 
   // 5点刻みでメッセージ帯を選び（0〜4点=p0 … 95〜100点=p19）、
   // ダンスは共通80種からランダムに1つ再生する
@@ -3831,6 +3886,7 @@ function saveTodayWeight() {
   submitDailyWeight(w, date);
   const note = document.getElementById('weight-current-note');
   if (note) note.textContent = `✅ ${_editingDate ? _fmtMD(date) : '今日'}の体重を ${w} kg で保存しました`;
+  updateWeightNudge();   // 記録できたら進捗タブの誘導を消す
 }
 
 async function submitDailyWeight(weight, date) {
