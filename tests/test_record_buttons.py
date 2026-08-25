@@ -24,9 +24,9 @@ def _panel():
 
 
 def test_four_record_cards_exist():
-    """記録方法が4つとも同じカード(.rec-card)で並んでいること。"""
+    """記録方法が4つとも同じ種類のカード(.rec-card)で並んでいること。"""
     panel = _panel()
-    assert panel.count('class="rec-card"') == 4, "記録方法のカードが4つになっていない"
+    assert panel.count('class="rec-card') == 4, "記録方法のカードが4つになっていない"
     for label in ("写真を追加", "文章で手動入力", "コピーご飯を追加", "Bだけ追加"):
         assert label in panel, f"「{label}」のカードが無い"
 
@@ -35,7 +35,7 @@ def test_b_only_button_label():
     """ラベルが「🍙 Bだけ追加（お菓子・ドリンクなど）」であること。"""
     panel = _panel()
     assert "🍙" in panel, "おにぎりの絵文字が無い"
-    m = re.search(r'<button class="rec-card" onclick="toggleOilMenu\([^)]*\)">(.*?)</button>',
+    m = re.search(r'<button class="rec-card[^"]*" onclick="toggleOilMenu\([^)]*\)">(.*?)</button>',
                   panel, re.S)
     assert m, "Bだけ追加のカードが見つからない"
     body = m.group(1)
@@ -59,14 +59,30 @@ def test_b_only_menu_markup_exists():
     assert "saveOil(" in panel
 
 
-def test_cards_are_the_same_size():
-    """4つのカードが同じ大きさ・同じ見た目になるCSSがあること。"""
+def test_cards_are_big_enough_to_tap():
+    """どのカードも指で押しやすい大きさであること。"""
     html = _html()
     grid = re.search(r"\.rec-grid \{([^}]*)\}", html).group(1)
     card = re.search(r"\.rec-card \{([^}]*)\}", html).group(1)
-    assert "grid-template-columns:1fr 1fr" in grid.replace(" ", " ")
-    assert "grid-auto-rows:1fr" in grid, "行の高さが揃わない（カードの大きさがずれる）"
+    assert "grid-template-columns:1fr 1fr" in grid
     assert "min-height:120px" in card, "カードが小さいとタップしにくい"
+
+
+def test_photo_card_is_the_main_action():
+    """「写真を追加」が横幅いっぱいの主ボタンであること。
+
+    起動時に写真の選択シートを自動で開くことはブラウザが許さないため
+    （タップ操作が必須）、「開いてすぐ1タップで選べる」ようにこのボタンを
+    一番上の大きな主ボタンにしている。小さく戻さないこと。"""
+    panel = _panel()
+    m = re.search(r'<div class="rec-card rec-primary"[^>]*onclick="openFileInput', panel)
+    assert m, "写真を追加が主ボタン(rec-primary)になっていない"
+    # 主ボタンは4つの中で最初に置く（開いて最初に目に入る位置）
+    assert panel.index("rec-primary") < panel.index("chooseManualText")
+    html = _html()
+    css = re.search(r"\.rec-card\.rec-primary \{([^}]*)\}", html).group(1)
+    assert "grid-column:1 / -1" in css, "横幅いっぱいになっていない"
+    assert "min-height:132px" in css, "他のカードより大きくなっていない"
 
 
 def test_manual_submenu_is_gone():

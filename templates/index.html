@@ -98,7 +98,18 @@
     /* 記録方法の4つのカード（写真／文章／コピーご飯／Bだけ追加）。
        オーナー指示 2026-08：どれも同じ大きさ・同じデザインの大きめカードにして、
        「Bだけ追加」が埋もれないようにする。2列×2段でタップしやすくする。 */
-    .rec-grid { display:grid; grid-template-columns:1fr 1fr; grid-auto-rows:1fr; gap:10px; margin:10px 0 4px; }
+    .rec-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0 4px; }
+    /* 「写真を追加」は一番よく使う入口なので、横幅いっぱいの主ボタンにする。
+       起動直後に自動で写真選択を開くことはブラウザが許さないため、
+       「開いてすぐ1タップで選べる」状態にするのが最短（オーナー指示 2026-08）。 */
+    .rec-card.rec-primary { grid-column:1 / -1; min-height:132px; border:none; background:linear-gradient(135deg,#FF7A45,#FF6B35); color:#fff; box-shadow:0 6px 16px rgba(255,107,53,0.28); font-size:20px; }
+    .rec-card.rec-primary .rec-ic { font-size:34px; }
+    .rec-card.rec-primary .rec-sub { color:rgba(255,255,255,0.92); font-size:15px; }
+    .rec-card.rec-primary:hover { background:linear-gradient(135deg,#FF6B35,#F0561F); color:#fff; }
+    .rec-card.rec-primary:active { background:linear-gradient(135deg,#F0561F,#DB4A16); color:#fff; transform:scale(0.99); }
+    .rec-card.rec-primary:active .rec-sub { color:rgba(255,255,255,0.92); }
+    /* 2列ぶんの幅を使うカード（Bだけ追加） */
+    .rec-card.rec-wide { grid-column:1 / -1; min-height:96px; }
     .rec-card { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:120px; padding:16px 10px; cursor:pointer; border:1.5px dashed #D8D2CB; border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-sm); font-family:inherit; font-size:18px; font-weight:700; color:var(--text); text-align:center; line-height:1.35; transition:border-color 0.2s, background 0.2s, color 0.2s; }
     .rec-card:hover { border-color:var(--primary); background:var(--primary-soft); }
     .rec-card:active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
@@ -1259,6 +1270,13 @@ function openFileInput(mealId) {
   document.getElementById('input-file').click();
 }
 
+// 【重要・調べた結果】「アプリを開いたら自動で写真の選択シートを出す」はできない。
+// ブラウザは、指のタップ（ユーザー操作）なしにファイル選択を開くことを禁止している。
+// 実際に起動時 openFileInput() を呼ぶコードを入れて試したところ、処理自体は動くのに
+// 選択シートは開かなかった（Chromiumで確認。iPhoneのSafariはさらに厳しい）。
+// そのため「起動 → 1タップで選べる」を最短にする方針にし、
+// 「写真を追加」を大きな主ボタンとして一番上に置いている。ここを小さくしないこと。
+
 function onHiddenInputChange(input) {
   const files = [...input.files];
   input.value = '';
@@ -1754,8 +1772,8 @@ function buildPanel(m) {
            以前は「手動追加」を押してからでないと文章・コピーご飯が出ず、
            Bだけの追加にいたっては入口が無くなっていた。 -->
       <div class="rec-grid">
-        <div class="rec-card" id="add-${m.id}" onclick="openFileInput('${m.id}')">
-          <span class="rec-ic">📷</span>写真を追加
+        <div class="rec-card rec-primary" id="add-${m.id}" onclick="openFileInput('${m.id}')">
+          <span class="rec-ic">📷</span>写真を追加<span class="rec-sub">タップして写真を選ぶ・撮る</span>
         </div>
         <button class="rec-card" onclick="chooseManualText('${m.id}')">
           <span class="rec-ic">✏️</span>文章で手動入力
@@ -1763,7 +1781,7 @@ function buildPanel(m) {
         <button class="rec-card" onclick="chooseManualCopy('${m.id}')">
           <span class="rec-ic">🍚</span>コピーご飯を追加
         </button>
-        <button class="rec-card" onclick="toggleOilMenu('${m.id}')">
+        <button class="rec-card rec-wide" onclick="toggleOilMenu('${m.id}')">
           <span class="rec-ic">🍙</span>Bだけ追加<span class="rec-sub">お菓子・ドリンクなど</span>
         </button>
       </div>
