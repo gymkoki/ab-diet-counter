@@ -126,13 +126,24 @@ def test_survives_the_five_day_meal_deletion():
 
 
 # ── アプリ側が実際に記録を送っていること ───────────────────────
-def test_app_sends_all_four_methods():
-    """4つの記録方法すべてで logAction が呼ばれていること。"""
+def test_app_sends_all_current_methods():
+    """現在ある記録方法すべてで logAction が呼ばれていること。
+
+    ※「Bだけ追加」(manual_b) はオーナー指示 2026-08 で廃止したため、
+      アプリからはもう送られない。ただし過去の集計は残すので、
+      サーバー側では引き続き受け付ける（下のテストで固定）。"""
     with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
         html = f.read()
     assert "function logAction" in html
-    for action in ("'manual_b'", "'copy'", "'photo'", "'text'"):
+    for action in ("'copy'", "'photo'", "'text'"):
         assert f"logAction({action})" in html, f"{action} の記録が送られていない"
+    assert "logAction('manual_b')" not in html, "廃止した「Bだけ追加」がまだ送られている"
+
+
+def test_manual_b_stays_valid_for_past_records(client):
+    """廃止後も manual_b は集計対象として受け付けること（過去のデータを守る）。"""
+    r = client.post("/api/log-action", json={"user_id": "u1", "action": "manual_b"})
+    assert r.status_code == 200, "過去データの集計に必要なので弾いてはいけない"
 
 
 def test_logging_never_breaks_the_app():

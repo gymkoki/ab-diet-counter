@@ -205,18 +205,10 @@
     .copy-del { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:var(--radius-sm); width:34px; height:34px; font-size:17px; cursor:pointer; flex-shrink:0; }
     .copy-empty { text-align:center; color:var(--text-muted); font-size:17px; padding:14px 0; line-height:1.7; }
     .oil-btn:active { border-color:var(--primary); color:var(--primary); background:var(--primary-soft); }
-    .oil-menu { display:flex; flex-direction:column; gap:8px; margin:6px 0 8px; }
-    .oil-menu-row { display:flex; gap:8px; }
-    .oil-opt { flex:1; padding:11px 4px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:17px; font-weight:700; color:#5C564F; cursor:pointer; line-height:1.3; transition:all 0.15s; }
-    .oil-opt span { display:block; font-size:15px; font-weight:600; color:var(--text-muted); margin-top:2px; }
-    .oil-opt:active { background:var(--primary-soft); }
-    .oil-opt.selected { background:var(--primary); border-color:var(--primary-dark); color:#fff; }
-    .oil-opt.selected span { color:rgba(255,255,255,0.85); }
+    /* 「Bだけ追加」の選択欄(.oil-menu / .oil-opt / .btn-oil-save)は機能ごと廃止して削除した。
+       .oil-note-input だけは運動画面の「その他の運動」入力欄が使っているので残す。 */
     .oil-note-input { width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; outline:none; background:var(--surface); transition:border-color 0.15s, box-shadow 0.15s; }
     .oil-note-input:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(255,107,53,0.12); }
-    .btn-oil-save { width:100%; padding:12px; border-radius:var(--radius-md); border:none; background:var(--primary); color:white; font-size:18px; font-weight:700; cursor:pointer; transition:transform 0.1s; }
-    .btn-oil-save:active { transform:scale(0.985); }
-    .btn-oil-save:disabled { opacity:0.4; cursor:not-allowed; }
 
     .result-delete-btn { background:none; border:none; font-size:18px; cursor:pointer; padding:4px; border-radius:8px; opacity:0.55; transition:opacity 0.15s; }
     .result-delete-btn:active { opacity:1; }
@@ -1797,9 +1789,10 @@ function buildPanel(m) {
   panel.innerHTML = `
     <div class="container">
       <div id="strip-${m.id}" class="meal-strip"></div>
-      <!-- 記録方法は4つとも同じ大きさのカードで並べる（オーナー指示 2026-08）。
-           以前は「手動追加」を押してからでないと文章・コピーご飯が出ず、
-           Bだけの追加にいたっては入口が無くなっていた。 -->
+      <!-- 記録方法は同じ大きさのカードで並べる（オーナー指示 2026-08）。
+           以前は「手動追加」を押してからでないと文章・コピーご飯が出なかった。
+           ※「Bだけ追加」はオーナー指示（2026-08）で廃止した。過去に追加済みの
+             記録（isOil）は今までどおり表示・集計されるので、消してはいけない。 -->
       <div class="rec-grid">
         <div class="rec-card rec-primary" id="add-${m.id}" onclick="openFileInput('${m.id}')">
           <span class="rec-ic">📷</span>写真を追加<span class="rec-sub">タップして写真を選ぶ・撮る</span>
@@ -1810,20 +1803,6 @@ function buildPanel(m) {
         <button class="rec-card" onclick="chooseManualCopy('${m.id}')">
           <span class="rec-ic">🍚</span>コピーご飯を追加
         </button>
-        <button class="rec-card rec-wide" onclick="toggleOilMenu('${m.id}')">
-          <span class="rec-ic">🍙</span>Bだけ追加<span class="rec-sub">お菓子・ドリンクなど</span>
-        </button>
-      </div>
-      <!-- 「Bだけ追加」で開くBの選択欄。OIL_OPTIONS は後方で定義されるが、
-           buildPanel が呼ばれるのは読み込み完了後なので参照して問題ない。 -->
-      <div class="oil-menu" id="oilmenu-${m.id}" style="display:none">
-        <div class="oil-menu-row">
-          ${OIL_OPTIONS.map((o, i) => `
-            <button class="oil-opt" id="oilopt-${m.id}-${i}" onclick="selectOil('${m.id}',${i})">${o.label}<span>${o.kcal}</span></button>`).join('')}
-        </div>
-        <input type="text" id="oilnote-${m.id}" class="oil-note-input" maxlength="30"
-               placeholder="何を食べたか（例：チョコ、カフェラテ）">
-        <button class="btn-oil-save" id="oilsave-${m.id}" onclick="saveOil('${m.id}')" disabled>この内容で追加する</button>
       </div>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
@@ -2739,74 +2718,14 @@ function removeItem(mealId, itemId) {
 }
 
 // ═══════════════════════════════════════════
-//  Bを手動追加（画像解析では量が分かりにくいものなどを直接追加）
+//  「Bだけ追加」は廃止（オーナー指示 2026-08）
 // ═══════════════════════════════════════════
-const OIL_OPTIONS = [
-  { label:'B0.5', bc:0.5, kcal:'120~200kcal' },
-  { label:'B1',   bc:1,   kcal:'200~399kcal' },
-  { label:'B2',   bc:2,   kcal:'400kcal以上' },
-];
-const oilSelection = {}; // mealId -> 選択中のOIL_OPTIONSインデックス
-
-// 手動追加のアイコン（おにぎり）
+// 記録画面からの入口・選択欄・追加処理（OIL_OPTIONS / toggleOilMenu / selectOil /
+// updateOilMenuUI / saveOil）はすべて削除した。
+// ただし【過去に追加済みの記録（isOil）は今までどおり表示・集計する】ため、
+// アイコン表示だけは残す（renderStrip が使う）。ここを消すと過去の記録が壊れる。
 function onigiriIcon(size) {
   return `<span style="font-size:${size}px;line-height:1;vertical-align:-0.15em;display:inline-block">🍙</span>`;
-}
-
-function toggleOilMenu(mealId) {
-  const menu = document.getElementById(`oilmenu-${mealId}`);
-  if (!menu) return;
-  const opening = getComputedStyle(menu).display === 'none';
-  // 開くときは文章入力など他の欄を閉じてから（同時に2つ開かないように）
-  if (opening) closeMealInputs(mealId);
-  menu.style.display = opening ? 'flex' : 'none';
-  if (!opening) {
-    oilSelection[mealId] = null;
-    updateOilMenuUI(mealId);
-  }
-}
-
-function selectOil(mealId, idx) {
-  oilSelection[mealId] = idx;
-  updateOilMenuUI(mealId);
-}
-
-function updateOilMenuUI(mealId) {
-  OIL_OPTIONS.forEach((_, i) => {
-    const btn = document.getElementById(`oilopt-${mealId}-${i}`);
-    if (btn) btn.classList.toggle('selected', oilSelection[mealId] === i);
-  });
-  const saveBtn = document.getElementById(`oilsave-${mealId}`);
-  if (saveBtn) saveBtn.disabled = (oilSelection[mealId] == null);
-}
-
-function saveOil(mealId) {
-  const idx = oilSelection[mealId];
-  const o = OIL_OPTIONS[idx];
-  if (!o) return;
-  const noteEl = document.getElementById(`oilnote-${mealId}`);
-  const note = noteEl ? noteEl.value.trim() : '';
-  const id = nextItemId();
-  const item = {
-    id, file:null, previewSrc:null, loading:false, error:null,
-    isOil:true, oilLabel:o.label, oilNote:note,
-    result: {
-      foods: [{ name: note || '手動追加', category:'B', kcal_per_serving:o.kcal, amount:'', b_count:o.bc, reason:'' }],
-      total_b_count: o.bc,
-      advice: '',
-    },
-  };
-  state[mealId].items.push(item);
-  if (noteEl) noteEl.value = '';
-  oilSelection[mealId] = null;
-  const menu = document.getElementById(`oilmenu-${mealId}`);
-  if (menu) menu.style.display = 'none';
-  renderStrip(mealId);
-  renderResults(mealId);
-  updateDailyTotal();
-  saveState();
-  logAction('manual_b');   // 「Bだけ追加」の利用を記録（集計用）
-  // 手動でBを選んだときは栄養計算（AI解析）は行わず、選んだBをそのまま反映する。
 }
 
 // ═══════════════════════════════════════════
@@ -3097,14 +3016,13 @@ async function onCopyFileChange(input) {
 //  手動追加メニュー（文章で手動入力 / コピーご飯を追加 の2択）
 // ═══════════════════════════════════════════
 // ※「手動追加」の中間メニュー(toggleManualMenu)は廃止した（オーナー指示 2026-08）。
-//   文章・コピーご飯・Bだけ追加は、写真と同列のカードから直接開く。
+//   文章・コピーご飯は、写真と同列のカードから直接開く。
+//   「Bだけ追加」も廃止したため、ここで閉じる対象は文章入力だけになった。
 
 // 開いている入力欄を閉じる（同時に2つ開かないようにする）
 function closeMealInputs(mealId) {
   const f = document.getElementById(`textform-${mealId}`);
   if (f) f.style.display = 'none';
-  const oil = document.getElementById(`oilmenu-${mealId}`);
-  if (oil) oil.style.display = 'none';
 }
 function chooseManualText(mealId) {
   closeMealInputs(mealId);

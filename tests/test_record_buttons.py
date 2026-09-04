@@ -1,9 +1,12 @@
 # 記録画面の「記録方法カード」の回帰テスト（オーナー指示 2026-08）。
 #
-# 経緯：「Bを手動追加」は、Bを選ぶ処理(toggleOilMenu / saveOil)は残っていたのに
-#       画面から呼び出す場所が消えており、実質使えない状態だった。
-#       写真・文章・コピーご飯・Bだけ追加の4つを、同じ大きさ・同じデザインの
-#       カードとして並べ、どれも埋もれないようにする。
+# 経緯：写真・文章・コピーご飯を、同じ大きさ・同じデザインのカードとして並べ、
+#       どれも埋もれないようにする（「手動追加」の中間メニューは廃止済み）。
+#
+# 【変更 2026-08】オーナー指示により「Bだけ追加」を廃止した。
+#   入口・選択欄・追加処理は削除したが、**過去に追加済みの記録(isOil)は
+#   今までどおり表示・集計する**。ここを壊すと会員の過去の記録が消えるため、
+#   下の test_existing_manual_b_records_still_render で守っている。
 
 import os
 import re
@@ -23,40 +26,44 @@ def _panel():
     return re.search(r"function buildPanel\(m\) \{.*?\n\}", html, re.S).group(0)
 
 
-def test_four_record_cards_exist():
-    """記録方法が4つとも同じ種類のカード(.rec-card)で並んでいること。"""
+def _panel_markup():
+    """_panel() からコメントを除いた、実際に描画される部分だけ。
+    廃止した機能の名前は説明コメントに出てよいので、判定はコメント抜きで行う。"""
+    body = re.sub(r"<!--.*?-->", "", _panel(), flags=re.S)
+    return re.sub(r"^\s*//.*$", "", body, flags=re.M)
+
+
+def test_three_record_cards_exist():
+    """記録方法が3つとも同じ種類のカード(.rec-card)で並んでいること。"""
     panel = _panel()
-    assert panel.count('class="rec-card') == 4, "記録方法のカードが4つになっていない"
-    for label in ("写真を追加", "文章で手動入力", "コピーご飯を追加", "Bだけ追加"):
+    assert panel.count('class="rec-card') == 3, "記録方法のカードが3つになっていない"
+    for label in ("写真を追加", "文章で手動入力", "コピーご飯を追加"):
         assert label in panel, f"「{label}」のカードが無い"
 
 
-def test_b_only_button_label():
-    """ラベルが「🍙 Bだけ追加（お菓子・ドリンクなど）」であること。"""
-    panel = _panel()
-    assert "🍙" in panel, "おにぎりの絵文字が無い"
-    m = re.search(r'<button class="rec-card[^"]*" onclick="toggleOilMenu\([^)]*\)">(.*?)</button>',
-                  panel, re.S)
-    assert m, "Bだけ追加のカードが見つからない"
-    body = m.group(1)
-    assert "🍙" in body and "Bだけ追加" in body
-    assert "お菓子・ドリンクなど" in body
+def test_b_only_button_is_gone():
+    """「Bだけ追加」が記録画面から無くなっていること（オーナー指示 2026-08）。"""
+    markup = _panel_markup()
+    assert "Bだけ追加" not in markup, "「Bだけ追加」のカードが残っている"
+    assert "お菓子・ドリンクなど" not in markup
+    # 入口も処理も残さない（呼べない関数が残っているとバグの温床になる）
+    html = re.sub(r"^\s*//.*$", "", _html(), flags=re.M)
+    html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    for gone in ("toggleOilMenu", "selectOil(", "updateOilMenuUI", "saveOil(",
+                 "OIL_OPTIONS", "oilmenu-", "oilopt-", "oilsave-"):
+        assert gone not in html, f"{gone} が残っている"
 
 
-def test_b_only_button_has_an_entry_point():
-    """【重要】Bだけ追加が画面から呼び出せること。
-    以前は関数だけ残って呼び出し元が無く、機能が使えなくなっていた。"""
+def test_existing_manual_b_records_still_render():
+    """【重要】過去に「Bだけ追加」で入れた記録(isOil)は、今までどおり
+    表示・保存されること。機能を消しても会員の過去の記録は消さない。"""
     html = _html()
-    assert html.count("toggleOilMenu(") >= 2, "toggleOilMenu を呼ぶ場所が無い（機能が使えない）"
-    assert "onclick=\"toggleOilMenu(" in html
-
-
-def test_b_only_menu_markup_exists():
-    """Bを選ぶ欄（B0.5/B1/B2・メモ・追加ボタン）が実際に描画されること。"""
-    panel = _panel()
-    for needed in ("oilmenu-${m.id}", "oilopt-${m.id}", "oilnote-${m.id}", "oilsave-${m.id}"):
-        assert needed in panel, f"{needed} が描画されていない"
-    assert "saveOil(" in panel
+    # 一覧のアイコン表示に isOil の分岐と、おにぎりアイコンが残っている
+    assert "item.isOil" in html, "過去のBだけ追加の記録が表示できなくなっている"
+    assert "function onigiriIcon" in html
+    # 保存対象からも外していない（同期・再読み込みで消えない）
+    payload = re.search(r"function buildMealsPayload\(includePending\) \{.*?\n\}", html, re.S).group(0)
+    assert "isOil" in payload and "oilLabel" in payload
 
 
 def test_cards_are_big_enough_to_tap():
@@ -93,13 +100,12 @@ def test_manual_submenu_is_gone():
 
 
 def test_only_one_input_opens_at_a_time():
-    """文章入力とBだけ追加が同時に開かないこと。"""
+    """入力欄を開くときは、先に他の欄を閉じること。"""
     html = _html()
     assert "function closeMealInputs" in html
-    body = re.search(r"function toggleOilMenu\(mealId\) \{.*?\n\}", html, re.S).group(0)
-    assert "closeMealInputs" in body
-    body2 = re.search(r"function chooseManualText\(mealId\) \{.*?\n\}", html, re.S).group(0)
-    assert "closeMealInputs" in body2
+    for fn in ("chooseManualText", "chooseManualCopy"):
+        body = re.search(rf"function {fn}\(mealId\) \{{.*?\n\}}", html, re.S).group(0)
+        assert "closeMealInputs" in body, f"{fn} が他の欄を閉じていない"
 
 
 def test_photo_card_keeps_drag_and_drop():
