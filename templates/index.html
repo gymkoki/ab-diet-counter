@@ -5255,12 +5255,17 @@ function _renderDailyTip(idx) {
   document.getElementById('daily-tip-text').textContent = DIET_TIPS[idx];
 }
 
-// コツを表示する。オーナー指示 2026-08：アプリを開いた瞬間ではなく、
-// 写真の栄養解析が終わるたびに表示する（結果を見たあとの“ごほうび”にする）。
-// アップデートお知らせ・運営からの返信・キャラ紹介が出ているときは、
-// その上に重ねず見送る。
+// 【現在オフ】オーナー指示 2026-08：一旦、コツ（TODAY'S TIP）は表示しない。
+// もう一度出したくなったら、この値を true に戻すだけでよい
+// （コツ本文・表示の仕組みはそのまま残してある）。
+const DAILY_TIP_ENABLED = false;
+
+// コツを表示する。表示するのは写真の栄養解析が終わったタイミング
+// （アプリを開いた瞬間ではない）。アップデートお知らせ・運営からの返信・
+// キャラ紹介が出ているときは、その上に重ねず見送る。
 function maybeShowDailyTip() {
   try {
+    if (!DAILY_TIP_ENABLED) return;   // 一旦オフ（上の DAILY_TIP_ENABLED を参照）
     if (typeof DIET_TIPS === 'undefined' || !DIET_TIPS.length) return;  // tips.js未読込でも壊さない
     if (_editingDate) return;   // 過去日の編集中は表示しない
     const tipEl = document.getElementById('daily-tip-overlay');
