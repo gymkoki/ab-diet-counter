@@ -1202,15 +1202,15 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.29</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.30</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🔧</span>
-        <span>時折、<b>栄養解析でエラーが出る問題</b>に関して、解決に向けて取り組んでおります。</span>
+        <span style="font-size:20px;flex-shrink:0">🍙</span>
+        <span>「<b>Bだけ追加</b>」は使用頻度が少なかったため、削除しました。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🙏</span>
-        <span>引き続き、応援いただけますと幸いです。</span>
+        <span style="font-size:20px;flex-shrink:0">📸</span>
+        <span>これまでどおり「写真を追加」「文章で手動入力」「コピーご飯を追加」からご記録ください。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -5219,7 +5219,7 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v31';
+const NOTICE_KEY = 'ab-diet-notice-v32';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
