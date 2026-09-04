@@ -1,7 +1,9 @@
 # 「今日のABダイエットのコツ」を出すタイミングの回帰テスト。
 #
 # オーナー指示 2026-08：
-#   アプリを開いた瞬間ではなく、各写真の栄養解析が終わったタイミングで毎回表示する。
+#   ① アプリを開いた瞬間ではなく、写真の栄養解析が終わったタイミングで表示する。
+#   ② そのうえで「一旦、表示しない」ことにした（DAILY_TIP_ENABLED = false）。
+#      コツ本文と表示の仕組みは残してあるので、値を true に戻せば元どおり出る。
 
 import os
 import re
@@ -22,10 +24,27 @@ def _fn(name):
     return m.group(0)
 
 
-def test_tip_is_shown_after_photo_analysis():
-    """写真の解析が終わったらコツを表示すること。"""
+def test_tip_is_currently_turned_off():
+    """【現在の仕様】コツは表示しないこと（オーナー指示 2026-08）。"""
+    html = _html()
+    assert re.search(r"const DAILY_TIP_ENABLED\s*=\s*false", html), \
+        "コツが表示される設定に戻っています"
+    body = _fn("maybeShowDailyTip")
+    assert "if (!DAILY_TIP_ENABLED) return;" in body, \
+        "スイッチを見ずに表示してしまいます"
+    # スイッチは try の中の最初の判定にする（他の処理より先に抜ける）
+    inner = body[body.index("try {"):]
+    assert inner.index("DAILY_TIP_ENABLED") < inner.index("DIET_TIPS")
+
+
+def test_tip_can_be_turned_back_on_with_one_line():
+    """再開したくなったとき、スイッチ1行で戻せる状態を保つこと。
+    表示の仕組み・コツ本文・呼び出し口を消してしまわない。"""
+    html = _html()
+    assert "function _renderDailyTip" in html and "TIP_HISTORY_KEY" in html
+    assert 'id="daily-tip-overlay"' in html
     body = _fn("analyzeItem")
-    assert "maybeShowDailyTip" in body, "解析後にコツを出す処理がありません"
+    assert "maybeShowDailyTip" in body, "解析後の呼び出し口まで消してしまっています"
 
 
 def test_tip_is_not_shown_when_analysis_failed():
