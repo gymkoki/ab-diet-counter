@@ -25,7 +25,10 @@ def client(monkeypatch):
 
 
 def _seed_cut_member(uid="coach-test-1", name="テスト会員"):
-    ts = "2026-08-01T08:00:00"
+    # updated_at ＝ 最後にアプリを使った日。2週間以上前にすると
+    # 「離脱者」としてコーチ提案の対象から外れるため、現在時刻で入れる
+    # （オーナー方針 2026-09-09／tests/test_report_scope.py 参照）。
+    ts = datetime.datetime.now(m.JST).isoformat()
     with m._db_lock:
         conn = m._get_conn(); cur = conn.cursor()
         cur.execute(f"DELETE FROM user_profile WHERE user_id={m.PH}", (uid,))

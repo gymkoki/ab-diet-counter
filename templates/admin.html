@@ -356,7 +356,8 @@
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       声かけの内容が真逆になるため、原因の違う2種類を分けて表示します。
       <b style="color:#D97706">記録漏れ疑い</b>＝記録は続けているのにBカウントが目標を大きく下回り、体重が減っていない人（食べ過ぎではなく「記録できていない食事がある」可能性が高い。<u>Bを減らす助言は逆効果</u>）。
-      <b style="color:#DC2626">長期離脱</b>＝14日以上まったく記録がない人。
+      <b style="color:#DC2626">長期離脱</b>＝14日以上まったく記録がない人（人数の把握用。
+      呼び戻しは追わない方針のため、デイリーレポートの声かけリストと自動の声かけ下書きからは外しています）。
     </div>
     <div id="attention-wrap"><div class="spinner"></div></div>
   </div>
@@ -668,7 +669,7 @@
       <div>
         <div style="font-size:13px;font-weight:800;color:#DC2626;margin-bottom:6px">
           🚪 長期離脱（14日以上・${away.length}名）
-          <span style="font-weight:600;color:#9CA3AF">— 再スタートのきっかけづくりを</span>
+          <span style="font-weight:600;color:#9CA3AF">— 参考情報（声かけ・レポートの対象外）</span>
         </div>
         ${away.length ? `<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px">
           <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">

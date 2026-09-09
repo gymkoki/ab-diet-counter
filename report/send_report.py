@@ -390,6 +390,9 @@ def chart_no_loss_slots(data: dict) -> bytes:
             ha="center", va="center", fontsize=12.5, color=C_GRAY)
     ax.text(2.2, -1.15, f"※写真・文章入力どちらの記録も1件として数えています（{days}日中の記録できた日数）",
             ha="center", va="center", fontsize=11, color=C_GRAY)
+    # オーナー方針 2026-09-09：離脱者の呼び戻しは追わないため、対象から外していることを明示する
+    ax.text(2.2, -1.35, f"※{days}日以上まったく記録がない会員は対象外です",
+            ha="center", va="center", fontsize=11, color=C_GRAY)
     fig.tight_layout()
     return fig_to_png(fig)
 
@@ -702,6 +705,10 @@ def _coach_section(advice) -> str:
     return f"""
     <div class="section" style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:16px 18px">
       <h2 style="border-left-color:#EA580C">🎯 AI減量コーチ｜今日の提案（1か月 −1kg 目標）</h2>
+      <div style="font-size:12px;color:#9CA3AF;line-height:1.7;margin-bottom:10px">
+        対象は<b>直近14日以内に記録がある会員</b>だけです。2週間以上まったく記録がない方は、
+        呼び戻しを追わない方針のため対象から外しています。
+      </div>
       <div style="font-size:13px;color:#374151;line-height:1.9;white-space:pre-wrap">{esc}</div>
     </div>
     """
