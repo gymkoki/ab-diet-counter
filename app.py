@@ -2207,8 +2207,15 @@ def admin_report_data():
             continue
         slots_by_user.setdefault(uid, {}).setdefault(slot, set()).add(dt)
 
-    # 減量が進んでいない順（change_kg が大きい＝増えた人が先頭）に最大10名
+    # 減量が進んでいない順（change_kg が大きい＝増えた人が先頭）に最大10名。
+    # ただし14日以上まったく記録がない会員は外す（オーナー方針 2026-09-09：
+    # 大幅に離脱した人の呼び戻しは追わない。この表は「今日誰に声をかけるか」を決めるもの）。
+    def _recorded_within_slot_window(uid):
+        days = b_by_user.get(uid) or {}
+        return bool(days) and max(days) >= start_14d
+
     ranked = sorted(zip(cut_members, cut_member_uids), key=lambda t: -t[0]["change_kg"])
+    ranked = [t for t in ranked if _recorded_within_slot_window(t[1])]
     no_loss_members = []
     for mem, uid in ranked[:10]:
         s = slots_by_user.get(uid) or {}
@@ -2433,6 +2440,7 @@ COACH_PROMPT = """あなたはABダイエットを運営するジムの減量コ
 - avg_b_7d：直近7日の1日平均Bカウント（食事の量的指標。減量中の目安は1日7回以内、少ないほど食事管理が良い）
 - recorded_days_7d：直近7日で食事記録をした日数（7が満点。少ない=サボり気味）
 - days_since：最後の記録からの経過日数（3以上は離脱リスク）
+  ※14日以上まったく記録がない会員は、あらかじめデータから除いてある（下記の対象範囲）
 - avg_meals_per_day_7d：直近7日の「1日あたり記録した食事の件数」。1日3件前後が普通。
   1.5件未満は、食べたものの一部しか記録していない（記録漏れ）可能性が高い。
 - b_target：その会員の1日のBカウント目標の上限。
@@ -2447,11 +2455,23 @@ avg_meals_per_day_7d が少ない（2件未満）ならほぼ確実に記録漏�
   例：「間食や飲み物も含めて、食べたものを全部記録できていますか？まずは1日3食＋間食の記録を揃えましょう」
 - 逆に、Bカウントが目標を超えていて体重も増えている人には、通常どおり食事量の見直しを提案してよい。
 
+【対象範囲・最重要（オーナー方針 2026-09-09）】
+渡されるのは「直近14日以内に記録がある会員」だけ。大幅に離脱した人を取り戻すのは難しいため、
+離脱者の呼び戻しは追わない方針になっている。したがって：
+- 【禁止】離脱した会員・休眠会員を呼び戻す提案（安否確認、久しぶりの連絡、復帰キャンペーン、
+  再開のきっかけづくり、「戻ってきてもらう」施策）は一切書かない。
+- 【禁止】データに無い会員のことを推測して書かない（「最近見ない人」等も書かない）。
+- いま記録を続けている会員が結果を出すこと、そのための記録の精度（記録漏れをなくす・
+  栄養計算が正しくなる）を高めることに集中する。
+
 【出力形式】以下の3部構成の日本語プレーンテキスト（400〜600字・箇条書き中心・前置きや締めの挨拶は不要）：
 ■ 全体の状況（2行以内：ペース達成者/未達者の割合と今日の最重要テーマ）
 ■ 今日の声かけリスト（優先度順に3〜5人。「名前：状況→具体的な声かけ・提案」を各1行。
-   記録が途絶えた人・ペース未達の人を優先。具体的な数字を入れる）
-■ 今日の一手（オーナーがアプリやジムで打てる施策を1つ。例：お知らせ配信案、グループ企画、掲示など）
+   記録漏れが疑われる人・減量ペース未達の人を優先。具体的な数字を入れる。
+   該当者が3人に満たない日は、無理に人数を埋めず、いる人だけ書く）
+■ 今日の一手（オーナーがアプリやジムで打てる施策を1つ。
+   記録の精度・栄養計算の正確さが上がる打ち手を優先する。例：記録の抜けを埋める声かけ文、
+   お知らせ配信案、掲示など。離脱者の呼び戻し企画は書かない）
 
 【注意】
 - 実名はデータのnameをそのまま使う（nameが無い人はuser_id_shortで呼ぶ）
@@ -2537,6 +2557,37 @@ class _CoachNoApiKey(Exception):
     """コーチ提案：APIキー未設定を表す（一般エラーと区別してHTTP 503を返すため）。"""
 
 
+# ── デイリーレポート／声かけの対象範囲（オーナー方針 2026-09-09） ───────────
+# 「大幅に離脱した人を取り戻すのは難しい。呼び戻す施策より、栄養計算の精度を上げるほうが
+#  優先度が高い」というオーナーの判断により、14日以上まったく記録がない会員は
+# 『今日誰に何をするか』を決める部分から外す。
+#  外す対象：コーチ提案（デイリーレポートの声かけリスト）／改善案／声かけ下書き／
+#            レポートの「痩せていない人の記録状況」表。
+#  外さない対象：ジムの実績集計（平均減量などのKPI・体重の推移）と、
+#            管理画面の「長期離脱」一覧（人数を把握するための参考情報として残す）。
+REPORT_ABSENT_DAYS = 14
+
+
+def _is_long_absent(mem, days=REPORT_ABSENT_DAYS):
+    """レポート・声かけの対象から外す「離脱者」か。
+
+    まず days_since（最後にBカウントを記録した日からの経過日数）で判断する。
+    一度も記録が無い会員は days_since が None になるが、そこで一律に外すと
+    「入会したばかりでこれから記録する人」まで消えてしまう。そのため
+    days_since_app_use（最後にアプリを使った日＝プロフィール更新日からの経過日数）で
+    補い、アプリ自体も2週間使われていない場合だけ離脱者として外す。"""
+    ds = mem.get("days_since")
+    if ds is not None:
+        return ds >= days
+    used = mem.get("days_since_app_use")
+    return used is not None and used >= days
+
+
+def _active_members(members, days=REPORT_ABSENT_DAYS):
+    """離脱者を除いた会員だけを返す（コーチ提案・改善案・声かけ下書きで共用）。"""
+    return [m for m in members if not _is_long_absent(m, days)]
+
+
 def _collect_cut_member_stats():
     """減量希望メンバーの直近データを集めて返す（コーチ提案と個別声かけで共用）。
     戻り値：[{uid, name, user_id_short, latest_weight_kg, change_30d_kg,
@@ -2548,8 +2599,10 @@ def _collect_cut_member_stats():
     conn = _get_conn()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT user_id, display_name, height_cm, gender FROM user_profile WHERE goal = 'cut'")
-        cut = {r[0]: {"name": r[1], "height_cm": r[2], "gender": r[3]} for r in cur.fetchall()}
+        # updated_at は解析のたびに更新されるため「最後にアプリを使った日」として使える
+        cur.execute("SELECT user_id, display_name, height_cm, gender, updated_at FROM user_profile WHERE goal = 'cut'")
+        cut = {r[0]: {"name": r[1], "height_cm": r[2], "gender": r[3], "updated_at": r[4]}
+               for r in cur.fetchall()}
         if not cut:
             return []
 
@@ -2615,6 +2668,12 @@ def _collect_cut_member_stats():
         avg_meals = round(sum(counts) / len(counts), 1) if counts else None
         # 1日のBカウント目標の上限（減量：女性4回以内／男性6回以内。性別未設定は5で概算）
         b_target = {"female": 4, "male": 6}.get(prof.get("gender") or "", 5)
+        # 最後にアプリを使った日からの経過日数（記録が一度も無い会員の在籍判断に使う）
+        used_days = None
+        try:
+            used_days = (today_d - datetime.datetime.fromisoformat(prof["updated_at"]).date()).days
+        except Exception:
+            pass
         members.append({
             "uid": uid,
             "name": prof["name"] or None,
@@ -2625,6 +2684,7 @@ def _collect_cut_member_stats():
             "recorded_days_7d": rec_days,
             "days_since": days_since,
             "avg_meals_per_day_7d": avg_meals,
+            "days_since_app_use": used_days,
             "b_target": b_target,
         })
     return members
@@ -2683,7 +2743,8 @@ def _get_or_generate_coach_advice():
     if client is None:
         raise _CoachNoApiKey()
 
-    members = _collect_cut_member_stats()
+    # 2週間以上まったく記録がない会員は対象から外す（オーナー方針 2026-09-09）。
+    members = _active_members(_collect_cut_member_stats())
     if not members:
         return "", False, 0
 
@@ -2726,6 +2787,14 @@ DEV_PROPOSAL_PROMPT = """あなたはABダイエットアプリの開発パー�
 
 """ + APP_CAPABILITIES + """
 
+【最優先テーマ（オーナー方針 2026-09-09）】
+いまは「栄養計算の精度を上げること」の優先度がいちばん高い。
+Bカウント・カロリー・タンパク質／野菜量の判定がより正確になる改善、
+記録の抜け（記録漏れ）が減る改善を軸に考えること。
+- 【禁止】離脱者・休眠会員の呼び戻しを狙った提案（復帰キャンペーン、再開うながし通知、
+  カムバック企画、安否確認の仕組み）は書かない。取り戻すのが難しく、優先度が低いと判断済み。
+- 渡される会員データは「直近14日以内に記録がある会員」だけ。離脱者は含まれていない。
+
 【提案の条件】
 - 3つとも、いま出ているデータの課題に直接効くものにする（データ根拠を必ず示す）。
 - 「運用でがんばる」ではなく「アプリの機能・画面・文言をどう変えるか」を提案する。
@@ -2756,7 +2825,8 @@ def _get_or_generate_dev_proposals():
     if client is None:
         raise _CoachNoApiKey()
 
-    members = _collect_cut_member_stats()
+    # 離脱者は改善案の材料にしない（呼び戻し施策を提案させないため）
+    members = _active_members(_collect_cut_member_stats())
     safe = [{k: v for k, v in m.items() if k != "uid"} for m in members]
     try:
         usage = _collect_feature_usage()
@@ -2910,8 +2980,10 @@ def _recent_dm_user_ids(days=COACH_DM_COOLDOWN_DAYS):
 
 def _generate_coach_dm_drafts():
     """声かけが必要な会員を抽出し、AIに文面を書かせて「下書き」として保存する。
-    戻り値：(作成した下書き件数, 対象者数, スキップ数)。送信はしない。"""
-    members = _collect_cut_member_stats()
+    戻り値：(作成した下書き件数, 対象者数, スキップ数)。送信はしない。
+    ※2週間以上まったく記録がない会員には送らない（オーナー方針 2026-09-09：
+      大幅に離脱した人の呼び戻しは追わない）。"""
+    members = _active_members(_collect_cut_member_stats())
     if not members:
         return 0, 0, 0
 
