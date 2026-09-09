@@ -814,6 +814,65 @@ def _log_usage(uid):
         app.logger.warning("usage_log insert failed (non-fatal): %s", e)
 
 
+# ── 体重を記録していない人は食事解析を止める（オーナー指示 2026-09） ──────
+# 「1週間に一度は体重を入力しないと、食事の解析ができない」。
+# 窓は「今日から WEIGHT_GATE_MAX_AGE_DAYS 日前まで」。7日ちょうどの間隔で
+# 記録している人（毎週月曜など）が引っかからないよう、7日前ぴったりは許可する。
+# 進捗タブの誘導(hasRecentWeight)は直近7日間なので、ブロックの1日前から警告が出る。
+WEIGHT_GATE_MAX_AGE_DAYS = 7
+
+WEIGHT_GATE_MESSAGE = (
+    "体重の記録が1週間以上ありません。ABダイエットは体重の変化を見ながら判定するため、"
+    "食事の解析には体重の記録が必要です。"
+    "「記録」タブの「⚖️ 体重/日記」から今日の体重を入力すると、すぐに解析を再開できます。"
+)
+
+
+def _has_recent_weight(uid, days=WEIGHT_GATE_MAX_AGE_DAYS):
+    """直近 days 日以内に体重の記録があるか。
+
+    【重要】DBが一時的に落ちているときは True を返す（＝解析を止めない）。
+    判定できないことを理由に、記録している人まで使えなくしないため。"""
+    uid = (uid or "").strip()
+    if not uid:
+        return False
+    since = (datetime.datetime.now(JST).date()
+             - datetime.timedelta(days=days)).isoformat()
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"SELECT 1 FROM daily_weight WHERE user_id={PH} AND date>={PH} "
+                    f"AND weight>0 LIMIT 1",
+                    (uid, since)
+                )
+                return cur.fetchone() is not None
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.warning("weight gate check failed (allowing analysis): %s", e)
+        return True
+
+
+def _weight_gate_blocked(uid):
+    """解析を止めるなら (JSONレスポンス, 403) を返す。問題なければ None。
+
+    画面側は weight_required を見て、体重入力への案内を出す。
+
+    【誰が対象か】user_id が付いているリクエストだけを止める。
+    アプリは必ず user_id を送るので実運用では全員が対象になるが、
+    万一 user_id が空のまま届いた場合に止めてしまうと、
+    /api/daily-weight も user_id 必須なので体重を登録できず、
+    その人が二度と解析できない詰み状態になる。判別できないものは通す。"""
+    if not (uid or "").strip():
+        return None
+    if _has_recent_weight(uid):
+        return None
+    return jsonify({"error": WEIGHT_GATE_MESSAGE, "weight_required": True}), 403
+
+
 def _save_user_goal(uid, gender, goal):
     """会員の性別・目標(減量/維持/増量)を user_profile へ保存する（レポートの目的別集計用）。
     食事解析リクエストに毎回付いてくる値を随時保存するため、既存会員も
@@ -5587,6 +5646,10 @@ def analyze():
 
     # 利用ログ記録（DB障害があっても解析は止めない）
     uid = request.form.get("user_id", "")
+    # 体重を1週間以上記録していない人は解析しない（オーナー指示 2026-09）
+    gate = _weight_gate_blocked(uid)
+    if gate:
+        return gate
     _log_usage(uid)
     # 目的別レポート用に性別・目標を保存（毎回のリクエストに付いてくる）
     _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))
@@ -5691,6 +5754,11 @@ def reanalyze():
     correction = request.form.get("correction", "").strip()
     if not correction:
         return jsonify({"error": "補足情報を入力してください"}), 400
+
+    # 体重を1週間以上記録していない人は再計算もしない（オーナー指示 2026-09）
+    gate = _weight_gate_blocked(request.form.get("user_id", ""))
+    if gate:
+        return gate
 
     # 目的別レポート用に性別・目標を保存
     _save_user_goal(request.form.get("user_id", ""), request.form.get("gender", ""), request.form.get("goal", ""))
@@ -5852,6 +5920,10 @@ def analyze_text():
 
     # 利用ログ記録（写真分析と同じく1回としてカウント。DB障害があっても解析は止めない）
     uid = request.form.get("user_id", "")
+    # 体重を1週間以上記録していない人は解析しない（オーナー指示 2026-09）
+    gate = _weight_gate_blocked(uid)
+    if gate:
+        return gate
     _log_usage(uid)
     # 目的別レポート用に性別・目標を保存
     _save_user_goal(uid, request.form.get("gender", ""), request.form.get("goal", ""))

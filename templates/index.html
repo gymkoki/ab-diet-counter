@@ -1202,19 +1202,34 @@
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
   <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.30</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">🎉 最新アップデート No.31</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🍙</span>
-        <span>「<b>Bだけ追加</b>」は使用頻度が少なかったため、削除しました。</span>
+        <span style="font-size:20px;flex-shrink:0">⚖️</span>
+        <span><b>週に1回は体重の記録</b>をお願いします。1週間以上記録がないと、<b>食事の解析ができなくなります</b>。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">📸</span>
-        <span>これまでどおり「写真を追加」「文章で手動入力」「コピーご飯を追加」からご記録ください。</span>
+        <span style="font-size:20px;flex-shrink:0">📉</span>
+        <span>ABダイエットは体重の変化を見ながら判定するためです。「記録」タブの「⚖️ 体重/日記」から入力できます。</span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
     <button onclick="closeUpdateNotice()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
+  </div>
+</div>
+
+<!-- 体重が1週間以上未記録のときに出す案内（食事の解析はここで止まる） -->
+<div id="weight-gate-overlay" style="display:none;position:fixed;inset:0;z-index:530;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
+  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">CHECK</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">⚖️ 体重の記録をお願いします</div>
+    <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
+      <div>体重の記録が<b>1週間以上</b>ありません。</div>
+      <div style="margin-top:10px">ABダイエットは体重の変化を見ながら判定するため、<b>食事の解析には体重の記録が必要</b>です。</div>
+      <div style="margin-top:10px">今日の体重を入力すると、すぐに解析を再開できます。</div>
+    </div>
+    <button onclick="closeWeightGate(); openWeightRecord();" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">⚖️ 体重を入力する</button>
+    <button onclick="closeWeightGate()" style="width:100%;margin-top:10px;padding:12px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">閉じる</button>
   </div>
 </div>
 
@@ -2504,6 +2519,48 @@ function openWeightRecord() {
   }
 }
 
+// ═══════════════════════════════════════════
+//  体重が1週間以上未記録なら、食事の解析を止める（オーナー指示 2026-09）
+//  ・判定の窓はサーバー(_has_recent_weight)と同じ「今日から7日前まで」。
+//    7日ちょうどの間隔で記録している人が引っかからないよう、7日前ぴったりは許可する。
+//  ・進捗タブの誘導(hasRecentWeight=直近7日)は、止まる1日前から出る。
+//  ・最終的な判定はサーバー側で行う（画面側は無駄なアップロードを省くための先回り）。
+// ═══════════════════════════════════════════
+const WEIGHT_GATE_MAX_AGE_DAYS = 7;
+
+function hasWeightForGate() {
+  // 「今日から7日前まで」＝今日を含めて8日ぶんを見る
+  return hasRecentWeight(WEIGHT_GATE_MAX_AGE_DAYS + 1);
+}
+
+function openWeightGate() {
+  const el = document.getElementById('weight-gate-overlay');
+  if (el) el.style.display = 'flex';
+}
+function closeWeightGate() {
+  const el = document.getElementById('weight-gate-overlay');
+  if (el) el.style.display = 'none';
+}
+
+// サーバーが体重未記録を理由に解析を断ったとき（403 + weight_required）。
+// 素っ気ないエラー文の代わりに案内モーダルを出す。出したら true。
+function _handledWeightGate(data) {
+  if (!data || !data.weight_required) return false;
+  openWeightGate();
+  return true;
+}
+
+// 解析を始める前の確認。通せるなら true。
+// 端末に記録が無くても、他の端末で入力済みかもしれないので一度サーバーを見に行く
+// （localStorage だけで判断すると、機種変更直後などに誤って止めてしまう）。
+async function ensureWeightForAnalysis() {
+  if (hasWeightForGate()) return true;
+  try { await syncHistoryFromServer(); } catch (e) {}
+  if (hasWeightForGate()) { updateWeightNudge(); return true; }
+  openWeightGate();
+  return false;
+}
+
 function renderChara() {
   const s = calcCharaScore();
   document.getElementById('chara-score-num').textContent = s.score;
@@ -2691,6 +2748,8 @@ async function doReset() {
 //  File handling
 // ═══════════════════════════════════════════
 async function addFiles(mealId, files) {
+  // 体重が1週間以上未記録なら、写真を取り込む前に案内を出して止める
+  if (!(await ensureWeightForAnalysis())) return;
   for (const file of files) {
     const id = nextItemId();
     // 写真を選んだ時点を記録する。60秒の締め切りは、圧縮などの前処理も含めて
@@ -3049,6 +3108,8 @@ async function submitTextEntry(mealId) {
   const ta = document.getElementById(`textinput-${mealId}`);
   const text = ta && ta.value ? ta.value.trim() : '';
   if (!text) { ta && ta.focus(); return; }
+  // 体重が1週間以上未記録なら、入力内容は消さずに案内だけ出して止める
+  if (!(await ensureWeightForAnalysis())) return;
 
   const id = nextItemId();
   const item = { id, file:null, previewSrc:null, result:null, loading:true, error:null, isText:true, text };
@@ -3077,7 +3138,7 @@ async function submitTextEntry(mealId) {
     item.loading = false;
     if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== id);
-      showError(mealId, data.error);
+      if (!_handledWeightGate(data)) showError(mealId, data.error);
     } else {
       item.result = data;
       logAction('text');     // 「文章で記録」の利用を記録（集計用）
@@ -3516,7 +3577,7 @@ async function resumeTextItem(mealId, item) {
     item.loading = false;
     if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== item.id);
-      showError(mealId, data.error);
+      if (!_handledWeightGate(data)) showError(mealId, data.error);
     } else { item.result = data; }
   } catch(e) {
     _stopProgress(mealId, item.id);
@@ -3565,6 +3626,8 @@ async function reanalyzeItem(mealId, itemId) {
   const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
+  // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残す）
+  if (!(await ensureWeightForAnalysis())) return;
 
   // 進捗％を表示（写真のサムネイルとボタンの両方）
   item.loading = true;
@@ -3603,7 +3666,7 @@ async function reanalyzeItem(mealId, itemId) {
     item.loading = false;
     if (data.error) {
       renderStrip(mealId);
-      showError(mealId, data.error);
+      if (!_handledWeightGate(data)) showError(mealId, data.error);
       if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
     } else {
       item.result = data;
@@ -5219,7 +5282,7 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v32';
+const NOTICE_KEY = 'ab-diet-notice-v33';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
