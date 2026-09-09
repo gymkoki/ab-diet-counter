@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app as m  # noqa: E402
+from conftest import seed_weight  # noqa: E402
 
 
 @pytest.fixture
@@ -21,6 +22,9 @@ def client(monkeypatch):
     m.app.config["TESTING"] = True
     # AIクライアントは存在する体にする（実呼び出しはモックで差し替える）
     monkeypatch.setattr(m, "get_client", lambda: object())
+    # 体重未記録だと解析が止まるので、ここでは記録済みの人として扱う
+    # （体重チェック自体は tests/test_weight_gate.py で試す）
+    seed_weight("test-user")
     with m.app.test_client() as c:
         yield c
 
