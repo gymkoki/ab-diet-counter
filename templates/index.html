@@ -651,6 +651,17 @@
     #underrec-notice .ur-close { background:rgba(36,80,127,0.10); border:none; color:#24507F; width:28px; height:28px; border-radius:50%; font-size:16px; font-weight:800; cursor:pointer; flex-shrink:0; line-height:1; }
     .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:var(--radius-md); border:none; background:#0E9F6E; color:white; font-size:17px; font-weight:700; cursor:pointer; }
     .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; box-shadow:0 24px 48px rgba(0,0,0,0.18); }
+    /* ── お知らせ・確認ダイアログの共通ルール ──
+       内容が画面の高さを超えると、以前はカードがそのまま伸びてOKボタンが画面外に出てしまい、
+       スクロールもできないため閉じられなくなっていた（会員から報告あり）。
+       高さの上限とスクロールを必ず付けて、どんなに長い内容でもボタンに指が届くようにする。
+       100dvh はスマホのアドレスバーを除いた実際の表示領域。対応していない古い端末向けに vh も残す。 */
+    .modal-card, .weight-dialog { max-height:calc(100vh - 48px); max-height:calc(100dvh - 48px); overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+    /* 本文だけをスクロールさせ、ボタンは常に見える位置に固定する（長いお知らせ用） */
+    .modal-card.has-scroll { display:flex; flex-direction:column; overflow:hidden; }
+    .modal-card.has-scroll > .modal-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+    /* 本文とボタンの間に区切り線を入れ、「上に続きがある」ことが分かるようにする */
+    .modal-card.has-scroll > .modal-scroll { padding-bottom:12px; border-bottom:1px solid #F0EBE6; margin-bottom:14px; }
     .weight-dialog h3 { font-size:18px; font-weight:800; margin-bottom:18px; }
     .weight-dialog-row { display:flex; align-items:center; justify-content:center; gap:10px; }
     .weight-input { width:150px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius-md); font-size:24px; font-weight:700; font-family:inherit; text-align:center; outline:none; font-variant-numeric:tabular-nums; transition:border-color 0.15s, box-shadow 0.15s; }
@@ -1054,7 +1065,7 @@
 
 <!-- キャラ紹介のお知らせ（キャラを押した最初の1回だけ表示） -->
 <div id="chara-intro-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px" onclick="if(event.target===this)closeCharaIntro()">
-  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+  <div class="modal-card" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">お知らせ</div>
     <div style="font-size:18px;font-weight:800;margin-bottom:14px">🐾 キャラクターのご紹介</div>
     <div style="font-size:16px;line-height:1.8;color:#44403B;margin-bottom:14px">
@@ -1166,7 +1177,7 @@
 
 <!-- 解析後の確認質問（大盛り・油の量）：回答すると最終結果が表示される -->
 <div id="clarify-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
-  <div style="background:white;border-radius:20px;padding:24px 20px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18);text-align:center">
+  <div class="modal-card" style="background:white;border-radius:20px;padding:24px 20px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18);text-align:center">
     <div style="font-size:15px;font-weight:700;color:var(--primary);letter-spacing:0.1em;margin-bottom:8px">🔍 かんたん確認</div>
     <div id="clarify-question" style="font-size:18px;font-weight:800;line-height:1.6;margin-bottom:6px"></div>
     <div id="clarify-note" style="font-size:14px;color:var(--text-muted);line-height:1.6;margin-bottom:16px"></div>
@@ -1200,7 +1211,8 @@
 
 <!-- アップデートお知らせ（各端末1回のみ表示） -->
 <div id="update-notice-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
-  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+  <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+   <div class="modal-scroll">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
     <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.32</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
@@ -1225,13 +1237,14 @@
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
-    <button onclick="closeUpdateNotice()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
+   </div>
+    <button onclick="closeUpdateNotice()" style="flex-shrink:0;width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
   </div>
 </div>
 
 <!-- 体重が1週間以上未記録のときに出す案内（食事の解析はここで止まる） -->
 <div id="weight-gate-overlay" style="display:none;position:fixed;inset:0;z-index:530;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
-  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+  <div class="modal-card" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">CHECK</div>
     <div style="font-size:18px;font-weight:800;margin-bottom:16px">⚖️ 体重の記録をお願いします</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
@@ -1246,7 +1259,7 @@
 
 <!-- 運営からの返信（修正希望・ご要望を送った本人にだけ表示される） -->
 <div id="reply-notice-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
-  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+  <div class="modal-card" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">MESSAGE</div>
     <div style="font-size:18px;font-weight:800;margin-bottom:16px">✉️ 運営からの返信が届いています</div>
     <div id="reply-notice-body" style="font-size:17px;line-height:1.8;color:#44403B;margin-bottom:22px"></div>
@@ -1256,7 +1269,7 @@
 
 <!-- コーチからの応援メッセージ（運営が承認して送った個別の声かけ） -->
 <div id="coach-msg-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
-  <div style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+  <div class="modal-card" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">COACH</div>
     <div style="font-size:18px;font-weight:800;margin-bottom:16px">📣 コーチからの応援メッセージ</div>
     <div id="coach-msg-body" style="font-size:17px;line-height:1.8;color:#44403B;margin-bottom:22px"></div>
@@ -1280,7 +1293,7 @@
 
 <!-- 今日のABダイエットのコツ（1日1回・ランダム表示） -->
 <div id="daily-tip-overlay" style="display:none;position:fixed;inset:0;z-index:490;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px" onclick="if(event.target===this)closeDailyTip()">
-  <div style="background:white;border-radius:20px;padding:26px 22px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
+  <div class="modal-card" style="background:white;border-radius:20px;padding:26px 22px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:6px">TODAY'S TIP</div>
     <div style="font-size:18px;font-weight:800;margin-bottom:4px">💡 今日のABダイエットのコツ</div>
     <div id="daily-tip-no" style="font-size:13px;color:#A8A29B;margin-bottom:14px"></div>
