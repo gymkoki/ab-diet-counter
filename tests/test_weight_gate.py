@@ -157,9 +157,17 @@ def test_frontend_window_matches_server():
     assert "hasRecentWeight(WEIGHT_GATE_MAX_AGE_DAYS + 1)" in html
 
 
-def test_update_notice_tells_members():
-    """この件はオーナー指示でお知らせに出す（No.とNOTICE_KEYを更新済みか）。"""
+def test_members_are_told_why_analysis_stops():
+    """体重が無いと解析できない理由が、会員向けに画面で説明されていること。
+
+    以前はこの件を告知した「最新アップデート No.31」を直接検査していたが、
+    お知らせは新しい内容へ入れ替わっていくため、そこに固定すると
+    お知らせを更新するたびにこのテストが落ちてしまう。
+    検査対象を、常に出続ける案内モーダル（weight-gate-overlay）へ移した。
+    """
     html = _html()
-    assert "最新アップデート No.31" in html
-    assert "ab-diet-notice-v33" in html
-    assert "週に1回は体重の記録" in html
+    m_ = re.search(r'id="weight-gate-overlay".*?</div>\s*</div>\s*</div>', html, re.S)
+    assert m_, "体重入力の案内モーダルが見つかりません"
+    block = m_.group(0)
+    assert "1週間以上" in block, "何日で止まるのかが会員に伝わりません"
+    assert "解析" in block and "体重" in block
