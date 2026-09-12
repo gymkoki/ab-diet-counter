@@ -147,6 +147,14 @@
     .food-badge { display:inline-flex; padding:2px 8px; border-radius:999px; font-size:15px; font-weight:700; margin-right:4px; letter-spacing:0.02em; }
     .badge-b { background:var(--primary-soft); color:var(--b-color); }
     .badge-a { background:#E5F6F4; color:#0B8378; }
+    /* 量の直し（うどん2玉・肉200gなど、写真では分からない量をワンタップで補正する）。
+       AIには聞き直さず、その場で掛け算するだけなので待ち時間ゼロ。 */
+    .qty-row { grid-column:1 / -1; display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .qty-lbl { font-size:14px; font-weight:700; color:var(--text-muted); }
+    .qty-btn { padding:7px 13px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-family:inherit; font-size:15px; font-weight:800; color:#5C564F; cursor:pointer; transition:all 0.15s; }
+    .qty-btn:active { background:var(--primary-soft); }
+    .qty-btn.on { background:var(--primary); border-color:var(--primary-dark); color:#fff; }
+    .qty-tag { font-size:14px; font-weight:800; color:var(--primary); }
     .food-cnt { text-align:right; }
     .food-cnt .n { font-size:20px; font-weight:800; color:var(--b-color); line-height:1; font-variant-numeric:tabular-nums; }
     .food-cnt .n.zero { color:var(--a-color); }
@@ -3241,7 +3249,7 @@ function renderResults(mealId) {
         ${(item.previewSrc && item.note && item.note.trim()) ? `<div class="text-entry-recap">📝 補足：${esc(item.note)}</div>` : ''}
         ${item.result.advice ? `<div class="advice-row"><div class="icon">💡</div><p>${esc(item.result.advice)}</p></div>` : ''}
         <div class="food-list-wrap">
-          ${buildFoodRows(item.result.foods)}
+          ${buildFoodRows(item.result.foods, mealId, item.id)}
         </div>
         ${(item.previewSrc || (item.text && item.text.trim())) ? `
         <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
@@ -3717,8 +3725,17 @@ function showError(mealId, msg) {
 // ═══════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════
-function buildFoodRows(foods) {
-  return (foods||[]).map(food => {
+// 量の直しを出す倍率。うどん2玉・肉200g（標準100g）のような
+// 「写真では分からない量」を、その場のタップ1回で直せるようにする。
+const QTY_FACTORS = [
+  { f: 0.5, label: '半分' },
+  { f: 1.5, label: '1.5倍' },
+  { f: 2,   label: '2倍' },
+];
+
+function buildFoodRows(foods, mealId, itemId) {
+  const canFix = mealId !== undefined && itemId !== undefined;
+  return (foods||[]).map((food, fi) => {
     const isB = food.category === 'B' || food.category === 'Good B' || food.category === 'グッドB';
     const badgeClass = isB ? 'badge-b' : 'badge-a';
     const badgeLabel = isB ? 'B食材' : 'A食材';
@@ -3740,8 +3757,70 @@ function buildFoodRows(foods) {
           <div class="n ${!isB?'zero':''}">${isB ? fmtCount(food.b_count) : '−'}</div>
           <div class="u">${unitLabel}</div>
         </div>
+        ${canFix ? `
+        <div class="qty-row">
+          <span class="qty-lbl">量が違う？</span>
+          ${QTY_FACTORS.map(q => `
+            <button class="qty-btn ${food.qtyFactor === q.f ? 'on' : ''}"
+                    onclick="setFoodQty('${mealId}',${itemId},${fi},${q.f})">${q.label}</button>`).join('')}
+          ${food.qtyFactor ? `<span class="qty-tag">×${food.qtyFactor}に修正済み</span>` : ''}
+        </div>` : ''}
       </div>`;
   }).join('');
+}
+
+// 1品の量を「元の見積もりの◯倍」に直す。AIには聞き直さず、その場で計算する
+// （写真から2玉・200gは読み取れないため、ここを会員が直せるようにするのが一番確実）。
+// 同じボタンをもう一度押すと元に戻る。
+function setFoodQty(mealId, itemId, foodIndex, factor) {
+  const item = (state[mealId]?.items || []).find(i => i.id === itemId);
+  const food = item?.result?.foods?.[foodIndex];
+  if (!food) return;
+
+  // 最初の1回だけ、AIが出した元の値を control 用に控えておく
+  if (!food.qtyBase) {
+    food.qtyBase = {
+      kcal_per_serving: food.kcal_per_serving,
+      b_count: food.b_count,
+      protein_g: food.protein_g,
+      veg_g: food.veg_g,
+      fruit_g: food.fruit_g,
+      sweet_kcal: food.sweet_kcal,
+      amount: food.amount,
+    };
+  }
+  const next = (food.qtyFactor === factor) ? 1 : factor;   // 同じボタン＝取り消し
+  const base = food.qtyBase;
+  const scale = (v) => (typeof v === 'number' && isFinite(v)) ? v * next : v;
+
+  food.kcal_per_serving = (typeof base.kcal_per_serving === 'number')
+    ? Math.round(base.kcal_per_serving * next) : base.kcal_per_serving;
+  // Bカウントは0.5刻みに丸める（表示と日次集計の刻みに合わせる）
+  food.b_count   = Math.round((Number(base.b_count) || 0) * next * 2) / 2;
+  food.protein_g = Math.round((Number(base.protein_g) || 0) * next);
+  food.veg_g     = Math.round((Number(base.veg_g)     || 0) * next);
+  if (base.fruit_g   !== undefined) food.fruit_g   = Math.round((Number(base.fruit_g)   || 0) * next);
+  if (base.sweet_kcal !== undefined) food.sweet_kcal = Math.round((Number(base.sweet_kcal) || 0) * next);
+  food.amount = next === 1 ? base.amount
+                           : `${base.amount ? base.amount + ' ' : ''}×${next}`;
+  food.qtyFactor = next === 1 ? undefined : next;
+
+  recalcResultTotals(item.result);
+  renderResults(mealId);
+  updateDailyTotal();
+  saveState();
+}
+
+// 合計を内訳の合計に合わせ直す（サーバーの recompute_totals と同じ計算）
+function recalcResultTotals(result) {
+  const foods = (result && result.foods) || [];
+  const sum = (key) => foods.reduce((a, f) => a + (Number(f[key]) || 0), 0);
+  result.total_b_count   = Math.round(sum('b_count') * 2) / 2;
+  result.total_protein_g = Math.round(sum('protein_g'));
+  result.total_veg_g     = Math.round(sum('veg_g'));
+  result.total_fruit_g   = Math.round(sum('fruit_g'));
+  result.total_sweet_kcal = Math.round(sum('sweet_kcal'));
+  return result;
 }
 
 function fmtCount(n) {
