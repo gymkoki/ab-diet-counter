@@ -46,3 +46,47 @@ def clear_weight(uid):
             conn.commit()
         finally:
             conn.close()
+
+
+# ── 会員限定ゲート（2026-09-15〜）─────────────────────────────
+# 解析系のテストは「合言葉」を通っていない端末として実行されるため、
+# 開始日を過ぎるとゲートで弾かれて一斉に落ちてしまう。
+# 既定ではゲートを無効（開始日をはるか未来に）にしておき、
+# ゲート自体を試すテストだけが明示的に有効化する。
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _member_gate_disabled_by_default(monkeypatch):
+    monkeypatch.setattr(m, "MEMBER_GATE_START", "2099-01-01", raising=False)
+
+
+def unlock_device(uid, token="test-token"):
+    """uid の端末を「合言葉を通過済み」にする。"""
+    m.init_db()
+    ts = datetime.datetime.now(m.JST).isoformat()
+    with m._db_lock:
+        conn = m._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"DELETE FROM member_devices WHERE user_id={m.PH}", (uid,))
+            cur.execute(
+                f"INSERT INTO member_devices (user_id, token, activated_at) "
+                f"VALUES ({m.PH},{m.PH},{m.PH})", (uid, token, ts))
+            conn.commit()
+        finally:
+            conn.close()
+    return token
+
+
+def clear_devices():
+    """認証済み端末を全部消す。"""
+    m.init_db()
+    with m._db_lock:
+        conn = m._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM member_devices")
+            conn.commit()
+        finally:
+            conn.close()

@@ -684,6 +684,16 @@ def init_db():
                 value TEXT NOT NULL
             )
         """)
+        # リオールジム会員限定化（2026-09-15〜）：合言葉を入れた端末を記録する。
+        # 端末ごとに1行。token は端末が毎回の解析リクエストに付けてくる通行証。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS member_devices (
+                user_id      TEXT PRIMARY KEY,
+                token        TEXT NOT NULL,
+                activated_at TEXT NOT NULL
+            )
+        """)
+
         # 端末連携コード（デスクトップ⇔スマホで同じ記録を共有するための一時コード）
         cur.execute("""
             CREATE TABLE IF NOT EXISTS link_codes (
@@ -871,6 +881,202 @@ def _weight_gate_blocked(uid):
     if _has_recent_weight(uid):
         return None
     return jsonify({"error": WEIGHT_GATE_MESSAGE, "weight_required": True}), 403
+
+
+# ══════════════════════════════════════════════════════════════
+#  リオールジム会員限定化（オーナー指示 2026-09-14 / 開始 2026-09-15）
+#
+#  AIの解析コストが高く持続できないため、合言葉を入れた端末だけが使える形にする。
+#
+#  【設計の要点】
+#  ・画面で止めるだけでは意味がない。/analyze などは URL を直接叩けてしまうため、
+#    お金がかかる入口は必ずサーバー側で止める（ここが本丸）。
+#  ・合言葉が通った端末には通行証(token)を配り、以後はそれを見る。
+#    会員に毎回入力させない（オーナー指示：入力は端末ごとに最初の1回だけ）。
+#  ・合言葉は3桁なので総当たりが現実的。IP単位で試行回数を制限する。
+# ══════════════════════════════════════════════════════════════
+# この日（JST）からゲートを有効にする。開始前は誰も止めない。
+MEMBER_GATE_START = os.environ.get("MEMBER_GATE_START", "2026-09-15")
+# 合言葉の初期値。運用中はダッシュボードから変更でき、その値が優先される。
+MEMBER_PASSWORD_DEFAULT = os.environ.get("MEMBER_PASSWORD", "860")
+MEMBER_PASSWORD_KEY = "member_password"
+
+MEMBER_GATE_MESSAGE = (
+    "9月15日（火）から、ABダイエットはリオールジムの会員様限定のサービスになりました。"
+    "リオールジムからお送りしたメールに記載のパスワードを入力してください。"
+)
+
+# 合言葉が3桁（1000通り）しかないため、総当たり対策を必ず入れる。
+# 同一IPから MEMBER_UNLOCK_MAX_FAILS 回失敗したら MEMBER_UNLOCK_LOCK_SEC 秒ロックする。
+MEMBER_UNLOCK_MAX_FAILS  = 8
+MEMBER_UNLOCK_WINDOW_SEC = 600     # 失敗を数える窓（10分）
+MEMBER_UNLOCK_LOCK_SEC   = 900     # ロック時間（15分）
+_unlock_fails = {}                 # ip -> [失敗時刻(epoch), ...]
+_unlock_fails_lock = threading.Lock()
+
+
+def _member_gate_active(today=None):
+    """今日がゲート開始日以降か。日付の指定が壊れていたら「無効」に倒す
+    （設定ミスで会員全員を締め出す方が事故として重いため）。"""
+    try:
+        start = datetime.date.fromisoformat(MEMBER_GATE_START)
+    except ValueError:
+        app.logger.warning("MEMBER_GATE_START が不正です: %r", MEMBER_GATE_START)
+        return False
+    today = today or datetime.datetime.now(JST).date()
+    return today >= start
+
+
+def _member_password():
+    """現在の合言葉。ダッシュボードで変更されていればそれを使う。
+
+    ※ハッシュ化していないのは、オーナーが会員へ案内するために
+      画面で読み返す必要があるため（もともとメールで平文配布する共有コード）。
+
+    【重要】DBが読めなくても既定値で必ず答えを返す。ここで例外を上げると
+    /api/unlock が落ち、会員が誰ひとり認証できなくなる（アプリが完全に使えなくなる）。"""
+    try:
+        saved = _get_setting(MEMBER_PASSWORD_KEY, "")
+    except Exception as e:
+        app.logger.warning("member password lookup failed (using default): %s", e)
+        saved = ""
+    return (saved or MEMBER_PASSWORD_DEFAULT).strip()
+
+
+def _client_ip():
+    fwd = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return fwd or (request.remote_addr or "unknown")
+
+
+def _unlock_locked_for(ip):
+    """ロック中なら残り秒数、そうでなければ 0。"""
+    now = time.time()
+    with _unlock_fails_lock:
+        fails = [t for t in _unlock_fails.get(ip, []) if now - t < MEMBER_UNLOCK_WINDOW_SEC]
+        _unlock_fails[ip] = fails
+        if len(fails) >= MEMBER_UNLOCK_MAX_FAILS:
+            return int(MEMBER_UNLOCK_LOCK_SEC - (now - fails[-1]))
+    return 0
+
+
+def _record_unlock_fail(ip):
+    with _unlock_fails_lock:
+        _unlock_fails.setdefault(ip, []).append(time.time())
+
+
+def _clear_unlock_fails(ip):
+    with _unlock_fails_lock:
+        _unlock_fails.pop(ip, None)
+
+
+def _device_token(uid):
+    """その端末の通行証。未登録なら None。DB障害時も None を返さず例外は握る。"""
+    uid = (uid or "").strip()
+    if not uid:
+        return None
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT token FROM member_devices WHERE user_id={PH}", (uid,))
+            row = cur.fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.warning("member device lookup failed: %s", e)
+        raise
+
+
+def _is_unlocked(uid, token):
+    """この端末は合言葉を通過済みか。
+
+    【重要】DBが一時的に落ちているときは True（＝止めない）。
+    体重ゲートと同じ考え方で、判定できないことを理由に会員を締め出さない。"""
+    token = (token or "").strip()
+    if not token:
+        return False
+    try:
+        saved = _device_token(uid)
+    except Exception:
+        return True      # DB障害。通す。
+    return bool(saved) and secrets.compare_digest(saved, token)
+
+
+def _member_gate_blocked(uid, token=None):
+    """合言葉が未入力の端末なら (JSONレスポンス, 403) を返す。問題なければ None。
+
+    画面側は unlock_required を見て、合言葉の入力画面を出す。"""
+    if not _member_gate_active():
+        return None
+    if token is None:
+        token = request.headers.get("X-Device-Token", "")
+    if _is_unlocked(uid, token):
+        return None
+    return jsonify({"error": MEMBER_GATE_MESSAGE, "unlock_required": True}), 403
+
+
+@app.route("/api/member-status")
+def member_status():
+    """画面側が起動時に見る。ゲートが有効か／この端末が通過済みかを返す。"""
+    uid   = (request.args.get("user_id") or "").strip()
+    token = (request.args.get("token") or request.headers.get("X-Device-Token") or "").strip()
+    return jsonify({
+        "gate_active": _member_gate_active(),
+        "unlocked":    _is_unlocked(uid, token),
+        "start_date":  MEMBER_GATE_START,
+    })
+
+
+@app.route("/api/unlock", methods=["POST"])
+def member_unlock():
+    """合言葉を確認し、正しければこの端末に通行証を発行する。"""
+    data = request.get_json(silent=True) or {}
+    uid   = (data.get("user_id") or "").strip()
+    given = str(data.get("password") or "").strip()
+    ip = _client_ip()
+
+    locked = _unlock_locked_for(ip)
+    if locked > 0:
+        return jsonify({
+            "error": f"入力を{MEMBER_UNLOCK_MAX_FAILS}回間違えたため、"
+                     f"しばらく入力できません。約{max(1, locked // 60)}分後にもう一度お試しください。",
+            "locked_sec": locked,
+        }), 429
+
+    if not uid:
+        return jsonify({"error": "端末を識別できませんでした。アプリを開き直してください。"}), 400
+
+    if not given or not secrets.compare_digest(given, _member_password()):
+        _record_unlock_fail(ip)
+        left = max(0, MEMBER_UNLOCK_MAX_FAILS - len(_unlock_fails.get(ip, [])))
+        return jsonify({
+            "error": "パスワードが違います。リオールジムからお送りしたメールをご確認ください。",
+            "attempts_left": left,
+        }), 401
+
+    token = secrets.token_urlsafe(24)
+    ts = datetime.datetime.now(JST).isoformat()
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(f"DELETE FROM member_devices WHERE user_id={PH}", (uid,))
+                cur.execute(
+                    f"INSERT INTO member_devices (user_id, token, activated_at) "
+                    f"VALUES ({PH},{PH},{PH})",
+                    (uid, token, ts)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.error("unlock save failed: %s", e)
+        return jsonify({"error": "登録に失敗しました。時間をおいてお試しください。"}), 503
+
+    _clear_unlock_fails(ip)
+    return jsonify({"ok": True, "token": token})
 
 
 def _save_user_goal(uid, gender, goal):
@@ -4336,6 +4542,52 @@ def _credit_base_setting():
         return None, None
 
 
+@app.route("/api/admin/member-gate", methods=["GET", "POST"])
+@_admin_required
+def admin_member_gate():
+    """合言葉の確認・変更と、認証済み端末数の確認。"""
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        new = str(data.get("password") or "").strip()
+        if len(new) < 3:
+            return jsonify({"error": "パスワードは3文字以上にしてください"}), 400
+        _set_setting(MEMBER_PASSWORD_KEY, new)
+        return jsonify({"ok": True, "password": new})
+
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM member_devices")
+            devices = int(cur.fetchone()[0])
+        finally:
+            conn.close()
+    except Exception:
+        devices = None
+    return jsonify({
+        "password":    _member_password(),
+        "gate_active": _member_gate_active(),
+        "start_date":  MEMBER_GATE_START,
+        "devices":     devices,
+    })
+
+
+@app.route("/api/admin/member-gate/revoke-all", methods=["POST"])
+@_admin_required
+def admin_member_gate_revoke_all():
+    """全端末の通行証を無効にする（合言葉が外部に広まったときの手当て）。
+    次に使うときに全員がもう一度入力することになるため、実行前に画面側で確認する。"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM member_devices")
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/credit-base", methods=["GET", "POST"])
 @_admin_required
 def admin_credit_base():
@@ -5714,6 +5966,12 @@ def get_daily_meals():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    # 【最優先】リオールジム会員限定（2026-09-15〜）。
+    # APIキーの有無より先に確認する。ここを通さないとAIを呼ばない＝課金しない。
+    gate = _member_gate_blocked(request.form.get("user_id", ""))
+    if gate:
+        return gate
+
     client = get_client()
     if client is None:
         return jsonify({"error": "APIキーが設定されていません。設定画面から登録してください。"}), 401
@@ -5826,6 +6084,12 @@ def analyze():
 
 @app.route("/reanalyze", methods=["POST"])
 def reanalyze():
+    # 【最優先】リオールジム会員限定（2026-09-15〜）。
+    # APIキーの有無より先に確認する。ここを通さないとAIを呼ばない＝課金しない。
+    gate = _member_gate_blocked(request.form.get("user_id", ""))
+    if gate:
+        return gate
+
     client = get_client()
     if client is None:
         return jsonify({"error": "APIキーが設定されていません。"}), 401
@@ -5991,6 +6255,12 @@ def reanalyze():
 @app.route("/analyze-text", methods=["POST"])
 def analyze_text():
     """写真を撮り忘れたとき用：食事内容を文章で受け取り、Bカウントを推定する。"""
+    # 【最優先】リオールジム会員限定（2026-09-15〜）。
+    # APIキーの有無より先に確認する。ここを通さないとAIを呼ばない＝課金しない。
+    gate = _member_gate_blocked(request.form.get("user_id", ""))
+    if gate:
+        return gate
+
     client = get_client()
     if client is None:
         return jsonify({"error": "APIキーが設定されていません。設定画面から登録してください。"}), 401
@@ -6085,6 +6355,12 @@ def estimate_nutrition():
     """食事名（文章）から、その食事のタンパク質量・野菜量だけを推定して返す。
     「コピーご飯」など写真なし・Bカウントだけで登録された食事に、後から
     タンパク質・野菜を補うために使う。Bカウントには一切影響しない。"""
+    # 【最優先】リオールジム会員限定（2026-09-15〜）。
+    # APIキーの有無より先に確認する。ここを通さないとAIを呼ばない＝課金しない。
+    gate = _member_gate_blocked(request.form.get("user_id", ""))
+    if gate:
+        return gate
+
     client = get_client()
     if client is None:
         return jsonify({"error": "APIキーが設定されていません。"}), 401
