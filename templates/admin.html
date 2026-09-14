@@ -417,6 +417,28 @@
 
   <!-- サーバーの状態（アプリが遅いときの原因切り分け用） -->
   <div class="card" style="margin-bottom:20px">
+    <h2>🔑 会員限定パスワード</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      2026年9月15日から、アプリはこのパスワードを入力した端末だけが使えます。
+      入力は<b>端末ごとに1回だけ</b>で、以降は自動で通ります。
+      <b>写真解析などAIを使う処理はサーバー側でも止めている</b>ので、画面を回避しても解析はできません。
+    </div>
+    <div id="member-gate-now" style="font-size:13px;color:#374151;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="member-gate-pw" maxlength="16"
+             style="width:160px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;letter-spacing:0.1em">
+      <button class="apikey-save" style="width:auto;padding:8px 18px;font-size:13px" onclick="saveMemberPassword()">変更して保存</button>
+      <button class="vip-btn" onclick="revokeAllDevices()">全端末の認証を解除</button>
+    </div>
+    <div id="member-gate-status" style="font-size:13px;margin-top:8px"></div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:8px;line-height:1.6">
+      ※「全端末の認証を解除」は、パスワードが外部に広まってしまったときに使います。
+      押すと<b>全会員がもう一度入力</b>することになるため、先にパスワードを変更してから実行してください。
+    </div>
+  </div>
+
+  <!-- クレジット残高の基準 -->
+  <div class="card" style="margin-bottom:20px">
     <h2>💳 クレジット残高の基準</h2>
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       Anthropic には「残高を返すAPI」がありません。
@@ -1341,6 +1363,59 @@
     await loadCoachMessages();
   }
 
+  // 会員限定パスワード（2026-09-15〜）
+  async function loadMemberGate() {
+    const now = document.getElementById('member-gate-now');
+    if (!now) return;
+    try {
+      const d = await (await fetch('/api/admin/member-gate')).json();
+      const state = d.gate_active
+        ? '<span style="color:#065F46;font-weight:800">稼働中</span>'
+        : `<span style="color:#B45309;font-weight:800">${escapeHtml(d.start_date)} から開始</span>`;
+      now.innerHTML = `状態：${state}　／　現在のパスワード：<b style="font-size:15px">${escapeHtml(d.password)}</b>`
+        + `　／　認証済みの端末：<b>${d.devices == null ? '—' : d.devices}</b> 台`;
+      const inp = document.getElementById('member-gate-pw');
+      if (inp && !inp.value) inp.value = d.password;
+    } catch (e) {
+      now.textContent = '読み込みに失敗しました';
+    }
+  }
+
+  async function saveMemberPassword() {
+    const st = document.getElementById('member-gate-status');
+    const pw = document.getElementById('member-gate-pw').value.trim();
+    if (!pw) { st.style.color = '#DC2626'; st.textContent = '⚠️ パスワードを入力してください'; return; }
+    if (!confirm(`パスワードを「${pw}」に変更します。\n\n※すでに認証済みの端末はそのまま使えます。\n新しく認証する方にはこのパスワードを案内してください。`)) return;
+    try {
+      const r = await fetch('/api/admin/member-gate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      const d = await r.json();
+      if (!r.ok) { st.style.color = '#DC2626'; st.textContent = '⚠️ ' + (d.error || '保存に失敗しました'); return; }
+      st.style.color = '#065F46';
+      st.textContent = '✅ 変更しました。';
+      await loadMemberGate();
+    } catch (e) {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 通信エラーが発生しました';
+    }
+  }
+
+  async function revokeAllDevices() {
+    const st = document.getElementById('member-gate-status');
+    if (!confirm('認証済みの全端末を解除します。\n\n会員全員が次に使うときにパスワードの再入力が必要になります。\n本当によろしいですか？')) return;
+    if (!confirm('本当に実行しますか？（全会員に再入力が発生します）')) return;
+    try {
+      const r = await fetch('/api/admin/member-gate/revoke-all', { method: 'POST' });
+      if (!r.ok) { st.style.color = '#DC2626'; st.textContent = '⚠️ 解除に失敗しました'; return; }
+      st.style.color = '#065F46';
+      st.textContent = '✅ 全端末の認証を解除しました。';
+      await loadMemberGate();
+    } catch (e) {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 通信エラーが発生しました';
+    }
+  }
+
   // クレジット残高の基準（Console で見た残高を一度だけ登録してもらう）
   async function loadCreditBase() {
     const now = document.getElementById('credit-base-now');
@@ -1495,7 +1570,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth(), loadCreditBase()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth(), loadCreditBase(), loadMemberGate()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
