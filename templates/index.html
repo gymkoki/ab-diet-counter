@@ -1222,26 +1222,35 @@
   <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
    <div class="modal-scroll">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.32</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.33</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:12px;padding:12px 14px;margin-bottom:14px">
-        <b style="color:#B4460F">9月15日（火）から、リオールジムの会員様限定のサービスになります。</b>
+        <b style="color:#B4460F">量が違うときは、ボタンをポチポチ押すだけで直せるようになりました。</b>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🙏</span>
-        <span>ABダイエットアプリは多くの方にご利用いただいておりますが、<b>AIの解析コストが高く</b>、このままだと持続可能性がないためです。</span>
+        <span style="font-size:20px;flex-shrink:0">🍜</span>
+        <span>写真だけでは「うどんが<b>1玉か2玉か</b>」「お肉が<b>100gか200gか</b>」までは分かりません。AIは標準の1人前として計算しています。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🔑</span>
-        <span><b>9月11日（金）か12日（土）</b>に、リオールジムの会員様向けにメーリスをお送りします。そこに記載されている<b>パスワードをアプリ起動時に一度入力</b>していただければ、引き続きご利用いただけます。</span>
+        <span style="font-size:20px;flex-shrink:0">👆</span>
+        <span>そこで解析結果の食材ごとに、<b>「量が違う？ 半分／1.5倍／2倍」</b>のボタンを付けました。</span>
+      </div>
+      <div style="background:var(--bg);border-radius:12px;padding:10px 12px;margin-top:12px">
+        <div class="qty-row" style="margin-top:0">
+          <span class="qty-lbl">量が違う？</span>
+          <span class="qty-btn">半分</span>
+          <span class="qty-btn">1.5倍</span>
+          <span class="qty-btn on">2倍</span>
+          <span class="qty-tag">×2に修正済み</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">⚡</span>
+        <span>押すだけで<b>カロリー・Bカウント・タンパク質・野菜</b>がその場で計算し直され、今日のB合計にもすぐ反映されます。AIに聞き直さないので<b>待ち時間はありません</b>。同じボタンをもう一度押せば元に戻ります。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
         <span style="font-size:20px;flex-shrink:0">✅</span>
-        <span>入力は<b>お使いの端末で最初の1回だけ</b>です。2回目以降は今までどおりお使いいただけます。</span>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🙇</span>
-        <span>お手数をおかけしますが、ご理解いただけますと幸いです。</span>
+        <span><b>大盛り・2玉・おかわり</b>のときは、ぜひ押してください。ここが合うと記録の精度がぐっと上がります。<b>おすすめの機能です。</b></span>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -5495,7 +5504,7 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v34';
+const NOTICE_KEY = 'ab-diet-notice-v35';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
