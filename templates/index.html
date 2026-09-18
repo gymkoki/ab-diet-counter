@@ -1662,7 +1662,7 @@ async function backfillCharaLog() {
         });
         if (count === 0) continue;
         foodTotal += daySweetBonusB(allItems);   // お菓子の1日累積ルール（+1）を反映
-        setCharaLogEntry(date, scoreFromTotals(foodTotal, protein, veg, getExBCountForDate(date)).score);
+        setCharaLogEntry(date, scoreFromTotals(foodTotal, protein, veg, getExBCountForDate(date), count).score);
         submitDailyB(blog[date], date);   // サーバーにも保存して他の端末のカレンダーにも出す
         changed = true;
       } catch(e) {}
@@ -1845,7 +1845,7 @@ function flushPreviousDayIfNeeded() {
     // キャラカレンダー用のスコアが残っていない日は、ここで計算して補完する
     // （前日中にスコア保存が動かなかった場合の安全網）
     if (getCharaLog()[savedDate] == null) {
-      setCharaLogEntry(savedDate, scoreFromTotals(foodTotal, protein, veg, exBc).score);
+      setCharaLogEntry(savedDate, scoreFromTotals(foodTotal, protein, veg, exBc, allItems.length).score);
     }
     submitDailyB(net, savedDate);
   }
@@ -2061,7 +2061,19 @@ function hideGoalCelebrate() {
 // ═══════════════════════════════════════════
 // 1日の合計値（食事B・タンパク質・野菜・運動B）からスコアを計算する共通処理。
 // 過去日の復元（キャラカレンダーの補完）でも同じ計算を使う。
-function scoreFromTotals(foodTotal, protein, veg, exBc) {
+//
+// 危機管鳥の上限点（0〜29点）。ここを超えると成果フンバになる。
+const CHARA_KIKI_MAX_SCORE = 29;
+// 1日にこれ未満の食事しか記録が無い日は、スコアを危機管鳥どまりにする。
+// 経緯（オーナー指示 2026-09）：1日1食しか記録が無い人は、たいてい写真が
+// うまく上がっていないだけで、実際にはもっと食べている。そのまま計算すると
+// 見かけの点数が高くなり（キーラン君・成果フンバ）、記録できていないことに
+// 本人も運営も気づけないため、危機管鳥だけを出して記録を促す。
+// ※判定するのは「記録できた食事の数」であって、写真の枚数ではない。
+//   写真が1枚でも、文章などで2食以上記録できていれば通常どおり計算する。
+const MIN_MEALS_FOR_FULL_SCORE = 2;
+
+function scoreFromTotals(foodTotal, protein, veg, exBc, mealCount = null) {
   const net = Math.max(0, foodTotal - (exBc || 0));
 
   // タンパク質：目標下限に対する充足率（体重未設定は80gで概算）
@@ -2086,8 +2098,13 @@ function scoreFromTotals(foodTotal, protein, veg, exBc) {
   let score = Math.round((bPct + pPct + vPct) / 3);
   // Bカウントは最重要指標：目標をオーバーした日は、タンパク質・野菜が
   // 満点でも29点を上限にして、キャラが危機管鳥（〜29点）になるようにする。
-  if (bOver) score = Math.min(score, 29);
-  return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked, bOver };
+  if (bOver) score = Math.min(score, CHARA_KIKI_MAX_SCORE);
+  // 記録が1食だけの日は、写真が上がりきっていない可能性が高い。
+  // 見かけの高得点でごまかさず、危機管鳥だけを出して記録を促す。
+  const tooFewMeals = (mealCount != null && mealCount > 0
+                       && mealCount < MIN_MEALS_FOR_FULL_SCORE);
+  if (tooFewMeals) score = Math.min(score, CHARA_KIKI_MAX_SCORE);
+  return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked, bOver, tooFewMeals };
 }
 
 function calcCharaScore() {
@@ -2103,7 +2120,7 @@ function calcCharaScore() {
   });
   foodTotal += daySweetBonusB(allItems);   // お菓子の1日累積ルール（+1）を反映
   const exBc = getExBCountForDate(currentDate());
-  const s = scoreFromTotals(foodTotal, protein, veg, exBc);
+  const s = scoreFromTotals(foodTotal, protein, veg, exBc, count);
   s.count = count;
   return s;
 }
@@ -2111,6 +2128,9 @@ function calcCharaScore() {
 // 点数を上げるための一言アドバイス（いちばん効く1つだけ）
 function charaAdvice(s) {
   if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
+  if (s.tooFewMeals) {
+    return '記録が1食分しかありません。写真がうまく上がっていないことがあるので、記録できていない食事があれば追加してください。2食以上記録できれば、通常どおりの採点になります📷';
+  }
   if (s.bLocked) {
     return 'タンパク質と野菜がまだ0%です。どちらかが増えるまでBカウントの達成率は加点されません。まずはタンパク質か野菜を1品プラスしましょう🥩🥗';
   }
