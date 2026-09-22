@@ -2964,6 +2964,137 @@ def _collect_cut_member_stats():
     return members
 
 
+# ── デイリーレポートに載せる「実際の食事写真」 ────────────────────
+# 数字やグラフだけでは何を食べているかが見えないため、減量が順調な会員と
+# 進んでいない会員の写真を並べて、違いを目で比べられるようにする（オーナー指示 2026-09-22）。
+REPORT_PHOTO_MEMBERS    = 3        # 各グループ（順調／停滞）から選ぶ人数
+REPORT_PHOTO_PER_MEMBER = 3        # 1人あたりに載せる写真の枚数（メール幅にちょうど3枚並ぶ）
+REPORT_PHOTO_DAYS       = 7        # 何日前までの写真を候補にするか
+# 1枚あたりのデータ量の上限。メールが重くなりすぎると配信が失敗したり
+# Gmailに途中で切られたりするため、極端に大きい写真は最初から除く。
+REPORT_PHOTO_MAX_CHARS  = 600_000
+# 「順調」「停滞」の線引き（直近30日の体重変化kg）。目標ペースは -1.0kg/30日。
+REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下しか減っていない＝順調
+REPORT_PHOTO_BAD_MIN    = 0.0      # これ以上＝減っていない・増えている
+
+
+def _member_report_photos(cur, uid, per_member, since_date):
+    """1人ぶんの直近の食事写真を新しい順に取り出す（写真が無い記録は飛ばす）。"""
+    cur.execute(
+        f"""SELECT date, payload FROM daily_meals
+           WHERE user_id={PH} AND date>={PH} ORDER BY date DESC""",
+        (uid, since_date),
+    )
+    MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+    photos = []
+    for dt, payload_str in cur.fetchall():
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        # その日のB合計（写真の下に添えると「この食事でこの日はB何回か」が分かる）
+        day_b = 0.0
+        day_items = []
+        for key in MEAL_KEYS:
+            sec = payload.get(key)
+            if not isinstance(sec, dict):
+                continue
+            for item in (sec.get("items") or []):
+                if not isinstance(item, dict):
+                    continue
+                res = item.get("result")
+                if isinstance(res, dict):
+                    b = res.get("total_b_count")
+                    if isinstance(b, (int, float)):
+                        day_b += float(b)
+                src = item.get("previewSrc")
+                if isinstance(src, str) and src.startswith("data:image") and len(src) <= REPORT_PHOTO_MAX_CHARS:
+                    day_items.append((src, res if isinstance(res, dict) else {}))
+        for src, res in day_items:
+            foods = [f.get("name") for f in (res.get("foods") or [])
+                     if isinstance(f, dict) and f.get("name")]
+            photos.append({
+                "date": dt,
+                "src": src,
+                "b_count": res.get("total_b_count"),
+                "protein_g": res.get("total_protein_g"),
+                "veg_g": res.get("total_veg_g"),
+                "foods": "・".join(str(n) for n in foods[:4]),
+                "day_b_count": round(day_b, 1),
+            })
+            if len(photos) >= per_member:
+                return photos
+    return photos
+
+
+@app.route("/api/admin/report-photos")
+@_admin_required
+def admin_report_photos():
+    """【管理者専用】デイリーレポート用に、減量が順調な会員と進んでいない会員の
+    実際の食事写真を数枚ずつ返す。
+
+    ※このAPIは管理画面・レポート専用。会員向けアプリ(index.html)からは決して呼ばない。
+      他の会員の食事写真が含まれるため、認証なしでは 404 を返す（_admin_required）。
+    ※2週間以上まったく記録がない会員は対象から外す（オーナー方針 2026-09-09）。"""
+    try:
+        per_group = min(5, max(1, int(request.args.get("members", REPORT_PHOTO_MEMBERS))))
+    except (TypeError, ValueError):
+        per_group = REPORT_PHOTO_MEMBERS
+    try:
+        per_member = min(4, max(1, int(request.args.get("photos", REPORT_PHOTO_PER_MEMBER))))
+    except (TypeError, ValueError):
+        per_member = REPORT_PHOTO_PER_MEMBER
+
+    members = _active_members(_collect_cut_member_stats())
+    with_change = [m for m in members if isinstance(m.get("change_30d_kg"), (int, float))]
+    # 順調＝よく減っている順、停滞＝増えている順に並べ、それぞれ上位から写真を探す
+    good_pool = sorted([m for m in with_change if m["change_30d_kg"] <= REPORT_PHOTO_GOOD_MAX],
+                       key=lambda m: m["change_30d_kg"])
+    bad_pool  = sorted([m for m in with_change if m["change_30d_kg"] >= REPORT_PHOTO_BAD_MIN],
+                       key=lambda m: -m["change_30d_kg"])
+
+    since_date = (datetime.datetime.now(JST) - datetime.timedelta(days=REPORT_PHOTO_DAYS)).strftime("%Y-%m-%d")
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+
+        def _pick(pool):
+            """写真が実際にある会員だけを、上位から必要人数ぶん選ぶ。"""
+            picked = []
+            for mem in pool:
+                if len(picked) >= per_group:
+                    break
+                photos = _member_report_photos(cur, mem["uid"], per_member, since_date)
+                if not photos:
+                    continue
+                picked.append({
+                    "name": (mem.get("name") or "").strip()[:12] or f"会員{mem['uid'][:4]}",
+                    "user_id_short": mem["user_id_short"],
+                    "change_30d_kg": mem["change_30d_kg"],
+                    "avg_b_7d": mem.get("avg_b_7d"),
+                    "b_target": mem.get("b_target"),
+                    "latest_weight_kg": mem.get("latest_weight_kg"),
+                    "photos": photos,
+                })
+            return picked
+
+        good = _pick(good_pool)
+        bad  = _pick(bad_pool)
+    finally:
+        conn.close()
+
+    return jsonify({
+        "good": good,
+        "bad": bad,
+        "photo_days": REPORT_PHOTO_DAYS,
+        "good_threshold_kg": REPORT_PHOTO_GOOD_MAX,
+        "bad_threshold_kg": REPORT_PHOTO_BAD_MIN,
+    })
+
+
 @app.route("/api/admin/attention-flags")
 @_admin_required
 def admin_attention_flags():

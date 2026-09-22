@@ -7,6 +7,7 @@ import os
 import io
 import json
 import time
+import base64
 import datetime
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -24,6 +25,10 @@ try:
     import japanize_matplotlib  # noqa: F401 — 日本語フォント自動設定
 except ImportError:
     pass
+try:
+    from PIL import Image       # 会員の食事写真をメール用に縮小するのに使う
+except ImportError:
+    Image = None
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -812,7 +817,161 @@ def fetch_coach_advice():
     return None
 
 
-def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -> str:
+def fetch_report_photos():
+    """減量が順調な会員／進んでいない会員の、実際の食事写真を取得する。
+    失敗してもレポート本体は送る（写真セクションだけ省略）。"""
+    for attempt in range(2):
+        try:
+            r = requests.get(
+                f"{APP_URL}/api/admin/report-photos",
+                auth=(ADMIN_USER, ADMIN_PASS),
+                timeout=90,   # 写真（base64）を含むぶん重い
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"report-photos retry {attempt + 1}: {e}")
+            time.sleep(5)
+    return None
+
+
+def _decode_photo(data_uri: str, max_side: int = 300):
+    """data:image のbase64をJPEGバイト列に戻し、メール用に縮小する。
+    端末から届く写真はそのままだと1枚数百KBあり、10枚も貼るとメールが重すぎて
+    配信に失敗する。並べて見比べるだけなら長辺300pxで十分。"""
+    try:
+        b64 = data_uri.split(",", 1)[1]
+    except IndexError:
+        return None
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return None
+    if Image is None:                       # Pillowが無い環境ではそのまま使う
+        return raw
+    try:
+        im = Image.open(io.BytesIO(raw))
+        im = im.convert("RGB")
+        im.thumbnail((max_side, max_side))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=72, optimize=True)
+        return buf.getvalue()
+    except Exception:
+        return raw
+
+
+def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool) -> str:
+    """会員1人ぶんの写真カード（名前・体重変化・写真数枚）を組み立てる。"""
+    color = "#10B981" if good else "#EF4444"
+    ch = member.get("change_30d_kg")
+    if isinstance(ch, (int, float)):
+        change_str = f"{ch:+.1f} kg" if ch else "±0.0 kg"
+    else:
+        change_str = "—"
+    avg_b = member.get("avg_b_7d")
+    target = member.get("b_target")
+    b_str = f"平均 {avg_b:.1f} B/日" if isinstance(avg_b, (int, float)) else "Bカウント —"
+    if isinstance(target, (int, float)):
+        b_str += f"（目標 {target:.0f} 以内）"
+
+    imgs = ""
+    for i, ph in enumerate(member.get("photos") or []):
+        png = _decode_photo(ph.get("src") or "")
+        if not png:
+            continue
+        cid = f"{cid_prefix}_{i}"
+        charts[cid] = png
+        b = ph.get("b_count")
+        b_lbl = f"B {b:g}" if isinstance(b, (int, float)) else "B —"
+        p = ph.get("protein_g")
+        v = ph.get("veg_g")
+        sub = " / ".join(x for x in [
+            b_lbl,
+            f"P {p:g}g" if isinstance(p, (int, float)) else "",
+            f"野菜 {v:g}g" if isinstance(v, (int, float)) else "",
+        ] if x)
+        foods = (ph.get("foods") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        day_b = ph.get("day_b_count")
+        day_lbl = f"　この日の合計 B{day_b:g}" if isinstance(day_b, (int, float)) else ""
+        imgs += f"""
+        <td style="padding:0 6px 0 0;vertical-align:top;width:150px">
+          <img src="cid:{cid}" alt="meal" style="width:150px;height:150px;object-fit:cover;border-radius:8px;display:block;border:1px solid #E5E7EB">
+          <div style="font-size:10px;color:#6B7280;margin-top:4px;line-height:1.5">
+            {ph.get('date', '')}{day_lbl}<br>
+            <b style="color:{color}">{sub}</b><br>
+            <span style="color:#9CA3AF">{foods}</span>
+          </div>
+        </td>"""
+    if not imgs:
+        return ""
+
+    name = str(member.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return f"""
+    <div style="margin-bottom:14px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-left:4px solid {color};border-radius:8px">
+      <div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:8px">
+        {name}
+        <span style="color:{color};margin-left:8px">30日 {change_str}</span>
+        <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
+      </div>
+      <table cellpadding="0" cellspacing="0" border="0"><tr>{imgs}</tr></table>
+    </div>"""
+
+
+def _photo_section(photos: dict, charts: dict) -> str:
+    """「実際の食事写真」セクション。数字よりも先に、目で見て違いが分かるように最上部へ置く。
+    写真が1枚も取れなかった日は、セクションごと省略する。"""
+    if not photos:
+        return ""
+    good = photos.get("good") or []
+    bad  = photos.get("bad") or []
+    days = photos.get("photo_days", 7)
+
+    good_html = "".join(_photo_card(m, f"ph_good{i}", charts, True) for i, m in enumerate(good))
+    bad_html  = "".join(_photo_card(m, f"ph_bad{i}",  charts, False) for i, m in enumerate(bad))
+    if not good_html and not bad_html:
+        return ""
+
+    blocks = ""
+    if good_html:
+        blocks += f"""
+      <div style="margin-bottom:6px">
+        <div style="font-size:13px;font-weight:800;color:#059669;margin-bottom:8px">
+          ✅ 減量が順調な会員の食事（直近{days}日）
+        </div>
+        {good_html}
+      </div>"""
+    else:
+        blocks += """
+      <div style="font-size:12px;color:#9CA3AF;margin-bottom:10px">
+        減量が順調な会員の写真は、今回は見つかりませんでした。
+      </div>"""
+    if bad_html:
+        blocks += f"""
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#DC2626;margin:14px 0 8px">
+          ⚠️ 減量が進んでいない会員の食事（直近{days}日）
+        </div>
+        {bad_html}
+      </div>"""
+    else:
+        blocks += """
+      <div style="font-size:12px;color:#9CA3AF;margin-top:10px">
+        減量が進んでいない会員の写真は、今回は見つかりませんでした。
+      </div>"""
+
+    return f"""
+    <div class="section" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:16px 18px">
+      <h2>🍽️ 実際の食事写真｜順調な人 vs 進んでいない人</h2>
+      <div style="font-size:11px;color:#9CA3AF;line-height:1.6;margin-bottom:12px">
+        直近30日の体重変化で分けた、減量希望の会員の実際の記録です。
+        <b>この内容は会員の食事写真を含むため、オーナー限定</b>（このメールの宛先のみ）です。
+      </div>
+      {blocks}
+    </div>
+    """
+
+
+def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, photo_section="") -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
@@ -909,6 +1068,9 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None) -
 
     <!-- 最上部：昨日の推定コストとクレジット残高（オーナー指示 2026-08） -->
     {credit_section}
+
+    <!-- 実際の食事写真（オーナー指示 2026-09-22：文章より先に、目で見て分かるように） -->
+    {photo_section}
 
     {_coach_section(coach_advice)}
     {_dev_proposal_section(dev_proposals)}
@@ -1145,10 +1307,23 @@ def main():
     coach_advice = fetch_coach_advice()
     print(f"  coach advice: {'OK (' + str(len(coach_advice)) + ' chars)' if coach_advice else 'skipped'}")
 
+    print("Fetching member meal photos...")
+    photos = fetch_report_photos()
+    photo_html = ""
+    if photos:
+        print(f"  photos: 順調 {len(photos.get('good') or [])}名 / 停滞 {len(photos.get('bad') or [])}名")
+        try:
+            photo_html = _photo_section(photos, charts)
+        except Exception as e:   # noqa: BLE001 — 写真の組み立て失敗でレポートを落とさない
+            print(f"  photo section failed: {e}")
+            photo_html = ""
+    else:
+        print("  photos: skipped")
+
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data, coach_advice, credit, dev_proposals)
+    html    = build_html(data, coach_advice, credit, dev_proposals, photo_html)
 
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")
