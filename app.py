@@ -2968,18 +2968,52 @@ def _collect_cut_member_stats():
 # 数字やグラフだけでは何を食べているかが見えないため、減量が順調な会員と
 # 進んでいない会員の写真を並べて、違いを目で比べられるようにする（オーナー指示 2026-09-22）。
 REPORT_PHOTO_MEMBERS    = 3        # 各グループ（順調／停滞）から選ぶ人数
-REPORT_PHOTO_PER_MEMBER = 3        # 1人あたりに載せる写真の枚数（メール幅にちょうど3枚並ぶ）
+# 1人あたりの写真枚数は制限しない（オーナー指示 2026-09-23：全部の写真を出す）。
+# ただし異常なデータで無限に膨らまないよう、安全弁として上限だけ置く。
+REPORT_PHOTO_PER_MEMBER = 0        # 0 = 全部
+REPORT_PHOTO_HARD_CAP   = 80       # 安全弁：1人あたりこれ以上は載せない
 REPORT_PHOTO_DAYS       = 7        # 何日前までの写真を候補にするか
-# 1枚あたりのデータ量の上限。メールが重くなりすぎると配信が失敗したり
-# Gmailに途中で切られたりするため、極端に大きい写真は最初から除く。
-REPORT_PHOTO_MAX_CHARS  = 600_000
+# 1枚あたりのデータ量の上限。極端に大きい写真は読み込まずに除く。
+REPORT_PHOTO_MAX_CHARS  = 2_000_000
+# レポートに載せるサムネの大きさ。端末から届く写真をそのまま返すと、
+# 全部の写真を出したときに応答が数十MBになって取得も配信も失敗するため、
+# サーバー側で縮小してから返す（並べて見比べるにはこの大きさで十分）。
+REPORT_PHOTO_THUMB_PX   = 320
+REPORT_PHOTO_THUMB_Q    = 72
 # 「順調」「停滞」の線引き（直近30日の体重変化kg）。目標ペースは -1.0kg/30日。
 REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下しか減っていない＝順調
 REPORT_PHOTO_BAD_MIN    = 0.0      # これ以上＝減っていない・増えている
 
 
+def _shrink_report_photo(src):
+    """食事写真（data:image のbase64）をレポート用サムネに縮小する。
+    縮小できないときは None を返す（載せない）。"""
+    if Image is None:
+        return None
+    try:
+        raw = base64.b64decode(src.split(",", 1)[1])
+    except Exception:
+        return None
+    try:
+        im = Image.open(io.BytesIO(raw))
+        # JPEGは draft で読み込み時点から間引けるので、大きい写真でも速い
+        try:
+            im.draft("RGB", (REPORT_PHOTO_THUMB_PX * 2, REPORT_PHOTO_THUMB_PX * 2))
+        except Exception:
+            pass
+        im = im.convert("RGB")
+        im.thumbnail((REPORT_PHOTO_THUMB_PX, REPORT_PHOTO_THUMB_PX))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=REPORT_PHOTO_THUMB_Q, optimize=True)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
+
+
 def _member_report_photos(cur, uid, per_member, since_date):
-    """1人ぶんの直近の食事写真を新しい順に取り出す（写真が無い記録は飛ばす）。"""
+    """1人ぶんの直近の食事写真を新しい順に取り出す（写真が無い記録は飛ばす）。
+    per_member が 0 なら期間内の写真をすべて返す（安全弁の上限まで）。"""
+    limit = per_member if per_member else REPORT_PHOTO_HARD_CAP
     cur.execute(
         f"""SELECT date, payload FROM daily_meals
            WHERE user_id={PH} AND date>={PH} ORDER BY date DESC""",
@@ -3013,18 +3047,21 @@ def _member_report_photos(cur, uid, per_member, since_date):
                 if isinstance(src, str) and src.startswith("data:image") and len(src) <= REPORT_PHOTO_MAX_CHARS:
                     day_items.append((src, res if isinstance(res, dict) else {}))
         for src, res in day_items:
+            thumb = _shrink_report_photo(src)
+            if not thumb:
+                continue
             foods = [f.get("name") for f in (res.get("foods") or [])
                      if isinstance(f, dict) and f.get("name")]
             photos.append({
                 "date": dt,
-                "src": src,
+                "src": thumb,
                 "b_count": res.get("total_b_count"),
                 "protein_g": res.get("total_protein_g"),
                 "veg_g": res.get("total_veg_g"),
                 "foods": "・".join(str(n) for n in foods[:4]),
                 "day_b_count": round(day_b, 1),
             })
-            if len(photos) >= per_member:
+            if len(photos) >= limit:
                 return photos
     return photos
 
@@ -3033,7 +3070,7 @@ def _member_report_photos(cur, uid, per_member, since_date):
 @_admin_required
 def admin_report_photos():
     """【管理者専用】デイリーレポート用に、減量が順調な会員と進んでいない会員の
-    実際の食事写真を数枚ずつ返す。
+    実際の食事写真を返す（1人ぶんは期間内の全部。オーナー指示 2026-09-23）。
 
     ※このAPIは管理画面・レポート専用。会員向けアプリ(index.html)からは決して呼ばない。
       他の会員の食事写真が含まれるため、認証なしでは 404 を返す（_admin_required）。
@@ -3042,8 +3079,10 @@ def admin_report_photos():
         per_group = min(5, max(1, int(request.args.get("members", REPORT_PHOTO_MEMBERS))))
     except (TypeError, ValueError):
         per_group = REPORT_PHOTO_MEMBERS
+    # photos=0（既定）なら枚数制限なし。数を渡されたときだけその枚数に絞る。
     try:
-        per_member = min(4, max(1, int(request.args.get("photos", REPORT_PHOTO_PER_MEMBER))))
+        per_member = max(0, min(REPORT_PHOTO_HARD_CAP,
+                                int(request.args.get("photos", REPORT_PHOTO_PER_MEMBER))))
     except (TypeError, ValueError):
         per_member = REPORT_PHOTO_PER_MEMBER
 
