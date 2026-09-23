@@ -825,7 +825,7 @@ def fetch_report_photos():
             r = requests.get(
                 f"{APP_URL}/api/admin/report-photos",
                 auth=(ADMIN_USER, ADMIN_PASS),
-                timeout=90,   # 写真（base64）を含むぶん重い
+                timeout=240,  # 全員ぶんの写真を縮小して返すため時間がかかる
             )
             r.raise_for_status()
             return r.json()
@@ -835,10 +835,10 @@ def fetch_report_photos():
     return None
 
 
-def _decode_photo(data_uri: str, max_side: int = 300):
+def _decode_photo(data_uri: str, max_side: int = 320):
     """data:image のbase64をJPEGバイト列に戻し、メール用に縮小する。
-    端末から届く写真はそのままだと1枚数百KBあり、10枚も貼るとメールが重すぎて
-    配信に失敗する。並べて見比べるだけなら長辺300pxで十分。"""
+    サーバー側でサムネ化済みだが、古い形式のデータが混ざっても大きくなりすぎない
+    よう、ここでも長辺320pxに収める（並べて見比べるにはこの大きさで十分）。"""
     try:
         b64 = data_uri.split(",", 1)[1]
     except IndexError:
@@ -860,8 +860,15 @@ def _decode_photo(data_uri: str, max_side: int = 300):
         return raw
 
 
-def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool) -> str:
-    """会員1人ぶんの写真カード（名前・体重変化・写真数枚）を組み立てる。"""
+# セクション全体で載せる写真の上限。枚数は制限しない方針だが、Gmailは本文が
+# 約102KBを超えるとメールを途中で切ってしまう（＝以降が読めなくなる）。
+# 1枚あたり約250バイトなので、この枚数なら本文は75KB程度で収まる。
+MAX_PHOTOS_TOTAL = 300
+
+
+def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget: int = MAX_PHOTOS_TOTAL) -> str:
+    """会員1人ぶんの写真カード（名前・体重変化・その人の写真すべて）を組み立てる。
+    budget は「セクション全体であと何枚載せられるか」。"""
     color = "#10B981" if good else "#EF4444"
     ch = member.get("change_30d_kg")
     if isinstance(ch, (int, float)):
@@ -874,8 +881,12 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool) -> str:
     if isinstance(target, (int, float)):
         b_str += f"（目標 {target:.0f} 以内）"
 
-    imgs = ""
+    # 写真は1行3枚で折り返す（枚数に制限を設けず全部載せる／オーナー指示 2026-09-23）
+    PER_ROW = 3
+    cells = []
     for i, ph in enumerate(member.get("photos") or []):
+        if len(cells) >= budget:
+            break
         png = _decode_photo(ph.get("src") or "")
         if not png:
             continue
@@ -893,18 +904,19 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool) -> str:
         foods = (ph.get("foods") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         day_b = ph.get("day_b_count")
         day_lbl = f"　この日の合計 B{day_b:g}" if isinstance(day_b, (int, float)) else ""
-        imgs += f"""
-        <td style="padding:0 6px 0 0;vertical-align:top;width:150px">
-          <img src="cid:{cid}" alt="meal" style="width:150px;height:150px;object-fit:cover;border-radius:8px;display:block;border:1px solid #E5E7EB">
-          <div style="font-size:10px;color:#6B7280;margin-top:4px;line-height:1.5">
-            {ph.get('date', '')}{day_lbl}<br>
-            <b style="color:{color}">{sub}</b><br>
-            <span style="color:#9CA3AF">{foods}</span>
-          </div>
-        </td>"""
-    if not imgs:
+        cells.append(
+            f'<td class="pc"><img src="cid:{cid}" alt="meal" class="pi">'
+            f'<div class="pt">{ph.get("date", "")}{day_lbl}<br>'
+            f'<b class="{"pg" if good else "pb"}">{sub}</b><br>'
+            f'<span class="pf">{foods}</span></div></td>'
+        )
+    if not cells:
         return ""
 
+    rows = "".join(
+        f"<tr>{''.join(cells[i:i + PER_ROW])}</tr>"
+        for i in range(0, len(cells), PER_ROW)
+    )
     name = str(member.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return f"""
     <div style="margin-bottom:14px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-left:4px solid {color};border-radius:8px">
@@ -912,8 +924,9 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool) -> str:
         {name}
         <span style="color:{color};margin-left:8px">30日 {change_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
+        <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">写真 {len(cells)}枚</span>
       </div>
-      <table cellpadding="0" cellspacing="0" border="0"><tr>{imgs}</tr></table>
+      <table cellpadding="0" cellspacing="0" border="0">{rows}</table>
     </div>"""
 
 
@@ -926,8 +939,18 @@ def _photo_section(photos: dict, charts: dict) -> str:
     bad  = photos.get("bad") or []
     days = photos.get("photo_days", 7)
 
-    good_html = "".join(_photo_card(m, f"ph_good{i}", charts, True) for i, m in enumerate(good))
-    bad_html  = "".join(_photo_card(m, f"ph_bad{i}",  charts, False) for i, m in enumerate(bad))
+    # 枚数は制限しないが、セクション全体の上限だけは守る（Gmailの本文切れ防止）
+    def _cards(members, prefix, is_good):
+        out = ""
+        for i, mem in enumerate(members):
+            left = MAX_PHOTOS_TOTAL - len(charts)
+            if left <= 0:
+                break
+            out += _photo_card(mem, f"{prefix}{i}", charts, is_good, left)
+        return out
+
+    good_html = _cards(good, "ph_good", True)
+    bad_html  = _cards(bad, "ph_bad", False)
     if not good_html and not bad_html:
         return ""
 
@@ -1054,6 +1077,14 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, p
   .kpi-val{{font-size:26px;font-weight:900;color:#FF6B35;line-height:1}}
   .kpi-sub{{font-size:11px;color:#9CA3AF;margin-top:3px}}
   img.chart{{width:100%;max-width:640px;border-radius:10px;margin:6px 0;display:block}}
+  /* 食事写真ギャラリー：枚数を制限せず全部載せるため、1枚あたりのHTMLを短くして
+     Gmailの本文サイズ制限（約102KB・超えると途中で切られる）に余裕を持たせる */
+  td.pc{{padding:0 6px 12px 0;vertical-align:top;width:150px}}
+  img.pi{{width:150px;height:150px;object-fit:cover;border-radius:8px;display:block;border:1px solid #E5E7EB}}
+  .pt{{font-size:10px;color:#6B7280;margin-top:4px;line-height:1.5}}
+  .pg{{color:#10B981}}
+  .pb{{color:#EF4444}}
+  .pf{{color:#9CA3AF}}
   .footer{{margin-top:20px;font-size:11px;color:#9CA3AF;text-align:center}}
   a{{color:#FF6B35}}
 </style>
