@@ -181,10 +181,10 @@ def _fetch(client):
 def test_slot_counts_are_split_by_time_of_day(client):
     """朝・昼・晩それぞれで「記録できた日数」を数えること。"""
     uid = "slot-a"
-    _seed_cut_member(uid, "朝が抜ける人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 71.5})
+    _seed_cut_member(uid, "朝が抜ける人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 72.5})
     # 3日間、昼(12時)と晩(19時)だけ記録。朝は無し。
     _seed_usage(uid, {1: [12, 19], 2: [12, 19], 3: [12]})
-    row = next(x for x in _fetch(client)["no_loss_members"] if x["name"] == "朝が抜ける人")
+    row = next(x for x in _fetch(client)["gained_members"] if x["name"] == "朝が抜ける人")
     assert row["morning_days"] == 0, "朝の記録が無いのに0になっていない"
     assert row["noon_days"] == 3
     assert row["night_days"] == 2
@@ -193,58 +193,66 @@ def test_slot_counts_are_split_by_time_of_day(client):
 def test_same_slot_twice_a_day_counts_as_one_day(client):
     """1日に同じ時間帯で2回記録しても「1日」と数えること。"""
     uid = "slot-dup"
-    _seed_cut_member(uid, "昼に2回の人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 71.0})
+    _seed_cut_member(uid, "昼に2回の人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 72.5})
     _seed_usage(uid, {1: [11, 12, 13]})
-    row = next(x for x in _fetch(client)["no_loss_members"] if x["name"] == "昼に2回の人")
+    row = next(x for x in _fetch(client)["gained_members"] if x["name"] == "昼に2回の人")
     assert row["noon_days"] == 1
 
 
 def test_late_night_counts_as_night(client):
     """深夜1時の記録は「晩」として数えること（夜食を朝に混ぜない）。"""
     uid = "slot-late"
-    _seed_cut_member(uid, "夜更かしの人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 71.0})
+    _seed_cut_member(uid, "夜更かしの人", {1: 4.0, 2: 4.0, 3: 4.0}, {20: 70.0, 1: 72.5})
     _seed_usage(uid, {1: [1], 2: [23]})
-    row = next(x for x in _fetch(client)["no_loss_members"] if x["name"] == "夜更かしの人")
+    row = next(x for x in _fetch(client)["gained_members"] if x["name"] == "夜更かしの人")
     assert row["night_days"] == 2
     assert row["morning_days"] == 0
 
 
-def test_picks_at_most_ten_worst_members(client):
-    """痩せていない順に、最大10名だけ載せること。"""
+def test_picks_at_most_ten_gained_members(client):
+    """増えた順に、最大10名だけ載せること。"""
     for i in range(13):
         uid = f"slot-many-{i}"
+        # 全員 +2kg 以上ふえている（+2.0 〜 +5.6kg）
         _seed_cut_member(uid, f"人{i:02d}", {1: 3.0, 2: 3.0, 3: 3.0},
-                         {20: 70.0, 1: 70.0 + i * 0.3})
+                         {20: 70.0, 1: 72.0 + i * 0.3})
         _seed_usage(uid, {1: [8]})
     cc = _fetch(client)
-    nl = cc["no_loss_members"]
+    nl = cc["gained_members"]
     assert len(nl) == 10, f"10名ちょうどでない: {len(nl)}"
-    # 体重が増えた人が先頭（降順）
+    # いちばん増えた人が先頭（降順）
     assert nl == sorted(nl, key=lambda z: -z["change_kg"])
-    assert nl[0]["change_kg"] >= nl[-1]["change_kg"]
     assert cc["slot_days"] >= 7
 
 
-def test_slot_chart_renders():
-    """朝昼晩グラフがPNGとして生成できること（人数0でも落ちない）。"""
+def test_slot_charts_render():
+    """ふえた人・へった人の両方のグラフがPNGとして生成できること（0名でも落ちない）。"""
     R = _load_send_report()
-    members = [{"name": f"会員{i}", "change_kg": 1.0 - i * 0.2, "avg_b": 3.0 + i * 0.2,
-                "morning_days": i, "noon_days": 14 - i, "night_days": 0} for i in range(10)]
-    png = R.chart_no_loss_slots({"cut_corr": {"slot_days": 14, "no_loss_members": members}})
-    assert png[:4] == b"\x89PNG"
-    empty = R.chart_no_loss_slots({"cut_corr": {"slot_days": 14, "no_loss_members": []}})
-    assert empty[:4] == b"\x89PNG"
+    gained = [{"name": f"増{i}", "change_kg": 2.0 + i * 0.2, "avg_b": 5.0, "since": "2026-06-01",
+               "morning_days": i, "noon_days": 14 - i, "night_days": 0} for i in range(10)]
+    lost = [{"name": f"減{i}", "change_kg": -2.0 - i * 0.3, "avg_b": 3.0, "since": "2026-05-10",
+             "morning_days": 14, "noon_days": 14, "night_days": 13} for i in range(4)]
+    data = {"cut_corr": {"slot_days": 14, "loss_band_kg": 2.0,
+                         "gained_members": gained, "lost_members": lost}}
+    assert R.chart_gained_slots(data)[:4] == b"\x89PNG"
+    assert R.chart_lost_slots(data)[:4] == b"\x89PNG"
+    empty = {"cut_corr": {"slot_days": 14, "loss_band_kg": 2.0,
+                          "gained_members": [], "lost_members": []}}
+    assert R.chart_gained_slots(empty)[:4] == b"\x89PNG"
+    assert R.chart_lost_slots(empty)[:4] == b"\x89PNG"
 
 
 def test_slot_chart_avoids_emoji():
     """グラフ内に絵文字を使わないこと（日本語フォントに無く豆腐□になる）。"""
     src = _report_src()
-    fn = src[src.index("def chart_no_loss_slots"):src.index("def chart_nutrition")]
+    fn = src[src.index("def _slot_table"):src.index("def chart_nutrition")]
     assert "🌅" not in fn and "🌞" not in fn and "🌙" not in fn
 
 
-def test_slot_chart_is_in_the_email():
-    """メール本文にグラフが差し込まれていること。"""
+def test_slot_charts_are_in_the_email():
+    """メール本文に2つのグラフが差し込まれていること。"""
     src = _report_src()
-    assert "cid:chart_no_loss_slots" in src
-    assert '"chart_no_loss_slots": chart_no_loss_slots(data)' in src
+    for cid in ("cid:chart_gained_slots", "cid:chart_lost_slots"):
+        assert cid in src, f"{cid} が本文にありません"
+    assert '"chart_gained_slots": chart_gained_slots(data)' in src
+    assert '"chart_lost_slots":   chart_lost_slots(data)' in src

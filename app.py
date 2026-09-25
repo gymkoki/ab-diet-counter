@@ -2488,27 +2488,53 @@ def admin_report_data():
         days = b_by_user.get(uid) or {}
         return bool(days) and max(days) >= start_14d
 
-    ranked = sorted(zip(cut_members, cut_member_uids), key=lambda t: -t[0]["change_kg"])
-    ranked = [t for t in ranked if _recorded_within_slot_window(t[1])]
-    no_loss_members = []
-    for mem, uid in ranked[:10]:
+    def _slot_row(mem, uid):
         s = slots_by_user.get(uid) or {}
         name = (name_by_user.get(uid) or "").strip() or f"会員{uid[:4]}"
-        no_loss_members.append({
+        rows = all_w_by_user.get(uid) or []
+        return {
             "name": name[:12],
             "change_kg": mem["change_kg"],
             "avg_b": mem["avg_b"],
+            # プレ（初回記録）からポスト（最新記録）までの期間。
+            # 「2kg減」が1週間なのか半年なのかで意味が違うため添える。
+            "since": rows[0][0] if rows else None,
             "morning_days": len(s.get("morning") or ()),
             "noon_days":    len(s.get("noon") or ()),
             "night_days":   len(s.get("night") or ()),
-        })
+        }
+
+    # プレ（初回記録）→ポスト（最新記録）の体重変化で2つに分ける（オーナー指示 2026-09）。
+    # 直近だけを見ると「全体では痩せているのに、この1週間で200g増えた人」が
+    # 「減量が進んでいない人」として出てしまうため、必ず初回との比較で判定する。
+    # change_kg はマイナスが減量。
+    LOSS_BAND_KG = 2.0
+    active = [t for t in zip(cut_members, cut_member_uids)
+              if _recorded_within_slot_window(t[1])]
+
+    lost_pairs   = sorted([t for t in active if t[0]["change_kg"] <= -LOSS_BAND_KG],
+                          key=lambda t: t[0]["change_kg"])          # よく減った人が先頭
+    gained_pairs = sorted([t for t in active if t[0]["change_kg"] >= LOSS_BAND_KG],
+                          key=lambda t: -t[0]["change_kg"])         # よく増えた人が先頭
+    lost_members   = [_slot_row(mem, uid) for mem, uid in lost_pairs[:10]]
+    gained_members = [_slot_row(mem, uid) for mem, uid in gained_pairs[:10]]
+
+    # ±2kg未満（横ばい）の人数も出す。表には載らないが「何人が見えていないか」は示す。
+    flat_count = len(active) - len(lost_pairs) - len(gained_pairs)
 
     cut_corr = {
         "users": len(cut_uids),
         "min_days": CORR_MIN_DAYS,
         "members": cut_members,
         "slot_days": SLOT_DAYS,
-        "no_loss_members": no_loss_members,
+        "loss_band_kg": LOSS_BAND_KG,
+        "lost_members": lost_members,
+        "gained_members": gained_members,
+        "band_counts": {
+            "lost": len(lost_pairs),
+            "flat": flat_count,
+            "gained": len(gained_pairs),
+        },
         "b_avg_trend": [
             _avg([b_by_user[u][d] for u in cut_uids if u in b_by_user and d in b_by_user[u]], 2)
             for d in all_dates

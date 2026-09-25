@@ -322,21 +322,17 @@ def chart_cut_corr(data: dict) -> bytes:
     return fig_to_png(fig)
 
 
-def chart_no_loss_slots(data: dict) -> bytes:
-    """痩せていない減量希望者10名が、朝・昼・晩に記録できているかの一覧（信号色の表）。
+def _slot_table(members, days, title, empty_note, band_kg):
+    """朝・昼・晩に記録できているかの一覧（信号色の表）を描く共通部分。
 
     減量が進まない原因の多くは「食べ過ぎ」ではなく「記録していない食事がある」こと。
     どの時間帯が抜けているかが一目で分かれば、声かけの内容を具体的にできる。
-    行＝会員（体重が増えた人が上）、列＝朝/昼/晩、色＝14日間で記録できた日数。"""
-    cc      = data.get("cut_corr") or {}
-    members = cc.get("no_loss_members") or []
-    days    = cc.get("slot_days", 14)
-
+    オーナー指示 2026-09：プレ（初回記録）→ポスト（最新記録）の体重変化で
+    「2kg以上減った人」と「2kg以上増えた人」に分けて、別々の表にする。"""
     if not members:
-        fig, ax = plt.subplots(figsize=(10, 3.2))
-        ax.set_title("痩せていない減量希望者：朝・昼・晩の記録状況",
-                     fontsize=15, fontweight="bold", pad=8)
-        _axes_note(ax, "対象の会員がまだいません。\n減量希望で、体重とBカウントの記録がある会員が対象です。")
+        fig, ax = plt.subplots(figsize=(10, 3.0))
+        ax.set_title(title, fontsize=15, fontweight="bold", pad=8)
+        _axes_note(ax, empty_note)
         fig.tight_layout()
         return fig_to_png(fig)
 
@@ -381,25 +377,52 @@ def chart_no_loss_slots(data: dict) -> bytes:
     ax.set_xticklabels([lbl for _k, lbl in slots] + ["体重の変化", "平均B"], fontsize=13)
     ax.xaxis.set_ticks_position("top")
     ax.set_yticks(range(n))
-    ax.set_yticklabels([m["name"] for m in reversed(members)], fontsize=13)
+    # 名前の下に初回記録日を出す。「2kg減」が1週間なのか半年なのかで意味が違うため。
+    def _ylabel(mem):
+        since = (mem.get("since") or "")[5:].replace("-", "/")
+        return f"{mem['name']}\n{since}〜" if since else mem["name"]
+    ax.set_yticklabels([_ylabel(m) for m in reversed(members)], fontsize=13)
     ax.tick_params(axis="both", length=0)
     for sp in ax.spines.values():
         sp.set_visible(False)
 
-    ax.set_title(f"痩せていない減量希望者 {n}名：朝・昼・晩の記録状況（直近{days}日）",
+    ax.set_title(f"{title}（{n}名・記録は直近{days}日）",
                  fontsize=15, fontweight="bold", pad=30)
     # 凡例は表の下に置く（上に置くとタイトルと重なるため）
     ax.text(2.2, -0.95,
             "緑＝ほぼ毎日記録　／　黄＝半分ぐらい　／　赤＝ほとんど記録なし　"
             "…… 赤い時間帯が「見えていない食事」",
             ha="center", va="center", fontsize=12.5, color=C_GRAY)
-    ax.text(2.2, -1.15, f"※写真・文章入力どちらの記録も1件として数えています（{days}日中の記録できた日数）",
+    ax.text(2.2, -1.15,
+            f"※体重の変化は「初回記録（プレ）→最新記録（ポスト）」の差で、{band_kg:.0f}kg以上動いた人だけを載せています",
             ha="center", va="center", fontsize=11, color=C_GRAY)
     # オーナー方針 2026-09-09：離脱者の呼び戻しは追わないため、対象から外していることを明示する
     ax.text(2.2, -1.35, f"※{days}日以上まったく記録がない会員は対象外です",
             ha="center", va="center", fontsize=11, color=C_GRAY)
     fig.tight_layout()
     return fig_to_png(fig)
+
+
+def chart_gained_slots(data: dict) -> bytes:
+    """2kg以上「増えた」人の記録状況（要注意・声かけの対象）。"""
+    cc = data.get("cut_corr") or {}
+    band = cc.get("loss_band_kg", 2.0)
+    return _slot_table(
+        cc.get("gained_members") or [], cc.get("slot_days", 14),
+        f"体重が{band:.0f}kg以上ふえた人：朝・昼・晩の記録状況",
+        f"いま該当者はいません。\n（初回記録から{band:.0f}kg以上ふえた減量希望の会員が対象です）",
+        band)
+
+
+def chart_lost_slots(data: dict) -> bytes:
+    """2kg以上「減った」人の記録状況（うまくいっている人の記録のしかた）。"""
+    cc = data.get("cut_corr") or {}
+    band = cc.get("loss_band_kg", 2.0)
+    return _slot_table(
+        cc.get("lost_members") or [], cc.get("slot_days", 14),
+        f"体重が{band:.0f}kg以上へった人：朝・昼・晩の記録状況",
+        f"いま該当者はいません。\n（初回記録から{band:.0f}kg以上へった減量希望の会員が対象です）",
+        band)
 
 
 def chart_nutrition(data: dict) -> bytes:
@@ -1010,6 +1033,14 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, p
     b_latest_str = f"{b_avg_latest:.1f} B" if b_avg_latest is not None else "—"
     w_latest_str = f"{w_avg_latest:.1f} kg" if w_avg_latest is not None else "—"
 
+    # プレ（初回記録）→ポスト（最新記録）の体重変化で分けた人数（オーナー指示 2026-09）
+    _cc        = data.get("cut_corr") or {}
+    _bands     = _cc.get("band_counts") or {}
+    band_kg    = int(_cc.get("loss_band_kg", 2))
+    lost_n     = _bands.get("lost", 0)
+    gained_n   = _bands.get("gained", 0)
+    flat_n     = _bands.get("flat", 0)
+
     # 減量希望者の平均減量実績（初回記録 vs 最新記録、全期間）
     loss_avg = data.get("weight_loss_avg_kg")
     loss_users = data.get("weight_loss_users", 0)
@@ -1186,10 +1217,19 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, p
         減量希望者の「平均Bカウント」と「体重の変化」の相関（Bを抑えている人ほど減っているか・1人1点）
       </div>
       <img class="chart" src="cid:chart_cut_corr" alt="Cut Users B-Count vs Weight Change">
-      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:14px 0 4px">
-        痩せていない人は、朝・昼・晩の写真をアップできているか（記録漏れの発見）
+      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:18px 0 4px">
+        📈 体重が{band_kg}kg以上ふえた人（{gained_n}名）— 朝・昼・晩の記録漏れを探す
       </div>
-      <img class="chart" src="cid:chart_no_loss_slots" alt="Meal Logging by Time Slot">
+      <img class="chart" src="cid:chart_gained_slots" alt="Gained: Meal Logging by Time Slot">
+      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:18px 0 4px">
+        📉 体重が{band_kg}kg以上へった人（{lost_n}名）— うまくいっている人の記録のしかた
+      </div>
+      <img class="chart" src="cid:chart_lost_slots" alt="Lost: Meal Logging by Time Slot">
+      <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
+        ※ 体重の変化は「初回記録（プレ）→最新記録（ポスト）」の差で判定しています。
+        直近の増減ではないので、全体では痩せている人が「ふえた人」に出ることはありません。
+        ±{band_kg}kg未満（横ばい）の{flat_n}名は、どちらの表にも出していません。
+      </div>
     </div>
 
     <!-- ③ 栄養素の平均摂取量 -->
@@ -1314,7 +1354,8 @@ def main():
         "chart_hourly":   chart_hourly(data),
         "chart_weight_loss": chart_weight_loss(data),
         "chart_cut_corr":  chart_cut_corr(data),
-        "chart_no_loss_slots": chart_no_loss_slots(data),
+        "chart_gained_slots": chart_gained_slots(data),
+        "chart_lost_slots":   chart_lost_slots(data),
         "chart_nutrition": chart_nutrition(data),
         "chart_goal_compare": chart_goal_compare(data),
     }
