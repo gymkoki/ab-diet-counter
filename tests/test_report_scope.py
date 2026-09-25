@@ -229,10 +229,11 @@ def test_report_states_the_scope():
     assert "日以上まったく記録がない会員は対象外です" in src
 
 
-def test_no_loss_table_excludes_long_absent_members():
-    """レポートの「痩せていない人の記録状況」表は、離脱者を外してから上位10名を選ぶこと。"""
+def test_slot_tables_exclude_long_absent_members():
+    """記録状況の表（ふえた人・へった人とも）は、離脱者を外してから上位10名を選ぶこと。"""
     src = _read("app.py")
-    i = src.index("no_loss_members = []")
+    i = src.index("lost_pairs   = sorted(")
     head = src[max(0, i - 900):i]
     assert "_recorded_within_slot_window" in head, "離脱者を除く処理がありません"
-    assert "ranked = [t for t in ranked if _recorded_within_slot_window(t[1])]" in head
+    assert "active = [t for t in zip(cut_members, cut_member_uids)" in head
+    assert "if _recorded_within_slot_window(t[1])]" in head
