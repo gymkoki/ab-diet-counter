@@ -341,6 +341,7 @@
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       直近90日の体重記録から、<b>特に痩せた人</b>と<b>特に痩せていない人</b>を各3人ずつ表示します。
       青い線が体重推移、下は直近の食事写真です。名前を押すとその人の詳細（全写真・コメント）を開けます。
+      <b>食事の記録が2週間以上ない人は対象外</b>です。
     </div>
     <div id="spotlight"><div class="spinner"></div></div>
   </div>
@@ -367,6 +368,7 @@
     <h2>🔥 減量メンバーの詳細</h2>
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       減量目的の会員の「直近7日の日別Bカウント」と記録状況の一覧です。記録が途絶えている人が上に表示されます。「食事を見る」でその人の食事写真・体重推移・スタッフコメントを開けます。
+      <b>食事の記録が2週間以上ない人は対象外</b>です（人数は「要注意メンバー」の長期離脱で確認できます）。
     </div>
     <button id="cut-detail-btn" class="apikey-save" style="width:auto" onclick="toggleCutDetail()">🔍 詳細を表示する</button>
     <div id="cut-detail-wrap" style="display:none;margin-top:14px">
@@ -823,9 +825,9 @@
       const r2 = d.correlation;
       const strength = Math.abs(r2) >= 0.7 ? '強い' : Math.abs(r2) >= 0.4 ? '中程度の' : '弱い';
       const dir = r2 > 0 ? '「Bが多いほど体重が増える」方向' : '「Bが少ないほど体重が減る」方向';
-      note.textContent = `相関係数 r = ${r2}（${strength}${dir}の関係）／ 対象は減量メンバー ${d.scatter.length} 名 ／ 1点＝会員1名`;
+      note.textContent = `相関係数 r = ${r2}（${strength}${dir}の関係）／ 対象は減量メンバー ${d.scatter.length} 名（食事の記録が2週間以上ない人は除く）／ 1点＝会員1名`;
     } else {
-      note.textContent = `データが集まると相関係数が表示されます（対象は減量メンバーのみ・現在 ${d.scatter.length} 名）`;
+      note.textContent = `データが集まると相関係数が表示されます（対象は減量メンバーのみ・食事の記録が2週間以上ない人は除く・現在 ${d.scatter.length} 名）`;
     }
   }
 

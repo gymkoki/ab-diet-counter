@@ -2587,9 +2587,19 @@ def admin_cut_members():
         cur = conn.cursor()
         cur.execute("SELECT user_id, display_name, is_vip FROM user_profile WHERE goal = 'cut'")
         cut_users = {r[0]: {"name": r[1], "is_vip": bool(r[2])} for r in cur.fetchall()}
-        if not cut_users:
-            return jsonify({"dates": dates, "members": []})
+    finally:
+        conn.close()
 
+    # 食事記録が2週間以上ない人は解析から外す（オーナー指示 2026-09-29）
+    active = _dashboard_active_uids()
+    if active is not None:
+        cut_users = {u: p for u, p in cut_users.items() if u in active}
+    if not cut_users:
+        return jsonify({"dates": dates, "members": []})
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             f"""SELECT user_id, date, b_count FROM daily_b_count
                WHERE date >= {PH} ORDER BY date""",
@@ -2678,6 +2688,7 @@ def admin_weight_insights():
             continue   # 記録期間が短すぎる場合はノイズが大きいので除外
         prof = prof_by_uid.get(uid, {})
         users.append({
+            "_uid":   uid,   # 絞り込み用（応答には含めない）
             "user_id_short": uid[:8],
             "name":   prof.get("name") or None,
             "goal":   prof.get("goal") or None,
@@ -2704,6 +2715,13 @@ def admin_weight_insights():
     # 減量目的の会員だけを対象にする（維持・増量の人は体重を減らす意図がなく、
     # 相関を薄めてしまうため、散布図からも除外する）。
     pts = [u for u in users if u["avg_b"] is not None and u["goal"] == "cut"]
+    # 食事記録が2週間以上ない人も外す（オーナー指示 2026-09-29）。途中で記録をやめた人は
+    # 平均Bが「記録した日だけ」の値になり、体重変化（30日分）と釣り合わず相関を歪める。
+    # ※上の目的別の平均体重変化はジムの実績（KPI）なので外さない（オーナー方針 2026-09-09）。
+    active = _dashboard_active_uids()
+    if active is not None:
+        pts = [u for u in pts if u["_uid"] in active]
+    pts = [{k: v for k, v in u.items() if k != "_uid"} for u in pts]
     corr = None
     if len(pts) >= 3:
         xs = [u["avg_b"] for u in pts]
@@ -2886,6 +2904,53 @@ def _is_long_absent(mem, days=REPORT_ABSENT_DAYS):
 def _active_members(members, days=REPORT_ABSENT_DAYS):
     """離脱者を除いた会員だけを返す（コーチ提案・改善案・声かけ下書きで共用）。"""
     return [m for m in members if not _is_long_absent(m, days)]
+
+
+def _days_since_value(value, today):
+    """'YYYY-MM-DD' や ISO日時（DBによっては date/datetime 型）から経過日数を返す。"""
+    if not value:
+        return None
+    try:
+        return (today - datetime.date.fromisoformat(str(value)[:10])).days
+    except ValueError:
+        return None
+
+
+def _dashboard_active_uids(days=REPORT_ABSENT_DAYS):
+    """ダッシュボードの解析に含める会員（直近 days 日以内に食事の記録がある人）の user_id 集合。
+
+    オーナー指示 2026-09-29：食事記録が2週間以上ない人は、ダッシュボードの解析から外す。
+    判定はレポート・声かけと同じ _is_long_absent を使い、基準をそろえる：
+      ・最後に食事を記録した日（daily_b_count）から days 日以上たっていれば外す
+      ・一度も食事の記録が無い人は、最後にアプリを使った日（user_profile.updated_at）で判断し、
+        入会直後でこれから記録する人は外さない
+      ・どちらの手がかりも無い人（食事を一度も記録していない）は外す
+    DBが読めないときは None を返す。呼び出し側は None なら絞り込まない
+    （判定できないことを理由に、ダッシュボードの表示を丸ごと空にしないため）。"""
+    today = datetime.datetime.now(JST).date()
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, MAX(date) FROM daily_b_count GROUP BY user_id")
+            last_meal = {r[0]: r[1] for r in cur.fetchall()}
+            cur.execute("SELECT user_id, updated_at FROM user_profile")
+            last_use = {r[0]: r[1] for r in cur.fetchall()}
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.warning("dashboard active-member lookup failed (not filtering): %s", e)
+        return None
+
+    active = set()
+    for uid in set(last_meal) | set(last_use):
+        mem = {"days_since":         _days_since_value(last_meal.get(uid), today),
+               "days_since_app_use": _days_since_value(last_use.get(uid), today)}
+        if mem["days_since"] is None and mem["days_since_app_use"] is None:
+            continue
+        if not _is_long_absent(mem, days):
+            active.add(uid)
+    return active
 
 
 def _collect_cut_member_stats():
@@ -3756,6 +3821,12 @@ def admin_spotlight():
     series_by_uid = {}
     for uid, dt, wt in w_rows:
         series_by_uid.setdefault(uid, []).append((dt, float(wt)))
+
+    # 食事記録が2週間以上ない人は解析から外す（オーナー指示 2026-09-29）。
+    # 体重だけ付けていて食事を記録していない人は、食事写真も内容も見られないため。
+    active = _dashboard_active_uids()
+    if active is not None:
+        series_by_uid = {u: s for u, s in series_by_uid.items() if u in active}
 
     def _build(uid, min_span):
         recs = series_by_uid.get(uid) or []
