@@ -375,6 +375,31 @@
     <div id="achiever-wrap"><div class="spinner"></div></div>
   </div>
 
+  <!-- 減量群 vs 増量群：何が違うのか（t 検定） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🔬 減量できている人とできていない人の違い</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.7">
+      直近の体重の傾きで<b>減量群</b>（減っている）と<b>増量群</b>（増えている）に分け、
+      食事の中身を <b>Welch の t 検定</b>で比べます。
+      <b>その日の食事が3食に満たない日は、記録漏れの可能性があるので除外</b>しています。
+      比べる単位は「人」です（1人ずつ平均を出してから比較。記録の多い人に結果が引っぱられないようにするため）。
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px">
+      <label>体重を見る期間
+        <select id="da-days" style="padding:6px 8px;border:1.5px solid #E5E7EB;border-radius:8px;font-family:inherit">
+          <option value="30">30日</option><option value="60" selected>60日</option><option value="90">90日</option>
+        </select></label>
+      <label>「維持」とみなす幅
+        <select id="da-th" style="padding:6px 8px;border:1.5px solid #E5E7EB;border-radius:8px;font-family:inherit">
+          <option value="0" selected>なし（増減の向きだけで分ける）</option>
+          <option value="0.3">±0.3kg/30日</option><option value="0.5">±0.5kg/30日</option>
+        </select></label>
+      <button class="apikey-save" style="width:auto;padding:6px 16px;font-size:13px" onclick="loadDietAnalysis()">再計算</button>
+    </div>
+    <div id="diet-analysis"><div class="spinner"></div></div>
+  </div>
+
+
   <!-- 減量メンバーの詳細（日別Bカウント・記録状況・食事へのリンク） -->
   <div class="card" style="margin-bottom:20px">
     <h2>🔥 減量メンバーの詳細</h2>
@@ -1454,6 +1479,124 @@
     await loadCoachMessages();
   }
 
+  // 減量群 vs 増量群（t 検定）
+  function _daFmt(v, nd) {
+    if (v == null || !isFinite(v)) return '—';
+    return Number(v).toLocaleString('ja-JP', { minimumFractionDigits: nd, maximumFractionDigits: nd });
+  }
+  function _daP(p) {
+    if (p == null) return '—';
+    return p < 0.001 ? '&lt;0.001' : p.toFixed(3);
+  }
+
+  async function loadDietAnalysis() {
+    const wrap = document.getElementById('diet-analysis');
+    if (!wrap) return;
+    const days = document.getElementById('da-days').value;
+    const th = document.getElementById('da-th').value;
+    wrap.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await fetch(`/api/admin/diet-analysis?weight_days=${days}&threshold=${th}`);
+      const d = await r.json();
+      if (!r.ok) { wrap.innerHTML = `<div class="no-data">${escapeHtml(d.error || '読み込みに失敗しました')}</div>`; return; }
+      const c = d.coverage;
+
+      // ① 結論（いちばん上に、日本語で）
+      let head = '';
+      if (d.headline.length) {
+        head = `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:800;color:#166534;margin-bottom:6px">📌 わかったこと</div>
+          ${d.headline.map(h => `<div style="font-size:13px;color:#14532D;line-height:1.8">・${escapeHtml(h)}</div>`).join('')}
+        </div>`;
+      } else {
+        head = `<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:#475569;line-height:1.8">
+          📌 いまのデータでは、両群ではっきりした違いは見つかりませんでした。</div>`;
+      }
+
+      // ② データの量（少ないときははっきり警告）
+      const warn = c.small_sample
+        ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#92400E;line-height:1.7">
+             ⚠️ 1群あたりの人数が${escapeHtml(String(Math.min(c.loss_n, c.gain_n)))}人と少ないため、結果は<b>参考程度</b>です。
+             食事の明細は以前5日で消えていたため、栄養の比較に使えるデータがまだ少ない状態です
+             （今回から数値だけは残すようにしたので、日がたつほど精度が上がります）。</div>`
+        : '';
+
+      const cov = `<div style="font-size:12px;color:#6B7280;margin-bottom:10px;line-height:1.7">
+        比較した人数：<b>減量群 ${c.loss_n}人</b> ／ <b>増量群 ${c.gain_n}人</b>
+        ${c.flat_excluded ? `（維持群 ${c.flat_excluded}人は比較から除外）` : ''}<br>
+        使った日：<b>${c.days_used}日</b>（3食未満のため除外：${c.days_excluded}日）
+        ${c.nutrition_from ? `／ 食事データの期間：${escapeHtml(c.nutrition_from)}〜${escapeHtml(c.nutrition_to)}` : ''}
+      </div>`;
+
+      // ③ 項目ごとの比較表
+      const rows = d.results.map(x => {
+        const nd = x.digits;
+        const sig = x.significant
+          ? '<span style="background:#DCFCE7;color:#166534;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800">有意</span>'
+          : (x.g != null && Math.abs(x.g) >= 0.8
+              ? '<span style="background:#FEF3C7;color:#92400E;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800">要注目</span>'
+              : '');
+        const diff = x.diff == null ? '—'
+          : `${x.diff > 0 ? '+' : ''}${_daFmt(x.diff, nd)}${escapeHtml(x.unit)}`;
+        return `<tr style="border-bottom:1px solid #F3F4F6">
+          <td style="padding:8px;font-weight:700">${escapeHtml(x.label)}</td>
+          <td style="padding:8px;text-align:right">${_daFmt(x.loss.mean, nd)} <span style="color:#9CA3AF;font-size:11px">±${_daFmt(x.loss.sd, nd)}</span></td>
+          <td style="padding:8px;text-align:right">${_daFmt(x.gain.mean, nd)} <span style="color:#9CA3AF;font-size:11px">±${_daFmt(x.gain.sd, nd)}</span></td>
+          <td style="padding:8px;text-align:right;font-weight:800">${diff}</td>
+          <td style="padding:8px;text-align:right">${_daP(x.p_holm)}</td>
+          <td style="padding:8px;text-align:right">${x.g == null ? '—' : x.g.toFixed(2)}<div style="font-size:10px;color:#9CA3AF">${escapeHtml(x.effect)}</div></td>
+          <td style="padding:8px;text-align:center">${sig}</td>
+        </tr>`;
+      }).join('');
+      const table = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:12px">
+          <th style="padding:8px;text-align:left">項目（1日あたり）</th>
+          <th style="padding:8px;text-align:right">減量群<br>平均±SD</th>
+          <th style="padding:8px;text-align:right">増量群<br>平均±SD</th>
+          <th style="padding:8px;text-align:right">差<br>(減量−増量)</th>
+          <th style="padding:8px;text-align:right">p値<br>(Holm補正)</th>
+          <th style="padding:8px;text-align:right">効果量<br>g</th>
+          <th style="padding:8px"></th>
+        </tr>${rows}</table></div>`;
+
+      // ④ 各項目の説明文
+      const sentences = `<div style="margin-top:10px">${d.results.map(x =>
+        `<div style="font-size:12px;color:#374151;line-height:1.8">・${escapeHtml(x.summary)}</div>`).join('')}</div>`;
+
+      // ⑤ 誰がどちらの群か（名前の確認用）
+      const gname = { loss: '減量群', gain: '増量群', flat: '維持群' };
+      const mem = d.members.length ? `<details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">会員ごとの内訳（${d.members.length}人）</summary>
+        <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
+          <tr style="color:#6B7280;border-bottom:1px solid #E5E7EB">
+            <th style="padding:6px;text-align:left">名前</th><th style="padding:6px">群</th>
+            <th style="padding:6px;text-align:right">体重の傾き<br>kg/30日</th><th style="padding:6px;text-align:right">使った日</th>
+            <th style="padding:6px;text-align:right">kcal</th><th style="padding:6px;text-align:right">野菜g</th>
+            <th style="padding:6px;text-align:right">タンパク質g</th><th style="padding:6px;text-align:right">B</th>
+          </tr>
+          ${d.members.map(mm => `<tr style="border-bottom:1px solid #F3F4F6">
+            <td style="padding:6px">${escapeHtml(mm.name || mm.user_id_short + '…')}</td>
+            <td style="padding:6px;text-align:center">${gname[mm.group]}</td>
+            <td style="padding:6px;text-align:right;color:${mm.slope_kg_30d < 0 ? '#059669' : '#DC2626'}">${mm.slope_kg_30d > 0 ? '+' : ''}${mm.slope_kg_30d.toFixed(2)}</td>
+            <td style="padding:6px;text-align:right">${mm.days}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.kcal, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.veg_g, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.protein_g, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.b_count, 1)}</td>
+          </tr>`).join('')}
+        </table></div></details>` : '';
+
+      const note = `<div style="font-size:11px;color:#9CA3AF;margin-top:10px;line-height:1.7">
+        ※ p値は6項目をまとめて検定しているため Holm 法で補正済みです（偶然の「有意」を防ぐため）。
+        効果量 g の目安：0.2〜 小／0.5〜 中／0.8〜 大。人数が少ないうちは p値より効果量を重視してください。
+        「有意」でない＝「差が無い」ではなく、「今の人数では差があると言い切れない」という意味です。</div>`;
+
+      wrap.innerHTML = head + warn + cov + table + sentences + mem + note;
+    } catch (e) {
+      wrap.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+    }
+  }
+
   // 会員限定パスワード（2026-09-15〜）
   async function loadMemberGate() {
     const now = document.getElementById('member-gate-now');
@@ -1661,7 +1804,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadDietAnalysis()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
