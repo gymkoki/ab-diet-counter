@@ -34,6 +34,13 @@
   声かけ下書き（`_generate_coach_dm_drafts`）／レポートの「痩せていない人の記録状況」表（`no_loss_members`）。
 - 外さない場所：ジムの実績集計（平均減量などのKPI・体重の推移）と、管理画面の「長期離脱」一覧
   （人数を把握するための参考情報として残す。呼び戻しを促す文言は置かない）。
+- **ダッシュボードの解析からも外す（オーナー指示 2026-09-29）**：食事記録が14日以上ない会員は
+  「注目メンバー」（`/api/admin/spotlight`）・「減量メンバーの詳細」（`/api/admin/cut-members`）・
+  「Bカウントと体重変化の相関」（`/api/admin/weight-insights` の `scatter`）から外す
+  （`_dashboard_active_uids()`。判定は `_is_long_absent` と同じ基準）。
+  体重だけ記録して食事を記録していない人が「痩せていない人」の上位に出てしまっていたため。
+  「目的別の平均体重変化」（KPI）と「要注意メンバー」の長期離脱一覧は上の方針どおり残す。
+  `tests/test_dashboard_absent.py` が回帰を検知する。
 - `COACH_PROMPT` と `DEV_PROPOSAL_PROMPT` は、呼び戻し施策（復帰キャンペーン・安否確認・再開うながし）の
   提案を**明示的に禁止**している。この禁止を外さないこと（`tests/test_report_scope.py` が回帰を検知する）。
 
