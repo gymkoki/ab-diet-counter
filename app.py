@@ -816,6 +816,14 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        # 既存DBへの列追加（減量群と増量群の比較用：1日の摂取カロリーとBカウント）。
+        # 追加前の行は NULL のまま＝「未計測」として解析から外れる。列が既にあれば無視。
+        for col in ("kcal", "b_count"):
+            try:
+                cur.execute(f"ALTER TABLE daily_nutrition ADD COLUMN {col} REAL")
+                conn.commit()
+            except Exception:
+                conn.rollback()
     finally:
         conn.close()
 
@@ -5009,6 +5017,243 @@ def admin_member_gate_revoke_all():
     return jsonify({"ok": True})
 
 
+def _refresh_nutrition_kcal():
+    """kcal がまだ入っていない日を、残っている明細から計算し直す。
+
+    kcal・Bカウントの列は後から足したため、それ以前に作られた行は NULL のまま。
+    明細(daily_meals)が残っている日（直近5日＋VIP会員）だけは取り戻せる。
+    一度埋まれば次からは対象にならないので、2回目以降はほぼ何もしない。"""
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT m.user_id, m.date, m.payload FROM daily_meals m
+                   LEFT JOIN daily_nutrition n ON n.user_id = m.user_id AND n.date = m.date
+                   WHERE n.user_id IS NULL OR n.kcal IS NULL""")
+            rows = cur.fetchall()
+            for uid, date, payload in rows:
+                _save_daily_nutrition(cur, uid, date, payload, ts)
+            conn.commit()
+            return len(rows)
+        finally:
+            conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+#  減量群 vs 増量群 の食事比較（オーナー指示 2026-09-29）
+#  「減量できている人とできていない人で、何が具体的に違うのか」を
+#  摂取カロリー・野菜・タンパク質などで t 検定して示す。
+#  その日の食事が3食に満たない日は、記録漏れの可能性が高いので除外する。
+# ══════════════════════════════════════════════════════════════
+DIET_ANALYSIS_WEIGHT_DAYS   = 60   # 体重の傾きを見る期間（日）
+DIET_ANALYSIS_MIN_MEALS     = 3    # 1日にこの数以上の食事を記録した日だけを使う（オーナー指示）
+DIET_ANALYSIS_MIN_SPAN_DAYS = 7    # 体重の傾きを出すのに最低限必要な記録の幅（日）
+DIET_ANALYSIS_SMALL_N       = 5    # 1群がこの人数未満なら「参考程度」と明示する
+
+# 比べる項目：(キー, 表示名, 単位, 小数桁)
+DIET_METRICS = (
+    ("kcal",      "摂取カロリー", "kcal", 0),
+    ("veg_g",     "野菜",         "g",    0),
+    ("protein_g", "タンパク質",   "g",    0),
+    ("b_count",   "Bカウント",    "B",    1),
+    ("fruit_g",   "果物",         "g",    0),
+    ("meals",     "食事の回数",   "回",   1),
+)
+
+
+def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
+                   min_meals=DIET_ANALYSIS_MIN_MEALS, threshold=0.0):
+    """減量群と増量群を作り、項目ごとに Welch の t 検定をする。
+
+    比べる単位は「会員」（1人の複数日は独立ではないため、日を単位にすると
+    記録の多い人の影響が大きくなり、見かけの有意差が出てしまう）。
+    ① 体重：直近 weight_days 日の記録から最小二乗で傾きを出し、kg/30日 に直す。
+       傾きが -threshold 未満なら減量群、+threshold 超なら増量群、その間は維持群（比較から外す）。
+    ② 食事：同じ期間のうち、食事を min_meals 回以上記録した日だけの平均を会員ごとに出す。
+    """
+    import diet_stats as ds
+
+    # 明細から daily_nutrition を補完（まだ無い日）＋ kcal が未計算の日を計算し直す
+    try:
+        _ensure_nutrition_backfilled()
+        _refresh_nutrition_kcal()
+    except Exception as e:
+        app.logger.warning("nutrition sync skipped: %s", e)
+
+    today = datetime.datetime.now(JST).date()
+    start = (today - datetime.timedelta(days=weight_days)).isoformat()
+
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT user_id, date, weight FROM daily_weight "
+                    f"WHERE date>={PH} AND weight>0 ORDER BY user_id, date", (start,))
+        w_rows = cur.fetchall()
+        cur.execute(f"SELECT user_id, date, meal_count, kcal, b_count, protein_g, veg_g, fruit_g "
+                    f"FROM daily_nutrition WHERE date>={PH}", (start,))
+        n_rows = cur.fetchall()
+        cur.execute("SELECT user_id, display_name FROM user_profile")
+        names = {r[0]: r[1] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    # ① 体重の傾き
+    weights = {}
+    for uid, d, w in w_rows:
+        try:
+            day = (datetime.date.fromisoformat(str(d)[:10]) - today).days
+        except ValueError:
+            continue
+        weights.setdefault(uid, []).append((day, float(w)))
+    slope = {}
+    for uid, pts in weights.items():
+        span = max(p[0] for p in pts) - min(p[0] for p in pts)
+        if len(pts) < 2 or span < DIET_ANALYSIS_MIN_SPAN_DAYS:
+            continue
+        s = ds.slope_per_day(pts)
+        if s is not None:
+            slope[uid] = s * 30.0
+
+    # ② 3食以上の日だけで、会員ごとの平均
+    days_all, days_ok = 0, 0
+    per_user = {}
+    for uid, d, meals, kcal, b, p, v, fr in n_rows:
+        days_all += 1
+        if (meals or 0) < min_meals:
+            continue
+        days_ok += 1
+        rec = per_user.setdefault(uid, {k: [] for k, *_ in DIET_METRICS})
+        for key, val in (("meals", meals), ("kcal", kcal), ("b_count", b),
+                         ("protein_g", p), ("veg_g", v), ("fruit_g", fr)):
+            if val is not None:
+                rec[key].append(float(val))
+
+    members = []
+    for uid, rec in per_user.items():
+        if uid not in slope:
+            continue
+        s = slope[uid]
+        group = "loss" if s < -threshold else ("gain" if s > threshold else "flat")
+        means = {k: (round(sum(v) / len(v), 2) if v else None) for k, v in rec.items()}
+        members.append({
+            "user_id_short": uid[:8],
+            "name": names.get(uid) or None,
+            "group": group,
+            "slope_kg_30d": round(s, 2),
+            "days": len(rec["meals"]),
+            "means": means,
+        })
+    members.sort(key=lambda m: m["slope_kg_30d"])
+
+    loss = [m for m in members if m["group"] == "loss"]
+    gain = [m for m in members if m["group"] == "gain"]
+
+    results = []
+    for key, label, unit, nd in DIET_METRICS:
+        a = [m["means"][key] for m in loss if m["means"][key] is not None]
+        b = [m["means"][key] for m in gain if m["means"][key] is not None]
+        tt = ds.welch_ttest(a, b)
+        g = ds.hedges_g(a, b)
+        results.append({
+            "key": key, "label": label, "unit": unit, "digits": nd,
+            "loss": {"n": len(a), "mean": ds.mean(a) if a else None,
+                     "sd": (ds.sample_var(a) ** 0.5) if len(a) >= 2 else None},
+            "gain": {"n": len(b), "mean": ds.mean(b) if b else None,
+                     "sd": (ds.sample_var(b) ** 0.5) if len(b) >= 2 else None},
+            "diff": tt["diff"] if tt else None,
+            "ci_low": tt["ci_low"] if tt else None,
+            "ci_high": tt["ci_high"] if tt else None,
+            "t": tt["t"] if tt else None,
+            "df": tt["df"] if tt else None,
+            "p": tt["p"] if tt else None,
+            "g": g,
+            "effect": ds.effect_label(g),
+            # 群の人数（この項目の値が無い人も含む）。「人がいない」と「未計測」を区別するため
+            "loss_members": len(loss),
+            "gain_members": len(gain),
+        })
+
+    adj = ds.holm([r["p"] for r in results])
+    for r, pa in zip(results, adj):
+        r["p_holm"] = pa
+        r["significant"] = pa is not None and pa < 0.05
+        r["summary"] = _diet_metric_sentence(r)
+
+    headline = [r for r in results
+                if r["g"] is not None and (r["significant"] or abs(r["g"]) >= 0.8)]
+    headline.sort(key=lambda r: -abs(r["g"]))
+
+    nutrition_dates = sorted({str(r[1])[:10] for r in n_rows})
+    return {
+        "params": {"weight_days": weight_days, "min_meals": min_meals, "threshold": threshold},
+        "coverage": {
+            "members_with_weight_trend": len(slope),
+            "members_with_3meal_days": len(per_user),
+            "members_compared": len(loss) + len(gain),
+            "flat_excluded": len([m for m in members if m["group"] == "flat"]),
+            "days_total": days_all,
+            "days_used": days_ok,
+            "days_excluded": days_all - days_ok,
+            "loss_n": len(loss),
+            "gain_n": len(gain),
+            "nutrition_from": nutrition_dates[0] if nutrition_dates else None,
+            "nutrition_to": nutrition_dates[-1] if nutrition_dates else None,
+            "small_sample": min(len(loss), len(gain)) < DIET_ANALYSIS_SMALL_N,
+        },
+        "results": results,
+        "headline": [r["summary"] for r in headline],
+        "members": members,
+    }
+
+
+def _diet_metric_sentence(r):
+    """1項目ぶんの結論を、オーナーが読める日本語1文にする。"""
+    if r["diff"] is None:
+        g1, g2 = r.get("loss_members", 0), r.get("gain_members", 0)
+        if g1 < 2 or g2 < 2:
+            return f"{r['label']}：人数が足りず比較できません（減量群{g1}人・増量群{g2}人。各2人以上必要）。"
+        n1, n2 = r["loss"]["n"], r["gain"]["n"]
+        if n1 == 0 and n2 == 0:
+            return f"{r['label']}：まだ計測データがありません。"
+        return f"{r['label']}：計測できた人が足りず比較できません（減量群{n1}人・増量群{n2}人。各2人以上必要）。"
+    nd = r["digits"]
+    diff = r["diff"]
+    amount = f"{abs(diff):,.{nd}f}{r['unit']}"
+    direction = "多い" if diff > 0 else "少ない"
+    head = f"{r['label']}：減量群の方が1日あたり {amount} {direction}"
+    p = r["p_holm"]
+    ptxt = f"p={p:.3f}" if p is not None and p >= 0.001 else "p<0.001"
+    g = abs(r["g"] or 0)
+    if r["significant"]:
+        return f"{head}（統計的に有意な差・{ptxt}・{r['effect']}）。"
+    if g >= 0.8:
+        return f"{head}（差は大きいが、人数が少なく有意とまでは言えない・{ptxt}。人数が増えたら再確認）。"
+    return f"{r['label']}：両群ではっきりした差は見られません（{ptxt}）。"
+
+
+@app.route("/api/admin/diet-analysis")
+@_admin_required
+def admin_diet_analysis():
+    """減量群と増量群の食事の違い（t 検定）。"""
+    def _arg(name, cast, default, lo, hi):
+        try:
+            return max(lo, min(hi, cast(request.args.get(name, default))))
+        except (TypeError, ValueError):
+            return default
+    try:
+        data = _diet_analysis(
+            weight_days=_arg("weight_days", int, DIET_ANALYSIS_WEIGHT_DAYS, 14, 365),
+            min_meals=_arg("min_meals", int, DIET_ANALYSIS_MIN_MEALS, 1, 10),
+            threshold=_arg("threshold", float, 0.0, 0.0, 5.0),
+        )
+    except Exception as e:
+        app.logger.error("diet analysis failed: %s", e)
+        return jsonify({"error": "解析に失敗しました。時間をおいてお試しください。"}), 500
+    return jsonify(data)
+
+
 @app.route("/api/admin/credit-base", methods=["GET", "POST"])
 @_admin_required
 def admin_credit_base():
@@ -6281,6 +6526,8 @@ def _summarize_day_meals(payload_str):
     count = 0
     protein = veg = 0.0
     fruit = None
+    kcal = b_total = 0.0
+    kcal_known = False
     for key in MEAL_SECTION_KEYS:
         sec = payload.get(key)
         if not isinstance(sec, dict):
@@ -6302,10 +6549,19 @@ def _summarize_day_meals(payload_str):
                 fr = sum(float(f.get("fruit_g") or 0) for f in foods)
             if isinstance(fr, (int, float)):
                 fruit = (fruit or 0.0) + float(fr)
+            # 摂取カロリー：各料理の kcal_per_serving（＝実際に食べた量の推定kcal）の合計
+            for f in foods:
+                if isinstance(f, dict) and isinstance(f.get("kcal_per_serving"), (int, float)):
+                    kcal += float(f["kcal_per_serving"])
+                    kcal_known = True
+            tb = res.get("total_b_count")
+            b_total += float(tb) if isinstance(tb, (int, float)) else sum(
+                float(f.get("b_count") or 0) for f in foods if isinstance(f, dict))
     if not count:
         return None
     return {"meal_count": count, "protein_g": round(protein, 1),
-            "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1))}
+            "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1)),
+            "kcal": (round(kcal, 1) if kcal_known else None), "b_count": round(b_total, 2)}
 
 
 def _save_daily_nutrition(cur, uid, date, payload_str, ts):
@@ -6318,22 +6574,26 @@ def _save_daily_nutrition(cur, uid, date, payload_str, ts):
         cur.execute(f"DELETE FROM daily_nutrition WHERE user_id={PH} AND date={PH}", (uid, date))
         return
     vals = (uid, date, summary["meal_count"], summary["protein_g"],
-            summary["veg_g"], summary["fruit_g"], ts)
+            summary["veg_g"], summary["fruit_g"], summary.get("kcal"), summary.get("b_count"), ts)
     if USE_PG:
         cur.execute(
-            """INSERT INTO daily_nutrition (user_id, date, meal_count, protein_g, veg_g, fruit_g, created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """INSERT INTO daily_nutrition
+                 (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (user_id, date) DO UPDATE SET
                  meal_count=EXCLUDED.meal_count, protein_g=EXCLUDED.protein_g,
-                 veg_g=EXCLUDED.veg_g, fruit_g=EXCLUDED.fruit_g, created_at=EXCLUDED.created_at""",
+                 veg_g=EXCLUDED.veg_g, fruit_g=EXCLUDED.fruit_g,
+                 kcal=EXCLUDED.kcal, b_count=EXCLUDED.b_count, created_at=EXCLUDED.created_at""",
             vals)
     else:
         cur.execute(
-            """INSERT INTO daily_nutrition (user_id, date, meal_count, protein_g, veg_g, fruit_g, created_at)
-               VALUES (?,?,?,?,?,?,?)
+            """INSERT INTO daily_nutrition
+                 (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)
                ON CONFLICT(user_id, date) DO UPDATE SET
                  meal_count=excluded.meal_count, protein_g=excluded.protein_g,
-                 veg_g=excluded.veg_g, fruit_g=excluded.fruit_g, created_at=excluded.created_at""",
+                 veg_g=excluded.veg_g, fruit_g=excluded.fruit_g,
+                 kcal=excluded.kcal, b_count=excluded.b_count, created_at=excluded.created_at""",
             vals)
 
 
