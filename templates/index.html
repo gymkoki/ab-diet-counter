@@ -657,7 +657,7 @@
     #underrec-notice .ur-title { font-size:17px; font-weight:800; margin-bottom:4px; }
     #underrec-notice .ur-desc { font-size:16px; line-height:1.6; opacity:0.9; }
     #underrec-notice .ur-close { background:rgba(36,80,127,0.10); border:none; color:#24507F; width:28px; height:28px; border-radius:50%; font-size:16px; font-weight:800; cursor:pointer; flex-shrink:0; line-height:1; }
-    /* 今日の記録の進みぐあい（朝・昼・晩の3食がそろったか）。
+    /* 今日の記録の進みぐあい（朝・昼・晩の3回がそろったか）。
        1日1〜2回しか上がらない原因は「食べたのに記録し忘れている」ことなので、
        記録画面を開いた瞬間に「あと何食」が見える場所を作る。 */
     .meal-progress { margin:12px 16px 0; padding:12px 14px; border-radius:var(--radius-md); background:#FFF8EC; border:1px solid #F3DFB8; cursor:pointer; }
@@ -887,7 +887,7 @@
     <div id="meal-progress" class="meal-progress" onclick="openFileInput('food')">
       <div class="mp-head">
         <span class="mp-title">🍽️ 今日の記録</span>
-        <span class="mp-count" id="mp-count">0/3食</span>
+        <span class="mp-count" id="mp-count">0/3回</span>
       </div>
       <div class="mp-dots" id="mp-dots"></div>
       <div class="mp-msg" id="mp-msg"></div>
@@ -1939,7 +1939,7 @@ let _initHadRenderError = false;
 //  今日のBカウント合計
 // ═══════════════════════════════════════════
 // ═══════════════════════════════════════════
-//  今日の記録の進みぐあい（朝・昼・晩の3食がそろったか）
+//  今日の記録の進みぐあい（朝・昼・晩の3回がそろったか）
 //  オーナー指示 2026-09-29：1日の写真が1回・2回だけの人は「掲載し忘れ」であって
 //  実際に1食しか食べていないわけではない。責めずに「あと何食」だけを示して、
 //  記録画面を開いた瞬間に忘れに気づけるようにする。
@@ -1959,7 +1959,7 @@ function renderMealProgress(count) {
   if (title) title.textContent = isToday ? '🍽️ 今日の記録' : '🍽️ この日の記録';
 
   const cnt = document.getElementById('mp-count');
-  if (cnt) cnt.textContent = `${n}/${MEAL_TARGET_PER_DAY}食`;
+  if (cnt) cnt.textContent = `${n}/${MEAL_TARGET_PER_DAY}回`;
 
   const dots = document.getElementById('mp-dots');
   if (dots) {
@@ -1974,12 +1974,12 @@ function renderMealProgress(count) {
   if (msg) {
     const rest = MEAL_TARGET_PER_DAY - n;
     if (n === 0) {
-      msg.textContent = 'まだ記録がありません。タップして1食目の写真から始めましょう📷';
+      msg.textContent = 'まだ記録がありません。写真を追加して、1回目の食事から始めましょう。';
     } else if (rest > 0) {
-      msg.textContent = `あと${rest}食分。食べたのに記録していない食事はありませんか？`
+      msg.textContent = `あと${rest}回分。食べたのに記録していない食事はありませんか？`
         + '（間食・飲み物もタップで追加できます）';
     } else {
-      msg.textContent = `${n}食そろいました！記録がそろうほどBカウントと採点が正確になります🎉`;
+      msg.textContent = `${n}回そろいました！記録がそろうほどBカウントと採点が正確になります🎉`;
     }
   }
 }

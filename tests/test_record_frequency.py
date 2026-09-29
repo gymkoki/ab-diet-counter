@@ -176,9 +176,29 @@ def test_app_shows_remaining_meals():
         html = f.read()
     assert 'id="meal-progress"' in html
     assert "function renderMealProgress" in html
-    assert "MEAL_TARGET_PER_DAY = 3" in html, "目標は朝・昼・晩の3食"
+    assert "MEAL_TARGET_PER_DAY = 3" in html, "目標は朝・昼・晩の3回"
     assert "renderMealProgress(allItems.length)" in html, \
         "記録を足した／消したときに更新されないと数字が古いまま残る"
+
+
+def test_app_counts_in_kai_not_shoku():
+    """単位は「食」ではなく「回」（オーナー指示 2026-09-29）。"""
+    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    assert '<span class="mp-count" id="mp-count">0/3回</span>' in html
+    body = html[html.index("function renderMealProgress"):]
+    body = body[:body.index("\nfunction updateDailyTotal")]
+    assert "${MEAL_TARGET_PER_DAY}回" in body
+    assert "あと${rest}回分" in body
+    assert "食`" not in body and "食。" not in body and "食分" not in body, \
+        "「食」が残っています（単位は「回」）"
+
+
+def test_app_first_step_message():
+    """記録ゼロのときの案内文（オーナー指定の文面）。"""
+    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    assert "まだ記録がありません。写真を追加して、1回目の食事から始めましょう。" in html
 
 
 def test_app_progress_does_not_use_admin_api():
