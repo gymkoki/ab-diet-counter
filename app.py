@@ -2504,6 +2504,45 @@ def admin_report_data():
             "night_days":   len(s.get("night") or ()),
         }
 
+    # ── 記録が足りない会員をBカウントの分析から外す（オーナー指示 2026-09-29） ──────
+    # 「1日の写真が1回・2回の人のBカウントは、掲載し忘れているだけで実態を反映していない」。
+    # 記録した日あたりの平均枠数（朝昼晩のうちいくつ埋まったか）で判定する。
+    def _slots_per_day(uid):
+        """記録した日1日あたり、朝昼晩の枠がいくつ埋まっているか。
+        判定材料が足りない（記録日が少ない）会員は None を返し、除外しない。"""
+        s = slots_by_user.get(uid) or {}
+        days, total = set(), 0
+        for key, _st, _en in SLOT_DEFS:
+            got = s.get(key) or set()
+            days |= got
+            total += len(got)
+        if len(days) < REPORT_THIN_MIN_DAYS:
+            return None
+        return round(total / len(days), 2)
+
+    slots_per_day_by_user = {uid: _slots_per_day(uid) for uid in cut_uids}
+
+    def _is_thin_logger(uid):
+        spd = slots_per_day_by_user.get(uid)
+        return spd is not None and spd < REPORT_MIN_SLOTS_PER_DAY
+
+    thin_uids = {uid for uid in cut_uids if _is_thin_logger(uid)}
+
+    # 除外した会員は捨てずに一覧で返す。数字を信じられないまま置いておくのではなく
+    # 「この人たちに記録を増やしてもらう」という次の手が打てるようにするため。
+    thin_members = [_slot_row(mem, uid) | {"slots_per_day": slots_per_day_by_user.get(uid),
+                                           "days": mem["days"]}
+                    for mem, uid in zip(cut_members, cut_member_uids)
+                    if uid in thin_uids]
+    thin_members.sort(key=lambda r: (r["slots_per_day"] or 0))
+
+    # 外すのは「Bカウントの数字を使う分析」だけ＝相関グラフと平均Bカウントの推移。
+    # 朝昼晩の記録状況の表（へった人／ふえた人）からは外さない：あの表は
+    # まさに「記録の抜け」を探すためのもので、記録が足りない人こそ見る必要がある。
+    corr_members = [mem for mem, uid in zip(cut_members, cut_member_uids)
+                    if uid not in thin_uids]
+    corr_b_uids = cut_uids - thin_uids
+
     # プレ（初回記録）→ポスト（最新記録）の体重変化で2つに分ける（オーナー指示 2026-09）。
     # 直近だけを見ると「全体では痩せているのに、この1週間で200g増えた人」が
     # 「減量が進んでいない人」として出てしまうため、必ず初回との比較で判定する。
@@ -2516,8 +2555,12 @@ def admin_report_data():
                           key=lambda t: t[0]["change_kg"])          # よく減った人が先頭
     gained_pairs = sorted([t for t in active if t[0]["change_kg"] >= LOSS_BAND_KG],
                           key=lambda t: -t[0]["change_kg"])         # よく増えた人が先頭
-    lost_members   = [_slot_row(mem, uid) for mem, uid in lost_pairs[:10]]
-    gained_members = [_slot_row(mem, uid) for mem, uid in gained_pairs[:10]]
+    # thin は「この人のBカウントは記録が足りず信用できない」という印。
+    # 表に出したまま印を付けることで、「食べ過ぎ」と「記録漏れ」を取り違えずに声をかけられる。
+    lost_members   = [_slot_row(mem, uid) | {"thin": uid in thin_uids}
+                      for mem, uid in lost_pairs[:10]]
+    gained_members = [_slot_row(mem, uid) | {"thin": uid in thin_uids}
+                      for mem, uid in gained_pairs[:10]]
 
     # ±2kg未満（横ばい）の人数も出す。表には載らないが「何人が見えていないか」は示す。
     flat_count = len(active) - len(lost_pairs) - len(gained_pairs)
@@ -2525,7 +2568,7 @@ def admin_report_data():
     cut_corr = {
         "users": len(cut_uids),
         "min_days": CORR_MIN_DAYS,
-        "members": cut_members,
+        "members": corr_members,
         "slot_days": SLOT_DAYS,
         "loss_band_kg": LOSS_BAND_KG,
         "lost_members": lost_members,
@@ -2535,8 +2578,12 @@ def admin_report_data():
             "flat": flat_count,
             "gained": len(gained_pairs),
         },
+        # 記録が足りないので分析から外した会員（Bカウントが実態より良く出ている人）
+        "min_slots_per_day": REPORT_MIN_SLOTS_PER_DAY,
+        "thin_members": thin_members,
+        "thin_count": len(thin_members),
         "b_avg_trend": [
-            _avg([b_by_user[u][d] for u in cut_uids if u in b_by_user and d in b_by_user[u]], 2)
+            _avg([b_by_user[u][d] for u in corr_b_uids if u in b_by_user and d in b_by_user[u]], 2)
             for d in all_dates
         ],
         "loss_avg_trend": [
@@ -2866,6 +2913,16 @@ class _CoachNoApiKey(Exception):
 #  外さない対象：ジムの実績集計（平均減量などのKPI・体重の推移）と、
 #            管理画面の「長期離脱」一覧（人数を把握するための参考情報として残す）。
 REPORT_ABSENT_DAYS = 14
+
+# ── 記録が足りない会員を「Bカウントの分析」から外す（オーナー指示 2026-09-29） ────
+# 1日に1回・2回しか写真を上げない会員のBカウントは、実際に食べた量ではなく
+# 「記録できた分だけ」の数字になる。これを混ぜると、平均Bカウントも相関グラフも
+# 「Bが少ないのに痩せない人」ばかりになり、オーナーの判断を誤らせる。
+# 判定は「朝・昼・晩の3枠のうち、記録した日に平均いくつ埋まっているか」で行う。
+# 写真の枚数ではなく時間帯の数で数えるので、1食で2枚撮っても1枠にしかならない
+# （＝「たくさん撮る人」が有利にならない）。
+REPORT_MIN_SLOTS_PER_DAY = 2.0   # 記録した日の平均で2枠（＝1日2食）未満は分析から外す
+REPORT_THIN_MIN_DAYS = 3         # 3日以上記録がある人だけ判定する（少ないと偶然で決まる）
 
 
 def _is_long_absent(mem, days=REPORT_ABSENT_DAYS):

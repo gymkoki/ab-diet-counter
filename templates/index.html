@@ -657,6 +657,22 @@
     #underrec-notice .ur-title { font-size:17px; font-weight:800; margin-bottom:4px; }
     #underrec-notice .ur-desc { font-size:16px; line-height:1.6; opacity:0.9; }
     #underrec-notice .ur-close { background:rgba(36,80,127,0.10); border:none; color:#24507F; width:28px; height:28px; border-radius:50%; font-size:16px; font-weight:800; cursor:pointer; flex-shrink:0; line-height:1; }
+    /* 今日の記録の進みぐあい（朝・昼・晩の3食がそろったか）。
+       1日1〜2回しか上がらない原因は「食べたのに記録し忘れている」ことなので、
+       記録画面を開いた瞬間に「あと何食」が見える場所を作る。 */
+    .meal-progress { margin:12px 16px 0; padding:12px 14px; border-radius:var(--radius-md); background:#FFF8EC; border:1px solid #F3DFB8; cursor:pointer; }
+    .meal-progress.mp-done { background:#EFFBF4; border-color:#BFE8D2; }
+    .meal-progress .mp-head { display:flex; align-items:center; justify-content:space-between; }
+    .meal-progress .mp-title { font-size:17px; font-weight:800; color:#7A5410; }
+    .meal-progress.mp-done .mp-title { color:#0E7A50; }
+    .meal-progress .mp-count { font-size:17px; font-weight:900; color:#7A5410; font-variant-numeric:tabular-nums; }
+    .meal-progress.mp-done .mp-count { color:#0E7A50; }
+    .meal-progress .mp-dots { display:flex; gap:8px; margin:10px 0 8px; }
+    .meal-progress .mp-dot { flex:1; height:10px; border-radius:6px; background:#EADFC8; }
+    .meal-progress .mp-dot.on { background:#E8A33D; }
+    .meal-progress.mp-done .mp-dot.on { background:#0E9F6E; }
+    .meal-progress .mp-msg { font-size:16px; line-height:1.5; color:#7A5410; font-weight:600; }
+    .meal-progress.mp-done .mp-msg { color:#0E7A50; }
     .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:var(--radius-md); border:none; background:#0E9F6E; color:white; font-size:17px; font-weight:700; cursor:pointer; }
     .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; box-shadow:0 24px 48px rgba(0,0,0,0.18); }
     /* ── お知らせ・確認ダイアログの共通ルール ──
@@ -865,6 +881,17 @@
     <button class="ur-close" onclick="closeUnderRecNotice()" aria-label="閉じる">✕</button>
   </div>
   <div id="sub-food">
+    <!-- 今日あと何食記録すればそろうかを、開いた瞬間に見えるようにする
+         （オーナー指示 2026-09-29：1日1〜2回しか上がらないのは「忘れ」なので、
+           忘れていることに本人が気づける場所を作る） -->
+    <div id="meal-progress" class="meal-progress" onclick="openFileInput('food')">
+      <div class="mp-head">
+        <span class="mp-title">🍽️ 今日の記録</span>
+        <span class="mp-count" id="mp-count">0/3食</span>
+      </div>
+      <div class="mp-dots" id="mp-dots"></div>
+      <div class="mp-msg" id="mp-msg"></div>
+    </div>
     <div id="panel-food" class="meal-panel active"></div>
   </div>
   <div id="sub-weight" style="display:none">
@@ -1911,6 +1938,52 @@ let _initHadRenderError = false;
 // ═══════════════════════════════════════════
 //  今日のBカウント合計
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  今日の記録の進みぐあい（朝・昼・晩の3食がそろったか）
+//  オーナー指示 2026-09-29：1日の写真が1回・2回だけの人は「掲載し忘れ」であって
+//  実際に1食しか食べていないわけではない。責めずに「あと何食」だけを示して、
+//  記録画面を開いた瞬間に忘れに気づけるようにする。
+//  ※参照するのは自分の記録だけ。管理画面のデータは一切使わない。
+// ═══════════════════════════════════════════
+const MEAL_TARGET_PER_DAY = 3;      // 朝・昼・晩
+
+function renderMealProgress(count) {
+  const box = document.getElementById('meal-progress');
+  if (!box) return;
+  const n = Math.max(0, count | 0);
+  const done = n >= MEAL_TARGET_PER_DAY;
+  const isToday = currentDate() === getTodayJST();
+  box.classList.toggle('mp-done', done);
+
+  const title = box.querySelector('.mp-title');
+  if (title) title.textContent = isToday ? '🍽️ 今日の記録' : '🍽️ この日の記録';
+
+  const cnt = document.getElementById('mp-count');
+  if (cnt) cnt.textContent = `${n}/${MEAL_TARGET_PER_DAY}食`;
+
+  const dots = document.getElementById('mp-dots');
+  if (dots) {
+    let html = '';
+    for (let i = 0; i < MEAL_TARGET_PER_DAY; i++) {
+      html += `<div class="mp-dot${i < n ? ' on' : ''}"></div>`;
+    }
+    dots.innerHTML = html;
+  }
+
+  const msg = document.getElementById('mp-msg');
+  if (msg) {
+    const rest = MEAL_TARGET_PER_DAY - n;
+    if (n === 0) {
+      msg.textContent = 'まだ記録がありません。タップして1食目の写真から始めましょう📷';
+    } else if (rest > 0) {
+      msg.textContent = `あと${rest}食分。食べたのに記録していない食事はありませんか？`
+        + '（間食・飲み物もタップで追加できます）';
+    } else {
+      msg.textContent = `${n}食そろいました！記録がそろうほどBカウントと採点が正確になります🎉`;
+    }
+  }
+}
+
 function updateDailyTotal() {
   let foodTotal = 0;
   let proteinTotal = 0;
@@ -1938,6 +2011,8 @@ function updateDailyTotal() {
   if (foodTotal > 0) setBCountLogEntry(currentDate(), net);
   // キャラカレンダー用：その時点の進捗スコアも保存（1日の最後の値がその日のキャラになる）
   { const cs = calcCharaScore(); if (cs.count > 0) setCharaLogEntry(currentDate(), cs.score); }
+  // 「あと何食」を出す（記録し忘れに本人が気づけるように）
+  renderMealProgress(allItems.length);
   const bar   = document.getElementById('ex-deduct-bar');
   const numEl = document.getElementById('ex-deduct-num');
   if (bar && numEl) {

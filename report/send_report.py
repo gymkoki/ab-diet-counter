@@ -322,7 +322,7 @@ def chart_cut_corr(data: dict) -> bytes:
     return fig_to_png(fig)
 
 
-def _slot_table(members, days, title, empty_note, band_kg):
+def _slot_table(members, days, title, empty_note, band_kg, notes=None):
     """朝・昼・晩に記録できているかの一覧（信号色の表）を描く共通部分。
 
     減量が進まない原因の多くは「食べ過ぎ」ではなく「記録していない食事がある」こと。
@@ -371,8 +371,14 @@ def _slot_table(members, days, title, empty_note, band_kg):
         ax.text(4.45, y, f"{mem.get('avg_b', 0):.1f}", ha="center", va="center",
                 fontsize=13, color=C_GRAY)
 
+    # 表の下に添える注記。表ごとに意味が違うので、渡されたものがあればそれを使う。
+    foot = notes if notes else [
+        f"※体重の変化は「初回記録（プレ）→最新記録（ポスト）」の差で、{band_kg:.0f}kg以上動いた人だけを載せています",
+        # オーナー方針 2026-09-09：離脱者の呼び戻しは追わないため、対象から外していることを明示する
+        f"※{days}日以上まったく記録がない会員は対象外です",
+    ]
     ax.set_xlim(-0.05, 4.9)
-    ax.set_ylim(-1.25, n - 0.35)
+    ax.set_ylim(-1.05 - 0.20 * len(foot), n - 0.35)
     ax.set_xticks([c + 0.47 for c in range(len(slots))] + [3.55, 4.45])
     ax.set_xticklabels([lbl for _k, lbl in slots] + ["体重の変化", "平均B"], fontsize=13)
     ax.xaxis.set_ticks_position("top")
@@ -380,7 +386,12 @@ def _slot_table(members, days, title, empty_note, band_kg):
     # 名前の下に初回記録日を出す。「2kg減」が1週間なのか半年なのかで意味が違うため。
     def _ylabel(mem):
         since = (mem.get("since") or "")[5:].replace("-", "/")
-        return f"{mem['name']}\n{since}〜" if since else mem["name"]
+        name = mem["name"]
+        # 記録が足りない会員には印を付ける。印が付いている人のBカウントは
+        # 「食べた量」ではなく「記録できた分」なので、食べ過ぎと取り違えないため。
+        if mem.get("thin"):
+            name += "（記録不足）"
+        return f"{name}\n{since}〜" if since else name
     ax.set_yticklabels([_ylabel(m) for m in reversed(members)], fontsize=13)
     ax.tick_params(axis="both", length=0)
     for sp in ax.spines.values():
@@ -393,12 +404,9 @@ def _slot_table(members, days, title, empty_note, band_kg):
             "緑＝ほぼ毎日記録　／　黄＝半分ぐらい　／　赤＝ほとんど記録なし　"
             "…… 赤い時間帯が「見えていない食事」",
             ha="center", va="center", fontsize=12.5, color=C_GRAY)
-    ax.text(2.2, -1.15,
-            f"※体重の変化は「初回記録（プレ）→最新記録（ポスト）」の差で、{band_kg:.0f}kg以上動いた人だけを載せています",
-            ha="center", va="center", fontsize=11, color=C_GRAY)
-    # オーナー方針 2026-09-09：離脱者の呼び戻しは追わないため、対象から外していることを明示する
-    ax.text(2.2, -1.35, f"※{days}日以上まったく記録がない会員は対象外です",
-            ha="center", va="center", fontsize=11, color=C_GRAY)
+    for i, line in enumerate(foot):
+        ax.text(2.2, -1.15 - 0.20 * i, line,
+                ha="center", va="center", fontsize=11, color=C_GRAY)
     fig.tight_layout()
     return fig_to_png(fig)
 
@@ -423,6 +431,27 @@ def chart_lost_slots(data: dict) -> bytes:
         f"体重が{band:.0f}kg以上へった人：朝・昼・晩の記録状況",
         f"いま該当者はいません。\n（初回記録から{band:.0f}kg以上へった減量希望の会員が対象です）",
         band)
+
+
+def chart_thin_slots(data: dict) -> bytes:
+    """記録が足りないためBカウントの分析から外した会員（オーナー指示 2026-09-29）。
+
+    1日に1回・2回しか写真を上げない人のBカウントは「食べた量」ではなく
+    「記録できた分」なので、混ぜると平均も相関グラフも狂う。分析からは外したうえで、
+    ここに名前を出して「記録を増やしてもらう」ほうへ手を打てるようにする。"""
+    cc = data.get("cut_corr") or {}
+    days = cc.get("slot_days", 14)
+    minimum = cc.get("min_slots_per_day", 2.0)
+    return _slot_table(
+        cc.get("thin_members") or [], days,
+        "記録が足りない会員：Bカウントの分析から外した人",
+        f"いま該当者はいません。\n（朝昼晩のうち、記録した日の平均で{minimum:.0f}回未満の会員が対象です）",
+        cc.get("loss_band_kg", 2.0),
+        notes=[
+            f"※記録した日の平均で朝昼晩のうち{minimum:.0f}回未満しか記録がない会員です",
+            "※この人たちのBカウントは「食べた量」ではなく「記録できた分」なので、",
+            "　平均Bカウントと相関グラフからは外しています。まず記録を増やしてもらうのが先です",
+        ])
 
 
 def chart_nutrition(data: dict) -> bytes:
@@ -1040,6 +1069,9 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, p
     lost_n     = _bands.get("lost", 0)
     gained_n   = _bands.get("gained", 0)
     flat_n     = _bands.get("flat", 0)
+    # 記録が足りないためBカウントの分析から外した会員（オーナー指示 2026-09-29）
+    thin_n     = _cc.get("thin_count", 0)
+    min_slots  = int(_cc.get("min_slots_per_day", 2))
 
     # 減量希望者の平均減量実績（初回記録 vs 最新記録、全期間）
     loss_avg = data.get("weight_loss_avg_kg")
@@ -1229,6 +1261,17 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, p
         ※ 体重の変化は「初回記録（プレ）→最新記録（ポスト）」の差で判定しています。
         直近の増減ではないので、全体では痩せている人が「ふえた人」に出ることはありません。
         ±{band_kg}kg未満（横ばい）の{flat_n}名は、どちらの表にも出していません。
+        名前に「（記録不足）」が付いた人のBカウントは記録が足りず、食べ過ぎかどうかの判断には使えません。
+      </div>
+      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:18px 0 4px">
+        🚫 記録が足りない会員（{thin_n}名）— Bカウントの分析から外しています
+      </div>
+      <img class="chart" src="cid:chart_thin_slots" alt="Under-recording Members Excluded from B-Count Analysis">
+      <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
+        ※ 1日に1回・2回しか記録がない人のBカウントは「食べた量」ではなく「記録できた分」です。
+        そのまま混ぜると平均Bカウントも相関グラフも実態より良く出てしまうため、
+        記録した日の平均で朝昼晩のうち{min_slots}回未満の会員は、上の相関グラフと平均Bカウントから外しています。
+        この{thin_n}名にはまず「記録を増やしてもらう」ことが先で、Bカウントの指導は数字が揃ってからです。
       </div>
     </div>
 
@@ -1356,6 +1399,7 @@ def main():
         "chart_cut_corr":  chart_cut_corr(data),
         "chart_gained_slots": chart_gained_slots(data),
         "chart_lost_slots":   chart_lost_slots(data),
+        "chart_thin_slots":   chart_thin_slots(data),
         "chart_nutrition": chart_nutrition(data),
         "chart_goal_compare": chart_goal_compare(data),
     }
