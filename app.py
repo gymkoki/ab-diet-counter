@@ -574,6 +574,22 @@ def init_db():
                     UNIQUE(user_id, date)
                 )
             """)
+            # 1日ぶんの栄養サマリー（食事明細 daily_meals は5日で消えるが、こちらは残す）。
+            # 「2kg以上減った人は何を食べていたか」のような振り返りが、
+            # 直近5日ぶんしか見られないという問題を解消するために持つ。写真は入れない。
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_nutrition (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    TEXT   NOT NULL,
+                    date       TEXT   NOT NULL,
+                    meal_count INTEGER NOT NULL,
+                    protein_g  REAL,
+                    veg_g      REAL,
+                    fruit_g    REAL,
+                    created_at TEXT   NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS daily_exercise (
                     id         SERIAL PRIMARY KEY,
@@ -646,6 +662,20 @@ def init_db():
                     user_id    TEXT    NOT NULL,
                     date       TEXT    NOT NULL,
                     payload    TEXT    NOT NULL,
+                    created_at TEXT    NOT NULL,
+                    UNIQUE(user_id, date)
+                )
+            """)
+            # 1日ぶんの栄養サマリー（食事明細 daily_meals は5日で消えるが、こちらは残す）
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily_nutrition (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    TEXT    NOT NULL,
+                    date       TEXT    NOT NULL,
+                    meal_count INTEGER NOT NULL,
+                    protein_g  REAL,
+                    veg_g      REAL,
+                    fruit_g    REAL,
                     created_at TEXT    NOT NULL,
                     UNIQUE(user_id, date)
                 )
@@ -2344,33 +2374,12 @@ def admin_report_data():
     # ── 栄養素（タンパク質・野菜・果物）の集計 ────────────────
     def _day_nutrition(payload_str):
         """1人1日ぶんの食事payloadから (タンパク質g, 野菜g, 果物g or None) を返す。
-        果物は計測開始前の記録にはフィールド自体が無いため、未計測(None)と0gを区別する。"""
-        try:
-            payload = json.loads(payload_str)
-        except Exception:
+        数え方は _summarize_day_meals に一本化している（保存側の daily_nutrition と
+        同じ定義にして、画面ごとに数字がずれないようにするため）。"""
+        summary = _summarize_day_meals(payload_str)
+        if summary is None:
             return None
-        protein = veg = 0.0
-        fruit = None
-        has_result = False
-        for key in MEAL_KEYS:
-            for item in payload.get(key, {}).get("items", []):
-                res = item.get("result")
-                if not isinstance(res, dict):
-                    continue
-                has_result = True
-                foods = res.get("foods") or []
-                p = res.get("total_protein_g")
-                protein += float(p) if isinstance(p, (int, float)) else sum(float(f.get("protein_g") or 0) for f in foods)
-                v = res.get("total_veg_g")
-                veg += float(v) if isinstance(v, (int, float)) else sum(float(f.get("veg_g") or 0) for f in foods)
-                fr = res.get("total_fruit_g")
-                if not isinstance(fr, (int, float)) and any(isinstance(f, dict) and "fruit_g" in f for f in foods):
-                    fr = sum(float(f.get("fruit_g") or 0) for f in foods)
-                if isinstance(fr, (int, float)):
-                    fruit = (fruit or 0.0) + float(fr)
-        if not has_result:
-            return None
-        return (protein, veg, fruit)
+        return (summary["protein_g"], summary["veg_g"], summary["fruit_g"])
 
     def _avg(vals, nd=1):
         vals = [v for v in vals if v is not None]
@@ -3001,6 +3010,151 @@ def admin_attention_flags():
         "long_absent": long_absent,
         "total_cut_members": len(members),
     })
+
+
+# ── 「減量できた人は何を食べていたか」の集計（オーナー依頼 2026-09-29） ─────────
+# 目的：2kg以上減量できた会員の平均Bカウント・タンパク質・野菜を知り、
+#       これから減量する会員への目安にする。
+# 【最重要】1日1枚しか写真を出していない日を混ぜない。
+#   記録が1件だけの日は「その日食べた量」ではなく「記録できた量」でしかなく、
+#   Bも野菜もタンパク質も実際よりはるかに小さく出る。平均が引っ張られるため、
+#   既定では「1日に2件以上記録した日」だけを使う（min_meals）。
+# 平均の取り方も「1人1票」にする（記録が多い人ほど平均を支配するのを防ぐため、
+#   まず会員ごとの平均を出し、それを会員間で平均する）。
+ACHIEVER_MIN_LOSS_KG = 2.0    # 「減量達成者」とみなす減量幅（初回記録 − 最新記録）
+ACHIEVER_MIN_MEALS   = 2      # 集計に採用する日の最低記録件数
+
+_nutrition_backfilled = False
+
+
+def _ensure_nutrition_backfilled():
+    """daily_nutrition をまだ埋めていなければ1回だけ補完する。
+    起動時ではなく管理画面から呼ばれたときに実行し、アプリの起動を遅くしない。"""
+    global _nutrition_backfilled
+    if _nutrition_backfilled:
+        return
+    _nutrition_backfilled = True
+    backfill_daily_nutrition()
+
+
+def _avg_or_none(vals, nd=1):
+    vals = [v for v in vals if isinstance(v, (int, float))]
+    return round(sum(vals) / len(vals), nd) if vals else None
+
+
+def collect_achiever_nutrition(min_loss=ACHIEVER_MIN_LOSS_KG, min_meals=ACHIEVER_MIN_MEALS):
+    """減量達成者と、それ以外の会員の「1日あたりの食事内容」を比べて返す。
+
+    ・達成者＝体重が min_loss kg以上減った人（初回記録 − 最新記録。体重が2回以上ある人だけ）
+    ・集計に使う日＝その日に min_meals 件以上の食事を記録した日だけ
+    ・平均＝会員ごとの平均を出してから、会員間で平均する（1人1票）
+    """
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, date, weight FROM daily_weight ORDER BY user_id, date")
+        w_rows = cur.fetchall()
+        cur.execute(
+            f"SELECT user_id, date, meal_count, protein_g, veg_g, fruit_g FROM daily_nutrition "
+            f"WHERE meal_count >= {PH}", (min_meals,))
+        n_rows = cur.fetchall()
+        cur.execute("SELECT user_id, date, b_count FROM daily_b_count")
+        b_rows = cur.fetchall()
+        cur.execute("SELECT user_id, display_name FROM user_profile")
+        names = {r[0]: r[1] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    # 体重の変化（初回 − 最新）。1回しか測っていない人は判定できないので除く。
+    w_by_uid = {}
+    for uid, dt, w in w_rows:
+        w_by_uid.setdefault(uid, []).append((dt, float(w)))
+    loss_by_uid = {uid: rows[0][1] - rows[-1][1]
+                   for uid, rows in w_by_uid.items() if len(rows) >= 2}
+
+    b_by_key = {(r[0], r[1]): float(r[2]) for r in b_rows if r[2] is not None}
+
+    # 会員ごとに「採用した日」を集める
+    per_user = {}
+    all_dates = []
+    for uid, dt, meals, protein, veg, fruit in n_rows:
+        all_dates.append(dt)
+        d = per_user.setdefault(uid, {"days": 0, "meals": [], "protein": [], "veg": [],
+                                      "fruit": [], "b": []})
+        d["days"] += 1
+        d["meals"].append(meals)
+        d["protein"].append(protein)
+        d["veg"].append(veg)
+        d["fruit"].append(fruit)
+        b = b_by_key.get((uid, dt))
+        if b is not None:
+            d["b"].append(b)
+
+    def _member_row(uid, d):
+        return {
+            "name": (names.get(uid) or "").strip() or f"匿名（{uid[:8]}…）",
+            "loss_kg": round(loss_by_uid.get(uid, 0.0), 1),
+            "days": d["days"],
+            "avg_b": _avg_or_none(d["b"], 2),
+            "avg_protein_g": _avg_or_none(d["protein"]),
+            "avg_veg_g": _avg_or_none(d["veg"]),
+            "avg_fruit_g": _avg_or_none(d["fruit"]),
+            "avg_meals_per_day": _avg_or_none(d["meals"]),
+        }
+
+    achievers, others = [], []
+    for uid, d in per_user.items():
+        if uid not in loss_by_uid or not d["days"]:
+            continue   # 体重の変化が分からない人は、どちらの群にも入れない
+        (achievers if loss_by_uid[uid] >= min_loss else others).append(_member_row(uid, d))
+
+    def _group(rows):
+        return {
+            "members": len(rows),
+            "days": sum(r["days"] for r in rows),
+            "avg_loss_kg": _avg_or_none([r["loss_kg"] for r in rows]),
+            "avg_b": _avg_or_none([r["avg_b"] for r in rows], 2),
+            "avg_protein_g": _avg_or_none([r["avg_protein_g"] for r in rows]),
+            "avg_veg_g": _avg_or_none([r["avg_veg_g"] for r in rows]),
+            "avg_fruit_g": _avg_or_none([r["avg_fruit_g"] for r in rows]),
+            "avg_meals_per_day": _avg_or_none([r["avg_meals_per_day"] for r in rows]),
+        }
+
+    achievers.sort(key=lambda r: -r["loss_kg"])
+    others.sort(key=lambda r: -r["loss_kg"])
+    return {
+        "min_loss_kg": min_loss,
+        "min_meals": min_meals,
+        "achievers": _group(achievers),
+        "others": _group(others),
+        "achiever_members": achievers,
+        # 何日ぶんのデータで出した数字かを必ず添える（少ない日数の平均を鵜呑みにしないため）
+        "data_range": {
+            "first": min(all_dates) if all_dates else None,
+            "last":  max(all_dates) if all_dates else None,
+            "dates": len(set(all_dates)),
+        },
+        "meals_retain_days": MEALS_RETAIN_DAYS,
+    }
+
+
+@app.route("/api/admin/achiever-nutrition")
+@_admin_required
+def admin_achiever_nutrition():
+    """【管理者専用】2kg以上減量できた人の平均Bカウント・タンパク質・野菜を返す。
+    ※1日1件しか記録が無い日は既定で集計から外す（min_meals=2）。"""
+    def _num(name, default, lo, hi):
+        try:
+            v = float(request.args.get(name, default))
+        except (TypeError, ValueError):
+            return default
+        return min(hi, max(lo, v))
+
+    _ensure_nutrition_backfilled()
+    return jsonify(collect_achiever_nutrition(
+        min_loss=_num("min_loss", ACHIEVER_MIN_LOSS_KG, 0.0, 50.0),
+        min_meals=int(_num("min_meals", ACHIEVER_MIN_MEALS, 1, 10)),
+    ))
 
 
 def _get_or_generate_coach_advice():
@@ -5838,6 +5992,115 @@ def get_monthly_b():
     })
 
 
+# 食事payloadのセクション名（旧「朝食/昼食/夕食/間食」も読む）
+MEAL_SECTION_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+
+
+def _summarize_day_meals(payload_str):
+    """1人1日ぶんの食事payloadを要約して
+    {"meal_count": 件数, "protein_g": g, "veg_g": g, "fruit_g": g or None} を返す。
+    解析済みの結果が1件も無ければ None。
+
+    【重要】この1か所だけで「1日の記録件数」と「1日の栄養量」を決める。
+    書き込み(daily_nutrition)とレポートの集計が別々の数え方になると、
+    同じ画面に違う数字が並ぶことになるため、必ずここを通す。
+    果物は計測開始前の記録にはフィールド自体が無いので、未計測(None)と0gを区別する。"""
+    try:
+        payload = json.loads(payload_str) if isinstance(payload_str, str) else payload_str
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    count = 0
+    protein = veg = 0.0
+    fruit = None
+    for key in MEAL_SECTION_KEYS:
+        sec = payload.get(key)
+        if not isinstance(sec, dict):
+            continue
+        for item in (sec.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            res = item.get("result")
+            if not isinstance(res, dict):
+                continue
+            count += 1
+            foods = res.get("foods") or []
+            p = res.get("total_protein_g")
+            protein += float(p) if isinstance(p, (int, float)) else sum(float(f.get("protein_g") or 0) for f in foods)
+            v = res.get("total_veg_g")
+            veg += float(v) if isinstance(v, (int, float)) else sum(float(f.get("veg_g") or 0) for f in foods)
+            fr = res.get("total_fruit_g")
+            if not isinstance(fr, (int, float)) and any(isinstance(f, dict) and "fruit_g" in f for f in foods):
+                fr = sum(float(f.get("fruit_g") or 0) for f in foods)
+            if isinstance(fr, (int, float)):
+                fruit = (fruit or 0.0) + float(fr)
+    if not count:
+        return None
+    return {"meal_count": count, "protein_g": round(protein, 1),
+            "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1))}
+
+
+def _save_daily_nutrition(cur, uid, date, payload_str, ts):
+    """その日の栄養サマリーを daily_nutrition に保存する（写真は保存しない）。
+    daily_meals は5日で消えるため、振り返り用の数字はこちらに残す。
+    ※呼び出し側のトランザクション内で使う（cur を受け取る）。"""
+    summary = _summarize_day_meals(payload_str)
+    if summary is None:
+        # その日の記録が全部消された場合は、サマリーも消す（古い数字を残さない）
+        cur.execute(f"DELETE FROM daily_nutrition WHERE user_id={PH} AND date={PH}", (uid, date))
+        return
+    vals = (uid, date, summary["meal_count"], summary["protein_g"],
+            summary["veg_g"], summary["fruit_g"], ts)
+    if USE_PG:
+        cur.execute(
+            """INSERT INTO daily_nutrition (user_id, date, meal_count, protein_g, veg_g, fruit_g, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (user_id, date) DO UPDATE SET
+                 meal_count=EXCLUDED.meal_count, protein_g=EXCLUDED.protein_g,
+                 veg_g=EXCLUDED.veg_g, fruit_g=EXCLUDED.fruit_g, created_at=EXCLUDED.created_at""",
+            vals)
+    else:
+        cur.execute(
+            """INSERT INTO daily_nutrition (user_id, date, meal_count, protein_g, veg_g, fruit_g, created_at)
+               VALUES (?,?,?,?,?,?,?)
+               ON CONFLICT(user_id, date) DO UPDATE SET
+                 meal_count=excluded.meal_count, protein_g=excluded.protein_g,
+                 veg_g=excluded.veg_g, fruit_g=excluded.fruit_g, created_at=excluded.created_at""",
+            vals)
+
+
+def backfill_daily_nutrition():
+    """まだ残っている daily_meals（直近5日＋VIP）から daily_nutrition を埋める。
+    導入時に「今日から先しか数字が無い」状態を避けるため、起動時に1回だけ走らせる。
+    すでにサマリーがある日は触らない（上書きしない）。"""
+    filled = 0
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT user_id, date FROM daily_nutrition")
+                have = {(r[0], r[1]) for r in cur.fetchall()}
+                cur.execute("SELECT user_id, date, payload, created_at FROM daily_meals")
+                rows = cur.fetchall()
+                for uid, date, payload_str, created_at in rows:
+                    if (uid, date) in have:
+                        continue
+                    _save_daily_nutrition(cur, uid, date, payload_str, created_at or
+                                          datetime.datetime.now(JST).isoformat())
+                    filled += 1
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        # 失敗してもアプリは動かす（集計が少し欠けるだけ）
+        print(f"[BACKFILL][daily_nutrition] {type(e).__name__}: {e}")
+    if filled:
+        print(f"[BACKFILL][daily_nutrition] {filled}件を補完しました")
+    return filled
+
+
 # 食事の明細＋写真サムネを日別に保存（過去5日分のみ保持し、それ以前は自動削除。
 # ただしVIP会員（user_profile.is_vip）はスタッフ確認用に無期限保持する）
 MEALS_RETAIN_DAYS = 5
@@ -5878,6 +6141,8 @@ def post_daily_meals():
                        ON CONFLICT(user_id, date) DO UPDATE SET payload=excluded.payload, created_at=excluded.created_at""",
                     (uid, date, payload_str, ts)
                 )
+            # 明細(daily_meals)は5日で消えるので、栄養サマリーだけは別テーブルへ残す
+            _save_daily_nutrition(cur, uid, date, payload_str, ts)
             cur.execute(f"SELECT is_vip FROM user_profile WHERE user_id={PH}", (uid,))
             row = cur.fetchone()
             is_vip = bool(row and row[0])

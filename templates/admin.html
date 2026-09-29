@@ -362,6 +362,18 @@
     <div id="attention-wrap"><div class="spinner"></div></div>
   </div>
 
+  <!-- 減量達成者の食事内容（2kg以上減った人は何を食べていたか） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🏆 減量達成者の食事内容</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      <b style="color:#059669">2kg以上減った人</b>と<b>それ以外の人</b>で、1日あたりの食事内容を比べます。
+      <u>1日に2件以上記録した日だけ</u>を使います（1日1枚しか出していない日は「食べた量」ではなく
+      「記録できた量」なので、混ぜると平均が実際より小さく出るため）。
+      平均は<b>会員1人＝1票</b>（記録の多い人が平均を支配しないよう、会員ごとの平均を出してから会員間で平均）。
+    </div>
+    <div id="achiever-wrap"><div class="spinner"></div></div>
+  </div>
+
   <!-- 減量メンバーの詳細（日別Bカウント・記録状況・食事へのリンク） -->
   <div class="card" style="margin-bottom:20px">
     <h2>🔥 減量メンバーの詳細</h2>
@@ -702,6 +714,83 @@
           </tr>${awayRows}</table></div>`
           : '<div class="no-data" style="padding:14px 0">該当なし</div>'}
       </div>`;
+  }
+
+  // ── 減量達成者の食事内容（2kg以上減った人 vs それ以外）──
+  // ※ /api/admin/achiever-nutrition は管理画面専用API（会員アプリからは呼ばない）
+  async function loadAchieverNutrition() {
+    const host = document.getElementById('achiever-wrap');
+    if (!host) return;
+    let d;
+    try {
+      const r = await fetch('/api/admin/achiever-nutrition');
+      if (!r.ok) { host.innerHTML = '<div class="no-data">読み込みに失敗しました</div>'; return; }
+      d = await r.json();
+    } catch (e) {
+      host.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+      return;
+    }
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const num = (v, unit) => (v == null ? '—' : `${v}${unit || ''}`);
+    const a = d.achievers || {}, o = d.others || {};
+
+    if (!a.members && !o.members) {
+      host.innerHTML = '<div class="no-data" style="padding:14px 0">'
+        + '対象になるデータがまだありません。<br>'
+        + '体重を2回以上記録し、1日2件以上の食事記録がある会員が対象です。</div>';
+      return;
+    }
+
+    const row = (label, key, unit) => `
+      <tr style="border-bottom:1px solid #F3F4F6">
+        <td style="padding:9px 8px;font-weight:700;color:#374151">${label}</td>
+        <td style="padding:9px 8px;text-align:center;font-weight:800;color:#059669;font-size:15px">${num(a[key], unit)}</td>
+        <td style="padding:9px 8px;text-align:center;font-weight:800;color:#6B7280;font-size:15px">${num(o[key], unit)}</td>
+      </tr>`;
+
+    const members = (d.achiever_members || []).map(m => `
+      <tr style="border-bottom:1px solid #F3F4F6">
+        <td style="padding:8px;font-weight:700">${esc(m.name)}</td>
+        <td style="padding:8px;text-align:center;font-weight:800;color:#059669">−${m.loss_kg}kg</td>
+        <td style="padding:8px;text-align:center">${num(m.avg_b)}</td>
+        <td style="padding:8px;text-align:center">${num(m.avg_protein_g, 'g')}</td>
+        <td style="padding:8px;text-align:center">${num(m.avg_veg_g, 'g')}</td>
+        <td style="padding:8px;text-align:center;color:#9CA3AF">${m.days}日</td>
+      </tr>`).join('');
+
+    const range = d.data_range || {};
+    host.innerHTML = `
+      <div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">
+          <th style="padding:6px 8px;text-align:left">1日あたりの平均</th>
+          <th style="padding:6px 8px;color:#059669">🏆 ${d.min_loss_kg}kg以上減（${a.members || 0}名）</th>
+          <th style="padding:6px 8px">それ以外（${o.members || 0}名）</th>
+        </tr>
+        ${row('Bカウント', 'avg_b', '')}
+        ${row('タンパク質', 'avg_protein_g', 'g')}
+        ${row('野菜', 'avg_veg_g', 'g')}
+        ${row('果物', 'avg_fruit_g', 'g')}
+        ${row('記録した食事の件数', 'avg_meals_per_day', '件')}
+        ${row('体重の変化', 'avg_loss_kg', 'kg減')}
+      </table></div>
+      <div style="font-size:11px;color:#9CA3AF;margin-top:8px;line-height:1.7">
+        集計に使った日数：達成者 ${a.days || 0}日 ／ それ以外 ${o.days || 0}日
+        ${range.first ? `（${esc(range.first)}〜${esc(range.last)}・${range.dates}日分）` : ''}<br>
+        ※栄養サマリーは記録されるたびに貯まっていきます。日数が少ないうちは参考値として見てください。
+      </div>
+      ${members ? `<div style="margin-top:16px">
+        <div style="font-size:13px;font-weight:800;color:#059669;margin-bottom:6px">🏆 達成者の内訳</div>
+        <div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">
+            <th style="padding:6px 8px;text-align:left">会員</th>
+            <th style="padding:6px 8px">体重</th>
+            <th style="padding:6px 8px">平均B</th>
+            <th style="padding:6px 8px">タンパク質</th>
+            <th style="padding:6px 8px">野菜</th>
+            <th style="padding:6px 8px">日数</th>
+          </tr>${members}</table></div>
+      </div>` : ''}`;
   }
 
   // ── 減量メンバーの詳細（直近7日の日別Bカウント・記録状況）──
@@ -1570,7 +1659,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadServerHealth(), loadCreditBase(), loadMemberGate()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
