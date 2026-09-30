@@ -3250,6 +3250,64 @@ def _member_report_photos(cur, uid, per_member, since_date):
     return photos
 
 
+# レポートの推移グラフに載せる点の上限（毎日記録している人でも1年ぶん程度は描ける）
+PROGRESS_MAX_POINTS = 400
+# 「開始直後」と「いま」の食べ方を比べる期間（日）
+PROGRESS_COMPARE_DAYS = 7
+
+
+def _member_progress(cur, uid):
+    """会員の「始めたとき → いま」を返す（デイリーレポートのピックアップ用）。
+
+    オーナー指示 2026-09-30：ピックアップされた会員が、開始前と比べて
+    いまどういう状態なのか、その推移が分かるようにする。
+    「開始」は最初に体重を記録した日（アプリに開始日の概念は無いため）。
+      ・体重：開始時 → 現在、変化量と変化率、全期間の記録（グラフ用）
+      ・食べ方：開始直後7日の平均Bカウント → 直近7日の平均Bカウント、全期間の日別B（グラフ用）
+    体重の記録が1件も無ければ None。"""
+    cur.execute(f"SELECT date, weight FROM daily_weight WHERE user_id={PH} AND weight>0 "
+                f"ORDER BY date", (uid,))
+    weights = [(str(d)[:10], float(w)) for d, w in cur.fetchall()]
+    if not weights:
+        return None
+    start_date, start_w = weights[0]
+    latest_date, latest_w = weights[-1]
+
+    cur.execute(f"SELECT date, b_count FROM daily_b_count WHERE user_id={PH} AND date>={PH} "
+                f"ORDER BY date", (uid, start_date))
+    b_daily = [(str(d)[:10], float(b)) for d, b in cur.fetchall() if b is not None]
+
+    def _avg_between(first, last):
+        vals = [b for d, b in b_daily if first <= d <= last]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    try:
+        sd = datetime.date.fromisoformat(start_date)
+        ld = datetime.date.fromisoformat(latest_date)
+    except ValueError:
+        return None
+    today = datetime.datetime.now(JST).date()
+    first_end = (sd + datetime.timedelta(days=PROGRESS_COMPARE_DAYS - 1)).isoformat()
+    recent_start = (today - datetime.timedelta(days=PROGRESS_COMPARE_DAYS - 1)).isoformat()
+
+    change = round(latest_w - start_w, 1)
+    return {
+        "start_date": start_date,
+        "start_weight": round(start_w, 1),
+        "latest_date": latest_date,
+        "latest_weight": round(latest_w, 1),
+        "total_change_kg": change,
+        "total_change_pct": round(change / start_w * 100, 1) if start_w else None,
+        "days_since_start": (ld - sd).days,
+        "weight_records": len(weights),
+        # 開始直後と直近で期間が重なる（始めたばかりの人）なら、比較は出さない
+        "b_first_week_avg": _avg_between(start_date, first_end) if first_end < recent_start else None,
+        "b_last_week_avg": _avg_between(recent_start, today.isoformat()),
+        "weights": weights[-PROGRESS_MAX_POINTS:],
+        "b_daily": b_daily[-PROGRESS_MAX_POINTS:],
+    }
+
+
 @app.route("/api/admin/report-photos")
 @_admin_required
 def admin_report_photos():
@@ -3301,6 +3359,8 @@ def admin_report_photos():
                     "b_target": mem.get("b_target"),
                     "latest_weight_kg": mem.get("latest_weight_kg"),
                     "photos": photos,
+                    # 開始時 → いま の推移（オーナー指示 2026-09-30）
+                    "progress": _member_progress(cur, mem["uid"]),
                 })
             return picked
 
