@@ -2379,6 +2379,7 @@ def admin_report_data():
     while d <= end_d:
         all_dates.append(d.strftime("%Y-%m-%d"))
         d += datetime.timedelta(days=1)
+    record_counts, record_people = _daily_record_trend(all_dates[0], all_dates[-1])
 
     individual_b = [
         {"uid": uid[:5] + "…", "values": [dates_dict.get(d) for d in all_dates]}
@@ -2642,6 +2643,9 @@ def admin_report_data():
         "ex_avg_trend":         [ex_avg_by_day.get(d) for d in all_dates],
         "daily_users_trend":    [usage_by_day.get(d, {}).get("users", 0) for d in all_dates],
         "daily_analyses_trend": [usage_by_day.get(d, {}).get("analyses", 0) for d in all_dates],
+        # 日別の食事記録件数・記録した人数（KPIの「記録件数」「記録した人数」と同じ数え方）
+        "daily_records_trend":   [record_counts.get(d, 0) for d in all_dates],
+        "daily_recorders_trend": [record_people.get(d, 0) for d in all_dates],
         "individual_b":         individual_b,
         "individual_w":         individual_w,
         "weight_loss_avg_kg":   weight_loss_avg_kg,
@@ -6684,6 +6688,96 @@ def _summarize_day_meals(payload_str):
     return {"meal_count": count, "protein_g": round(protein, 1),
             "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1)),
             "kcal": (round(kcal, 1) if kcal_known else None), "b_count": round(b_total, 2)}
+
+
+# 記録件数に数える操作（action_log）。写真・文章・コピーご飯・Bだけ追加（廃止前の分）。
+_RECORD_ACTIONS = ("photo", "text", "copy", "manual_b")
+
+
+def _daily_record_trend(start_date, end_date):
+    """日別の「食事記録件数」と「記録した人数」を返す（デイリーレポートの日別グラフ用）。
+
+    数え方はレポート上部のKPI（その日の解析済みの食事の数・記録した人の数）にそろえる。
+    ただし食事の明細 daily_meals は5日で消えるため、日付ごとに残っているデータを次の順で使う：
+      1. daily_meals     … 明細そのもの（直近5日）。KPIと同じ元データ。
+                           明細が残っている日は、これだけで数える（最新日がKPIと必ず一致する）
+      2. daily_nutrition … 1日の要約。_summarize_day_meals と同じ数え方で保存（2026-09-29〜）
+      3. action_log      … 記録操作の履歴（2026-08-25〜）。あとで消した記録も数えるため、
+                           1・2 よりわずかに多めになることがある
+    明細が消えた日は、2 と 3 を「人ごと」に合わせる（要約がある人は要約、無い人は履歴）。
+    日ごとに丸ごと切り替えると、要約が一部の人の分しか無い日（要約を始めた日など）に
+    残りの人がまるごと抜け落ちてしまうため。
+    どれかの取得に失敗しても、レポート全体は止めない（その段をとばす）。
+    PostgreSQL は失敗した文のあと同じ取引が使えなくなるため、専用の接続で読み、失敗したら巻き戻す。
+    戻り値：({日付: 件数}, {日付: 人数})"""
+    counts, people = {}, {}
+    meal_days = set()          # 明細が残っている日（1件でも行があれば、その日は明細だけで数える）
+
+    def _meals(cur):
+        cur.execute(f"SELECT user_id, date, payload FROM daily_meals "
+                    f"WHERE date>={PH} AND date<={PH}", (start_date, end_date))
+        by_day = {}
+        for uid, dt, payload_str in cur.fetchall():
+            day = str(dt)[:10]
+            meal_days.add(day)
+            s = _summarize_day_meals(payload_str)
+            if s:
+                by_day.setdefault(day, {})[uid] = s["meal_count"]
+        return by_day
+
+    def _nutrition(cur):
+        cur.execute(f"SELECT user_id, date, meal_count FROM daily_nutrition "
+                    f"WHERE date>={PH} AND date<={PH} AND meal_count>0", (start_date, end_date))
+        by_day = {}
+        for uid, dt, n in cur.fetchall():
+            by_day.setdefault(str(dt)[:10], {})[uid] = int(n)
+        return by_day
+
+    def _actions(cur):
+        ph = ",".join([PH] * len(_RECORD_ACTIONS))
+        cur.execute(f"SELECT user_id, SUBSTR(created_at, 1, 10) FROM action_log "
+                    f"WHERE created_at>={PH} AND created_at<={PH} AND action IN ({ph})",
+                    (f"{start_date}T00:00:00", f"{end_date}T23:59:59", *_RECORD_ACTIONS))
+        by_day = {}
+        for uid, dt in cur.fetchall():
+            per_user = by_day.setdefault(str(dt)[:10], {})
+            per_user[uid] = per_user.get(uid, 0) + 1
+        return by_day
+
+    try:
+        conn = _get_conn()
+    except Exception as e:
+        app.logger.warning("record trend: DB connect failed (skipped): %s", e)
+        return counts, people
+    got = {}
+    try:
+        for step in (_meals, _nutrition, _actions):
+            try:
+                got[step.__name__] = step(conn.cursor())
+            except Exception as e:
+                app.logger.warning("record trend: %s failed (skipped): %s", step.__name__, e)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+    finally:
+        conn.close()
+
+    meals = got.get("_meals", {})
+    if "_meals" not in got:
+        meal_days.clear()      # 明細が読めなかったときは、残りの元データだけで数える
+    nutrition = got.get("_nutrition", {})
+    actions = got.get("_actions", {})
+    for day in set(meal_days) | set(nutrition) | set(actions):
+        if day in meal_days:
+            per_user = meals.get(day, {})
+        else:
+            per_user = dict(actions.get(day, {}))
+            per_user.update(nutrition.get(day, {}))   # 要約がある人は要約の数を優先
+        if per_user:
+            counts[day] = sum(per_user.values())
+            people[day] = len(per_user)
+    return counts, people
 
 
 def _save_daily_nutrition(cur, uid, date, payload_str, ts):
