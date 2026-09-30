@@ -268,22 +268,26 @@ def test_credit_section_renders():
     )
     html = send_report._credit_section(ok, 400)
     assert "クレジット残高" in html
-    assert "cid:chart_credit" in html
     assert "¥13,350" in html          # 残高 $89 × 150
     assert "約89日" in html
+    # 日別の費用グラフはここには出さない（オーナー指示 2026-09-30：
+    # 「日別 利用状況とAPI費用」の1枚に統合した。tests/test_report_usage_chart.py で確認）
+    assert "cid:chart_credit" not in html
+    assert "<img" not in html
 
     # 取得できなかった場合も落ちず、案内文が出る
     ng = ac.build_credit_info(today=TODAY, env={}, fetcher=_fake_cost({}))
     html_ng = send_report._credit_section(ng, 400)
     assert "取得できず" in html_ng
     assert "残高" in html_ng
-    # 実データが無いときはグラフを出さない（案内文だけ）
     assert "cid:chart_credit" not in html_ng
-    assert send_report.has_credit_chart(ok) is True
-    assert send_report.has_credit_chart(ng) is False
 
-    # グラフは例外なく描ける
-    assert send_report.chart_credit(ok)[:4] == b"\x89PNG"
+    # 費用の推移は統合グラフで描ける（クレジット情報の日別金額を使う）
+    data = {"dates": [f"2026-08-{d:02d}" for d in range(1, 12)],
+            "daily_analyses_trend": [10] * 11, "daily_users_trend": [5] * 11,
+            "daily_records_trend": [12] * 11, "daily_recorders_trend": [6] * 11,
+            "cost_per_analysis": 4.0}
+    assert send_report.chart_usage(data, ok)[:4] == b"\x89PNG"
 
 
 def test_credit_section_shows_auto_reload_and_limit():
@@ -306,7 +310,7 @@ def test_credit_section_shows_auto_reload_and_limit():
     assert "上限 $200.00" in html
     # 今月 $88 ＋ 残り20日×$8 = $248 で上限 $200 を超えるので警告を出す
     assert "月末見込み $248.00" in html
-    assert send_report.chart_credit(info)[:4] == b"\x89PNG"
+    assert "cid:chart_credit" not in html   # 費用グラフは統合グラフ側に移した
 
     # 上限に余裕があるときは警告を出さない
     safe = ac.build_credit_info(
