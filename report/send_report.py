@@ -881,6 +881,113 @@ def _decode_photo(data_uri: str, max_side: int = 320):
 MAX_PHOTOS_TOTAL = 300
 
 
+def chart_progress(progress: dict, good: bool) -> bytes:
+    """会員1人の「始めたとき → いま」の推移グラフ（オーナー指示 2026-09-30）。
+
+    ・体重の折れ線（全期間）。開始時の体重に点線を引き、上下どちらにいるか一目で分かるようにする
+    ・その日のBカウントを薄い棒で下に重ねる（体重が動いた時期に何を食べていたかを見るため）
+    """
+    import matplotlib.dates as mdates
+
+    color = C_GREEN if good else "#EF4444"
+    ws = [(datetime.date.fromisoformat(d), w) for d, w in (progress.get("weights") or [])]
+    bs = [(datetime.date.fromisoformat(d), b) for d, b in (progress.get("b_daily") or [])]
+
+    fig, ax = plt.subplots(figsize=(7.2, 2.3))
+    ax2 = ax.twinx()
+
+    # Bカウント（右軸・薄い棒）。棒は下半分に収め、体重の線と重ならないようにする
+    if bs:
+        bx, by = zip(*bs)
+        ax2.bar(bx, by, width=0.8, color="#CBD5E1", alpha=0.55, zorder=1)
+        ax2.set_ylim(0, max(max(by), 1) * 2.4)
+        ax2.set_ylabel("B/日", fontsize=10, color="#94A3B8")
+        ax2.tick_params(axis="y", colors="#94A3B8", labelsize=9)
+    else:
+        ax2.set_yticks([])
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_color("#E2E8F0")
+
+    # 体重（左軸・折れ線）
+    ax.set_zorder(ax2.get_zorder() + 1)
+    ax.patch.set_visible(False)
+    wx, wy = zip(*ws)
+    ax.plot(wx, wy, color=color, linewidth=2.2, marker="o", markersize=3.5, zorder=3)
+    start_w = progress["start_weight"]
+    ax.axhline(start_w, color="#94A3B8", linewidth=1, linestyle="--", zorder=2)
+    ax.annotate(f"開始 {start_w:.1f}kg", (wx[0], wy[0]), textcoords="offset points",
+                xytext=(4, 8), fontsize=9, color="#475569")
+    if len(ws) > 1:
+        # 線が上から下りてくる（減っている）ときは下側に、上がってくるときは上側に置き、
+        # ラベルが線や点に重ならないようにする
+        recent = wy[-6:-1] or wy[:1]
+        going_down = wy[-1] <= sum(recent) / len(recent)
+        ax.annotate(f"現在 {wy[-1]:.1f}kg", (wx[-1], wy[-1]), textcoords="offset points",
+                    xytext=(-6, -15 if going_down else 9), fontsize=9, color=color,
+                    fontweight="bold", ha="right",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85))
+    pad = max(0.6, (max(wy) - min(wy)) * 0.35)
+    ax.set_ylim(min(wy) - pad, max(wy) + pad)
+    ax.set_ylabel("体重 kg", fontsize=10)
+    ax.tick_params(axis="y", labelsize=9)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%-m/%-d"))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=3, maxticks=7))
+    ax.tick_params(axis="x", labelsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.grid(axis="y", alpha=0.25, zorder=0)
+    fig.tight_layout()
+    return fig_to_png(fig)
+
+
+def _progress_block(progress, cid: str, charts: dict, good: bool) -> str:
+    """カード内の「開始時 → 現在」の要約とグラフ。体重の記録が無ければ空。"""
+    if not progress:
+        return ""
+    try:
+        charts[cid] = chart_progress(progress, good)
+        img = (f'<img src="cid:{cid}" alt="推移" '
+               f'style="width:100%;max-width:640px;display:block;margin:6px 0 10px;border-radius:6px">')
+    except Exception as e:          # グラフが描けなくても要約とレポート本体は出す
+        print(f"progress chart skipped: {e}")
+        img = ""
+
+    def md(d):
+        try:
+            x = datetime.date.fromisoformat(d)
+            return f"{x.month}/{x.day}"
+        except (TypeError, ValueError):
+            return "—"
+
+    ch = progress.get("total_change_kg")
+    pct = progress.get("total_change_pct")
+    days = progress.get("days_since_start") or 0
+    if progress.get("weight_records", 0) < 2:
+        change_html = '<span style="color:#9CA3AF">体重の記録が開始時の1回だけです</span>'
+    else:
+        c = "#059669" if (ch or 0) < 0 else ("#DC2626" if (ch or 0) > 0 else "#6B7280")
+        pct_s = f"（{pct:+.1f}%）" if isinstance(pct, (int, float)) else ""
+        change_html = (f'<b style="color:{c}">{ch:+.1f}kg{pct_s}</b>'
+                       f'<span style="color:#9CA3AF">／{days}日間</span>')
+
+    b0, b1 = progress.get("b_first_week_avg"), progress.get("b_last_week_avg")
+    if isinstance(b0, (int, float)) and isinstance(b1, (int, float)):
+        bc = "#059669" if b1 < b0 else ("#DC2626" if b1 > b0 else "#6B7280")
+        b_html = (f'食べ方（1日の平均B）：開始直後 {b0:g} → 直近 '
+                  f'<b style="color:{bc}">{b1:g}</b>')
+    elif isinstance(b1, (int, float)):
+        b_html = f'食べ方（1日の平均B）：直近 {b1:g}（開始直後の記録が足りず比較なし）'
+    else:
+        b_html = ""
+
+    return f"""
+      <div style="font-size:12px;color:#374151;line-height:1.7;margin-bottom:2px">
+        📈 <b>開始時 {progress['start_weight']:.1f}kg</b>（{md(progress.get('start_date'))}）
+        → <b>現在 {progress['latest_weight']:.1f}kg</b>（{md(progress.get('latest_date'))}）　{change_html}
+        {f'<br>{b_html}' if b_html else ''}
+      </div>
+      {img}"""
+
+
 def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget: int = MAX_PHOTOS_TOTAL) -> str:
     """会員1人ぶんの写真カード（名前・体重変化・その人の写真すべて）を組み立てる。
     budget は「セクション全体であと何枚載せられるか」。"""
@@ -928,6 +1035,9 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
     if not cells:
         return ""
 
+    # 開始時 → 現在 の推移（写真のあるカードにだけ付ける＝使わない画像を添付しない）
+    progress_html = _progress_block(member.get("progress"), f"{cid_prefix}_progress", charts, good)
+
     rows = "".join(
         f"<tr>{''.join(cells[i:i + PER_ROW])}</tr>"
         for i in range(0, len(cells), PER_ROW)
@@ -940,7 +1050,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         <span style="color:{color};margin-left:8px">30日 {change_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">写真 {len(cells)}枚</span>
-      </div>
+      </div>{progress_html}
       <table cellpadding="0" cellspacing="0" border="0">{rows}</table>
     </div>"""
 
