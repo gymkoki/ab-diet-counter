@@ -10,7 +10,8 @@
 #   ②減量が順調な人と進んでいない人が、それぞれ分けて返る
 #   ③14日以上まったく記録がない会員（離脱者）は載せない（オーナー方針 2026-09-09）
 #   ④レポートの送信先はオーナーの1アドレスだけ（送信先を増やさない）
-#   ⑤写真セクションがメール本文の「AI減量コーチ」より前に置かれている
+#   ⑤写真セクションがメール本文の文章（改善案）より前に置かれている
+#     （「AI減量コーチ」は 2026-09-30 のオーナー指示でレポートから削除済み）
 
 import datetime
 import json
@@ -238,12 +239,12 @@ def test_photos_api_is_not_called_from_member_app():
     assert "/api/admin/" not in front
 
 
-# ── ⑤ 写真はメール本文の上のほう（コーチ提案より前）にある ──────────
-def test_photo_section_is_above_coach_section():
+# ── ⑤ 写真はメール本文の上のほう（文章より前）にある ──────────
+def test_photo_section_is_above_text_sections():
     src = _read("report/send_report.py")
     assert "{photo_section}" in src, "写真セクションが本文に差し込まれていない"
-    assert src.index("{photo_section}") < src.index("{_coach_section(coach_advice)}"), \
-        "写真がAI減量コーチの文章より下にある（オーナーは最初の文章を読まない）"
+    assert src.index("{photo_section}") < src.index("{_dev_proposal_section(dev_proposals)}"), \
+        "写真が文章（改善案）より下にある（オーナーは最初の文章を読まない）"
     # 枚数が増えても横に伸びず、3枚ずつ折り返して全部表示する
     assert "PER_ROW = 3" in src and "cells[i:i + PER_ROW]" in src, \
         "写真の折り返しが無い（枚数が増えると横にはみ出す）"

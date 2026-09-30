@@ -225,8 +225,9 @@ def test_admin_dashboard_still_lists_long_absent(client):
 # ── ⑥ レポート側の表記 ─────────────────────────────────
 def test_report_states_the_scope():
     src = _read("report/send_report.py")
-    assert "直近14日以内に記録がある会員" in src, "レポートに対象範囲の注記がありません"
-    assert "日以上まったく記録がない会員は対象外です" in src
+    # 「直近14日以内に記録がある会員」の注記はAI減量コーチ欄の中にあったが、
+    # その欄ごとオーナー指示（2026-09-30）で削除した。記録状況の表の注記は残っている。
+    assert "日以上まったく記録がない会員は対象外です" in src, "レポートに対象範囲の注記がありません"
 
 
 def test_slot_tables_exclude_long_absent_members():

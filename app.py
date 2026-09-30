@@ -5819,21 +5819,8 @@ def _build_report_html(target_date: str) -> str:
 
     sent_at = now.strftime("%Y-%m-%d %H:%M JST")
 
-    # AI減量コーチの提案（当日キャッシュを共用）。失敗してもレポート本体は送る。
-    coach_html = ""
-    try:
-        _advice, _cached, _n = _get_or_generate_coach_advice()
-        if _advice:
-            _esc = _advice.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            coach_html = f"""
-    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:16px 18px;margin-bottom:24px">
-      <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #EA580C;padding-left:10px;margin-bottom:12px">
-        🎯 AI減量コーチ｜今日の提案（1か月 −1kg 目標）
-      </div>
-      <div style="font-size:13px;color:#374151;line-height:1.9;white-space:pre-wrap">{_esc}</div>
-    </div>"""
-    except Exception as _e:
-        print(f"[REPORT][COACH][WARN] 提案生成をスキップ: {type(_e).__name__}: {_e}")
+    # 「AI減量コーチ｜今日の提案」はオーナー指示（2026-09-30）でレポートから削除した。
+    # 中身が役に立たないうえ、載せるたびにAIを呼んで費用もかかっていたため。戻さないこと。
 
     return f"""<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif">
@@ -5843,7 +5830,6 @@ def _build_report_html(target_date: str) -> str:
     <div style="font-size:13px;margin-top:6px;opacity:.88">対象日: {target_date}</div>
   </div>
   <div style="background:#fff;padding:24px;border-radius:0 0 14px 14px">
-{coach_html}
     <!-- 1. 利用統計 -->
     <div style="font-size:14px;font-weight:800;color:#374151;border-left:4px solid #FF6B35;padding-left:10px;margin-bottom:14px">
       📊 利用統計（{target_date}）

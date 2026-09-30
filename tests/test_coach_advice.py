@@ -78,26 +78,31 @@ def test_coach_advice_ai_failure_returns_json_error(client, monkeypatch):
     assert r.is_json and "再試行" in r.get_json()["error"]
 
 
-def test_report_script_includes_coach_section():
-    """メールレポート側に提案セクションが組み込まれていること。"""
+def test_report_script_has_no_coach_section():
+    """オーナー指示（2026-09-30）：「AI減量コーチ｜今日の提案」はデイリーレポートから削除した。
+    メール版（GitHub Actions）で取りに行かない・載せないこと（載せるたびにAI費用もかかる）。"""
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "report", "send_report.py")
     with open(path, encoding="utf-8") as f:
         src = f.read()
-    assert "fetch_coach_advice" in src
-    assert "coach-advice" in src
-    assert "AI減量コーチ" in src
-    # 提案が取れない日でもレポート本体は送る（return None で握りつぶす設計）
-    assert "return None" in src
+    assert "fetch_coach_advice" not in src, "レポートがまだコーチ提案を取りに行っている"
+    assert "/api/admin/coach-advice" not in src
+    assert "_coach_section" not in src
+    assert "今日の提案（1か月" not in src, "コーチ提案の見出しが残っている"
 
 
-def test_inapp_test_report_includes_coach_section(client, monkeypatch):
-    """アプリ内の「テストメールを今すぐ送信」で使う _build_report_html にも
-    AI減量コーチの提案が入ること（GitHub Actions版との内容の食い違い防止）。"""
+def test_inapp_test_report_has_no_coach_section(client, monkeypatch):
+    """アプリ内の「テストメールを今すぐ送信」版にも出さないこと（GitHub Actions版と揃える）。
+    キャッシュに提案が残っていても載せない・新たにAIも呼ばない。"""
     today = datetime.datetime.now(m.JST).strftime("%Y-%m-%d")
     m._set_setting(f"coach-advice-{today}", "■ 全体の状況\nキャッシュ提案テスト")
-    html = m._build_report_html(today)
-    assert "AI減量コーチ" in html
-    assert "キャッシュ提案テスト" in html
-    # 後始末（他テストへの影響防止）
-    m._set_setting(f"coach-advice-{today}", "")
+
+    def must_not_call(*a, **k):
+        raise AssertionError("レポート作成でコーチ提案のAIを呼んでいる（費用がかかる）")
+    monkeypatch.setattr(m, "_call_coach_ai", must_not_call)
+    try:
+        html = m._build_report_html(today)
+        assert "AI減量コーチ" not in html
+        assert "キャッシュ提案テスト" not in html
+    finally:
+        m._set_setting(f"coach-advice-{today}", "")
