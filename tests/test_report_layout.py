@@ -18,9 +18,9 @@ def test_credit_section_is_placed_first_in_body():
     src = _read(REPORT)
     body_at = src.index('<div class="body">')
     credit_at = src.index("{credit_section}", body_at)
-    coach_at = src.index("{_coach_section(coach_advice)}", body_at)
+    dev_at = src.index("{_dev_proposal_section(dev_proposals)}", body_at)
     stats_at = src.index("1. 利用統計", body_at)
-    assert credit_at < coach_at, "クレジット状況がAI減量コーチより下にあります"
+    assert credit_at < dev_at, "クレジット状況が改善案より下にあります"
     assert credit_at < stats_at, "クレジット状況が利用統計より下にあります"
 
 

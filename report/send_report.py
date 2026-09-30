@@ -754,23 +754,6 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
     </div>"""
 
 
-def _coach_section(advice) -> str:
-    """AI減量コーチの提案セクション（メール最上部）。提案が無い日は出さない。"""
-    if not advice:
-        return ""
-    esc = (advice.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-    return f"""
-    <div class="section" style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:16px 18px">
-      <h2 style="border-left-color:#EA580C">🎯 AI減量コーチ｜今日の提案（1か月 −1kg 目標）</h2>
-      <div style="font-size:12px;color:#9CA3AF;line-height:1.7;margin-bottom:10px">
-        対象は<b>直近14日以内に記録がある会員</b>だけです。2週間以上まったく記録がない方は、
-        呼び戻しを追わない方針のため対象から外しています。
-      </div>
-      <div style="font-size:13px;color:#374151;line-height:1.9;white-space:pre-wrap">{esc}</div>
-    </div>
-    """
-
-
 def _dev_proposal_section(proposals) -> str:
     """「Claude Code に頼める改善案」セクション。
     オーナーは prompt をそのままコピーして Claude Code に貼るだけで実装が始まる。"""
@@ -847,26 +830,6 @@ def fetch_dev_proposals():
             print(f"dev-proposals retry {attempt + 1}: {e}")
             time.sleep(10)
     return []
-
-
-def fetch_coach_advice():
-    """AI減量コーチの「今日の提案」を取得する（サーバー側で生成・日次キャッシュ）。
-    失敗してもレポート本体は送る（提案セクションだけ省略）。"""
-    for attempt in range(2):
-        try:
-            r = requests.get(
-                f"{APP_URL}/api/admin/coach-advice",
-                auth=(ADMIN_USER, ADMIN_PASS),
-                timeout=150,   # AI生成に時間がかかることがある
-            )
-            r.raise_for_status()
-            d = r.json()
-            advice = (d.get("advice") or "").strip()
-            return advice or None
-        except Exception as e:
-            print(f"coach-advice retry {attempt + 1}: {e}")
-            time.sleep(10)
-    return None
 
 
 def fetch_report_photos():
@@ -1046,7 +1009,9 @@ def _photo_section(photos: dict, charts: dict) -> str:
     """
 
 
-def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, photo_section="") -> str:
+# 「AI減量コーチ｜今日の提案」はオーナー指示（2026-09-30）でレポートから削除した。
+# 中身が役に立たないうえ、載せるたびにAIを呼んで費用もかかっていたため。戻さないこと。
+def build_html(data: dict, credit=None, dev_proposals=None, photo_section="") -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
@@ -1166,7 +1131,6 @@ def build_html(data: dict, coach_advice=None, credit=None, dev_proposals=None, p
     <!-- 実際の食事写真（オーナー指示 2026-09-22：文章より先に、目で見て分かるように） -->
     {photo_section}
 
-    {_coach_section(coach_advice)}
     {_dev_proposal_section(dev_proposals)}
 
     <!-- ① 利用統計 -->
@@ -1419,10 +1383,6 @@ def main():
     dev_proposals = fetch_dev_proposals()
     print(f"  dev proposals: {len(dev_proposals)}")
 
-    print("Fetching AI coach advice...")
-    coach_advice = fetch_coach_advice()
-    print(f"  coach advice: {'OK (' + str(len(coach_advice)) + ' chars)' if coach_advice else 'skipped'}")
-
     print("Fetching member meal photos...")
     photos = fetch_report_photos()
     photo_html = ""
@@ -1439,7 +1399,7 @@ def main():
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data, coach_advice, credit, dev_proposals, photo_html)
+    html    = build_html(data, credit, dev_proposals, photo_html)
 
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")
