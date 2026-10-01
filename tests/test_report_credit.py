@@ -416,3 +416,58 @@ def test_estimated_section_uses_the_full_layout():
     assert ">推定<" in html, "実額か推定かのバッジが出ていません"
     assert "¥13,795" in html          # 残高 $89 × 155
     assert "約89日" in html
+
+
+# ── オーナー指示 2026-10-01：クレジット欄の補足メッセージと※注記は載せない ──────
+_REMOVED_CREDIT_NOTES = (
+    "円換算レート",
+    "Anthropic には残高を返すAPIが無い",
+    "基準日の残高 − 実使用額",
+    "「推定」は、アプリの解析回数から見積もった金額です",
+    "Admin APIキーの登録が必要",
+    "残高の基準値が未登録",
+)
+
+
+@pytest.mark.parametrize("kind", ["ok", "estimated", "estimated_no_base", "error"])
+def test_credit_section_has_no_notes(kind):
+    """赤枠で囲われた「黄色の補足メッセージ」と「※『推定』は…」の注記を、
+    どの状態（実額／推定／基準残高なし／取得失敗）でも出さないこと。"""
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
+    import send_report
+
+    if kind == "ok":
+        info = ac.build_credit_info(
+            today=TODAY,
+            env={"ANTHROPIC_ADMIN_KEY": "k", "ANTHROPIC_CREDIT_BASE": "2026-08-01:100", "USD_JPY": "150"},
+            fetcher=_fake_cost({f"2026-08-{d:02d}": 1.0 for d in range(1, 12)}))
+    elif kind == "estimated":
+        info = ac.build_credit_info(today=TODAY, env={"USD_JPY": "155"},
+                                    estimate=_estimate({f"2026-08-{d:02d}": 155 for d in range(1, 12)}))
+    elif kind == "estimated_no_base":
+        # スクリーンショットの状態：推定はできるが基準残高が未登録
+        info = ac.build_credit_info(today=TODAY, env={"USD_JPY": "155"},
+                                    estimate=_estimate({f"2026-08-{d:02d}": 155 for d in range(1, 12)},
+                                                       base_date=None, base_usd=None))
+    else:
+        info = ac.build_credit_info(today=TODAY, env={}, fetcher=_fake_cost({}))
+
+    # メッセージ自体はあっても（データ側には残っていても）、本文には出さない
+    info = dict(info, message=info.get("message") or "これは表示されてはいけない補足です")
+    html = send_report._credit_section(info, 400)
+    assert "クレジット状況" in html, "セクション自体まで消えている"
+    assert info["message"] not in html, "黄色の補足メッセージが出ている"
+    for text in _REMOVED_CREDIT_NOTES:
+        assert text not in html, f"削除した注記「{text}」が出ている"
+
+
+def test_inapp_report_has_no_console_note():
+    """アプリ内テスト送信版にも「残高は Anthropic Console で確認」の案内を出さない（メール版と揃える）。"""
+    import app as m
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py"),
+               encoding="utf-8").read()
+    body = src[src.index("def _build_report_html"):]
+    body = body[:body.index("\ndef ", 10)]
+    assert "でご確認ください" not in body
+    assert "console.anthropic.com/settings/billing" not in body

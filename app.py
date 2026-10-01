@@ -5968,11 +5968,6 @@ def _build_report_html(target_date: str) -> str:
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
       {hour_rows()}
     </table>
-    <div style="background:#F9FAFB;border-radius:10px;padding:12px;font-size:12px;color:#6B7280">
-      APIクレジット残高は
-      <a href="https://console.anthropic.com/settings/billing" style="color:#FF6B35">Anthropic Console</a>
-      でご確認ください。
-    </div>
 
   </div>
   <div style="text-align:center;font-size:11px;color:#9CA3AF;margin-top:16px">
