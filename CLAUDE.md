@@ -60,6 +60,14 @@
 - `COACH_PROMPT` と `DEV_PROPOSAL_PROMPT` は、呼び戻し施策（復帰キャンペーン・安否確認・再開うながし）の
   提案を**明示的に禁止**している。この禁止を外さないこと（`tests/test_report_scope.py` が回帰を検知する）。
 
+## 「Claude Code に頼める改善案」はレポートに載せない（オーナー指示 2026-10-01）
+
+- 毎回の提案の質が低く読む時間の無駄になっていたため、デイリーレポートから外した。
+  `report/send_report.py` は改善案を**取得もしない**（＝毎朝のAI呼び出しの費用もかからない）。
+- 管理API `/api/admin/dev-proposals` と `DEV_PROPOSAL_PROMPT` は残してある（どこからも呼ばれない）。
+  レポートへ戻すのはオーナーから明示的に指示があったときだけ。
+  `tests/test_dev_proposals.py::test_report_no_longer_includes_proposals` が回帰を検知する。
+
 ## 記録が足りない会員はBカウントの分析から外す（オーナー指示 2026-09-29）
 
 - 指摘：「1日の写真のアップが1回・2回の人は、Bカウントも1日1回・2回になるが、

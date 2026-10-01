@@ -243,8 +243,8 @@ def test_photos_api_is_not_called_from_member_app():
 def test_photo_section_is_above_text_sections():
     src = _read("report/send_report.py")
     assert "{photo_section}" in src, "写真セクションが本文に差し込まれていない"
-    assert src.index("{photo_section}") < src.index("{_dev_proposal_section(dev_proposals)}"), \
-        "写真が文章（改善案）より下にある（オーナーは最初の文章を読まない）"
+    assert src.index("{photo_section}") < src.index("1. 利用統計"), \
+        "写真が文章（利用統計）より下にある（オーナーは最初の文章を読まない）"
     # 枚数が増えても横に伸びず、3枚ずつ折り返して全部表示する
     assert "PER_ROW = 3" in src and "cells[i:i + PER_ROW]" in src, \
         "写真の折り返しが無い（枚数が増えると横にはみ出す）"

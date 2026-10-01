@@ -765,47 +765,6 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
     </div>"""
 
 
-def _dev_proposal_section(proposals) -> str:
-    """「Claude Code に頼める改善案」セクション。
-    オーナーは prompt をそのままコピーして Claude Code に貼るだけで実装が始まる。"""
-    if not proposals:
-        return ""
-
-    def esc(s):
-        return (str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-
-    EFFORT_COLOR = {"小": "#10B981", "中": "#F59E0B", "大": "#EF4444"}
-    cards = ""
-    for i, p in enumerate(proposals, 1):
-        color = EFFORT_COLOR.get(str(p.get("effort") or "").strip(), "#6B7280")
-        cards += f"""
-      <div style="border:1px solid #E5E7EB;border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="background:#EEF2FF;color:#4338CA;border-radius:6px;padding:2px 8px;
-                       font-size:11px;font-weight:800">案{i}</span>
-          <span style="font-size:14px;font-weight:800;color:#111827">{esc(p.get('title'))}</span>
-          <span style="margin-left:auto;background:{color}1A;color:{color};border-radius:999px;
-                       padding:2px 10px;font-size:11px;font-weight:800">手間: {esc(p.get('effort'))}</span>
-        </div>
-        <div style="font-size:12px;color:#6B7280;line-height:1.7;margin-bottom:8px">{esc(p.get('why'))}</div>
-        <div style="font-size:11px;font-weight:800;color:#9CA3AF;margin-bottom:4px">
-          ↓ この文をコピーして Claude Code に貼るだけ
-        </div>
-        <div style="background:#F9FAFB;border:1px dashed #D1D5DB;border-radius:8px;padding:10px 12px;
-                    font-size:13px;color:#111827;line-height:1.8;white-space:pre-wrap">{esc(p.get('prompt'))}</div>
-      </div>"""
-
-    return f"""
-    <div class="section">
-      <h2>🛠 Claude Code に頼める改善案（今日の3つ）</h2>
-      <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.7">
-        今日の会員データを見て、アプリをどう直せば減量が進むかをAIが提案しています。
-        <b>やりたいものの枠内の文をコピーして Claude Code に貼るだけ</b>で、実装・テスト・反映まで自動で進みます。
-        気になるものが無ければ、何もしなくて大丈夫です。
-      </div>{cards}
-    </div>"""
-
-
 def fetch_credit_estimate():
     """残高推定の材料（アプリ自身の日別解析回数＋登録済みの基準残高）を取得する。
 
@@ -823,24 +782,6 @@ def fetch_credit_estimate():
     except Exception as e:
         print(f"credit-estimate skipped: {e}")
         return None
-
-
-def fetch_dev_proposals():
-    """「Claude Codeに頼める改善案」を取得する（サーバー側で生成・日次キャッシュ）。
-    失敗してもレポート本体は送る（このセクションだけ省略）。"""
-    for attempt in range(2):
-        try:
-            r = requests.get(
-                f"{APP_URL}/api/admin/dev-proposals",
-                auth=(ADMIN_USER, ADMIN_PASS),
-                timeout=150,   # AI生成に時間がかかることがある
-            )
-            r.raise_for_status()
-            return r.json().get("proposals") or []
-        except Exception as e:
-            print(f"dev-proposals retry {attempt + 1}: {e}")
-            time.sleep(10)
-    return []
 
 
 def fetch_report_photos():
@@ -1132,7 +1073,7 @@ def _photo_section(photos: dict, charts: dict) -> str:
 
 # 「AI減量コーチ｜今日の提案」はオーナー指示（2026-09-30）でレポートから削除した。
 # 中身が役に立たないうえ、載せるたびにAIを呼んで費用もかかっていたため。戻さないこと。
-def build_html(data: dict, credit=None, dev_proposals=None, photo_section="") -> str:
+def build_html(data: dict, credit=None, photo_section="") -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
@@ -1252,7 +1193,8 @@ def build_html(data: dict, credit=None, dev_proposals=None, photo_section="") ->
     <!-- 実際の食事写真（オーナー指示 2026-09-22：文章より先に、目で見て分かるように） -->
     {photo_section}
 
-    {_dev_proposal_section(dev_proposals)}
+    <!-- 「Claude Code に頼める改善案」はオーナー指示（2026-10-01）でレポートから外した。
+         毎回の提案の質が低く、読む時間の無駄になっていたため。戻さないこと。 -->
 
     <!-- ① 利用統計 -->
     <div class="section">
@@ -1499,10 +1441,6 @@ def main():
         "chart_goal_compare": chart_goal_compare(data),
     }
 
-    print("Fetching dev proposals...")
-    dev_proposals = fetch_dev_proposals()
-    print(f"  dev proposals: {len(dev_proposals)}")
-
     print("Fetching member meal photos...")
     photos = fetch_report_photos()
     photo_html = ""
@@ -1519,7 +1457,7 @@ def main():
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data, credit, dev_proposals, photo_html)
+    html    = build_html(data, credit, photo_html)
 
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")
