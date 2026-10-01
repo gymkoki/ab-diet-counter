@@ -630,7 +630,6 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         return f"${usd:,.2f}" if usd is not None else "—"
 
     status = credit.get("status")
-    note = ""
 
     est = bool(credit.get("estimated"))
     kind = "推定" if est else "実額"
@@ -650,7 +649,6 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
           <div class="kpi-sub"><a href="{credit.get('console_url')}">Console で確認 →</a></div>
         </div>
       </div>"""
-        note = credit.get("message") or ""
     else:
         remaining = credit.get("remaining_usd")
         if remaining is None:
@@ -729,7 +727,6 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
           <div class="kpi-sub">直近7日平均</div>
         </div>
       </div>"""
-        note = credit.get("message") or ""
 
     # 見出しの右に「実額 / 推定」を出して、数字の性格が一目で分かるようにする
     if status == "ok":
@@ -741,27 +738,13 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
     else:
         badge = ""
 
-    note_html = ""
-    if note:
-        # 残高が出せているときの補足は落ち着いた色、出せていないときだけ注意色にする
-        calm = status in ("ok", "estimated") and credit.get("remaining_usd") is not None
-        bg, border, fg = (("#F8FAFC", "#E2E8F0", "#475569") if calm
-                          else ("#FFFBEB", "#FDE68A", "#92400E"))
-        note_html = f"""
-      <div style="margin-top:10px;background:{bg};border:1px solid {border};border-radius:8px;
-                  padding:10px 12px;font-size:12px;color:{fg};line-height:1.7">{note}</div>"""
-
+    # 黄色の補足メッセージ（「推定値です」「基準残高を登録してください」など）と、
+    # 下の「※『推定』は…円換算レート」の注記は、オーナー指示（2026-10-01：「カスなので今後は記載しない」）で
+    # 載せないことにした。数字の性格は見出し横の「実額／推定」バッジで分かる。戻さないこと。
     # 日別の費用グラフはここには出さない（「📈 日別 利用状況とAPI費用」の1枚に統合済み）
     return f"""
     <div class="section">
-      <h2>💳 Claude API クレジット状況{badge}</h2>{head}{note_html}
-      <div style="font-size:11px;color:#9CA3AF;margin-top:6px">
-        ※ 「推定」は、アプリの解析回数から見積もった金額です（実額は Anthropic の Cost API）。
-        Anthropic には残高を返すAPIが無いため、
-        残高は「基準日の残高 − 実使用額 ＋ オートリロードによる自動チャージ」で算出した推定値です。
-        正確な残高は <a href="{credit.get('console_url')}">Anthropic Console</a> で確認できます。
-        円換算レート: $1 = ¥{rate:.0f}
-      </div>
+      <h2>💳 Claude API クレジット状況{badge}</h2>{head}
     </div>"""
 
 
