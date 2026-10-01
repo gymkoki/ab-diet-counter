@@ -847,8 +847,10 @@
   <div id="ex-deduct-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
     🏃 運動で －<span id="ex-deduct-num" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span> カウント
   </div>
-  <div id="sweet-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95)">
-    🍬 お菓子の合計 <span id="sweet-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal（200kcal超）で ＋<span style="font-size:18px;font-weight:800">1</span> カウント
+  <div id="sweet-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);line-height:1.5">
+    <span style="display:inline-block;background:#FFF;color:#E8622C;font-weight:800;border-radius:999px;padding:1px 12px">🍬 特別ルール適用！ ＋<span id="sweet-bonus-num">0.5</span>カウント</span><br>
+    <span style="font-size:14px">お菓子・スイーツ・ジュース 合計<span id="sweet-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal</span><br>
+    <span style="font-size:13px;opacity:0.85">（<span id="sweet-bonus-rule">120〜200kcal → ＋0.5</span>）</span>
   </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
     🥩 タンパク質 <span id="protein-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="protein-target-text" style="opacity:0.85"></span>
@@ -1249,32 +1251,38 @@
   <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
    <div class="modal-scroll">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.34</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.35</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:12px;padding:12px 14px;margin-bottom:14px">
-        <b style="color:#B4460F">お名前を「ニックネーム」か「苗字」に変えていただけませんか？</b>
+        <b style="color:#B4460F">🍬 お菓子・スイーツ・ジュースの「特別ルール」を追加しました</b>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🏋️</span>
-        <span>このアプリは現在、<b>リオールジムの会員様限定</b>のアプリになっています。</span>
+        <span style="font-size:20px;flex-shrink:0">🍪</span>
+        <span>これまで、1回の量が少ない（120kcal未満の）お菓子・スイーツ・ジュースは<b>B0回</b>として計算していました。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">📊</span>
-        <span>アプリの修正に向けて、管理者の奥松が<b>「どなたが1日にBを何回ぐらい消費されているか」</b>をおおむね把握できるよう、お名前を<b>ニックネーム</b>もしくは<b>苗字</b>などに変えていただけると幸いです。</span>
+        <span style="font-size:20px;flex-shrink:0">📏</span>
+        <span>これからは<b>1日の合計カロリー</b>で数えます。<br>
+          ・合計 <b>120〜200kcal</b> → <b>B0.5回</b> を追加<br>
+          ・合計 <b>200kcal超</b> → <b>B1回</b> を追加</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🛠</span>
-        <span>アプリは毎日修正を重ねています。より改善を続けるために、お名前を変更していただけると<b>大変助かります</b>。</span>
+        <span style="font-size:20px;flex-shrink:0">🔔</span>
+        <span>追加されたときは、画面上の「今日のB合計」の下に<b>「特別ルール適用！」</b>と表示されます。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">✏️</span>
-        <span>下の<b>「お名前を変更する」</b>を押すと、すぐに入力できます。<br><span style="font-size:15px;color:#85807A">（設定タブ →「再編集する」→「お名前」からも変更できます）</span></span>
+        <span style="font-size:20px;flex-shrink:0">✅</span>
+        <span>1回で<b>B0.5回以上</b>が付いたお菓子やジュースは、その時点で数えているので<b>二重には数えません</b>。</span>
+      </div>
+      <div style="border-top:1px dashed #E7DED6;margin-top:18px;padding-top:14px;font-size:15px;color:#6B625B">
+        <b>📝 前回のお願い（No.34）</b><br>
+        お名前を<b>ニックネーム</b>か<b>苗字</b>に変えていただけると、アプリの改善にとても助かります。まだの方は下のボタンから変更できます。
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
    </div>
-    <button id="notice-edit-name-btn" onclick="goEditName()" style="flex-shrink:0;width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">✏️ お名前を変更する</button>
-    <button onclick="closeUpdateNotice()" style="flex-shrink:0;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">OK（あとで変更する）</button>
+    <button onclick="closeUpdateNotice()" style="flex-shrink:0;width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
+    <button id="notice-edit-name-btn" onclick="goEditName()" style="flex-shrink:0;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">✏️ お名前を変更する</button>
   </div>
 </div>
 
@@ -1680,7 +1688,7 @@ async function backfillCharaLog() {
           });
         });
         if (count === 0) continue;
-        foodTotal += daySweetBonusB(allItems);   // お菓子の1日累積ルール（+1）を反映
+        foodTotal += daySweetBonusB(allItems);   // お菓子・スイーツ・ジュースの1日累積ルール（+0.5／+1）を反映
         setCharaLogEntry(date, scoreFromTotals(foodTotal, protein, veg, getExBCountForDate(date), count).score);
         submitDailyB(blog[date], date);   // サーバーにも保存して他の端末のカレンダーにも出す
         changed = true;
@@ -1990,7 +1998,7 @@ function updateDailyTotal() {
     const dot = document.getElementById(`dot-${m.id}`);
     if (dot) dot.classList.toggle('visible', done.length > 0);
   });
-  // お菓子の1日累積ルール：少量B0のお菓子でも合計200kcal超なら +1
+  // お菓子・スイーツ・ジュースの1日累積ルール：少量B0でも合計120〜200kcalで+0.5、200kcal超で+1
   const sweetKcal  = daySweetB0Kcal(allItems);
   const sweetBonus = daySweetBonusB(allItems);
   foodTotal += sweetBonus;
@@ -2015,12 +2023,16 @@ function updateDailyTotal() {
       bar.style.display = 'none';
     }
   }
-  // お菓子の1日累積で +1 が付いたときだけ、その旨を表示する
+  // お菓子・スイーツ・ジュースの1日累積で +0.5 以上が付いたときだけ「特別ルール適用！」を表示する
   const sBar  = document.getElementById('sweet-bonus-bar');
   const sKcal = document.getElementById('sweet-bonus-kcal');
+  const sNum  = document.getElementById('sweet-bonus-num');
+  const sRule = document.getElementById('sweet-bonus-rule');
   if (sBar && sKcal) {
     if (sweetBonus > 0) {
       sKcal.textContent = Math.round(sweetKcal);
+      if (sNum)  sNum.textContent  = fmtCount(sweetBonus);
+      if (sRule) sRule.textContent = sweetBonus >= 1 ? '200kcal超 → ＋1' : '120〜200kcal → ＋0.5';
       sBar.style.display = '';
     } else {
       sBar.style.display = 'none';
@@ -2185,7 +2197,7 @@ function calcCharaScore() {
       veg       += mealVeg(i.result);
     });
   });
-  foodTotal += daySweetBonusB(allItems);   // お菓子の1日累積ルール（+1）を反映
+  foodTotal += daySweetBonusB(allItems);   // お菓子・スイーツ・ジュースの1日累積ルール（+0.5／+1）を反映
   const exBc = getExBCountForDate(currentDate());
   const s = scoreFromTotals(foodTotal, protein, veg, exBc, count);
   s.count = count;
@@ -2916,15 +2928,18 @@ function mealProtein(r) {
 }
 
 // ═══════════════════════════════════════════
-//  お菓子の1日累積ルール
-//  1食ごとは少量でB0（ノーカウント）でも、その日のお菓子（B0のもの）の実kcalを
-//  合計して200kcalを超えたら、特別ルールとして1日のBカウントに +1 する。
-//  ※1人前を1回で食べて既にB1以上が付いたお菓子は二重計上しないよう対象外
-//    （＝各食材の b_count が 0 のお菓子だけを累積する）。
+//  お菓子・スイーツ・ジュースの1日累積ルール（オーナー指示 2026-10-01）
+//  1回ぶんは少量でB0（ノーカウント）でも、その日のお菓子・スイーツ・ジュース
+//  （B0のもの）の実kcalを合計して、特別ルールとして1日のBカウントに足す：
+//    120〜200kcal → +0.5 ／ 200kcal超 → +1
+//  ※1回で既にB0.5以上が付いたものは、その時点で数えているので対象外
+//    （＝各食材の b_count が 0 のものだけを累積する。二重計上の防止）。
+//  ※サーバー側（app.py の _day_sweet_bonus_b）と同じしきい値にすること。
 // ═══════════════════════════════════════════
-const SWEET_DAY_THRESHOLD_KCAL = 200;
+const SWEET_DAY_HALF_KCAL = 120;
+const SWEET_DAY_FULL_KCAL = 200;
 
-// その日の「B0のお菓子」の実kcал合計を求める（全食事の食材を横断）。
+// その日の「B0のお菓子・スイーツ・ジュース」の実kcal合計を求める（全食事の食材を横断）。
 function daySweetB0Kcal(items) {
   let kcal = 0;
   (items || []).forEach(i => {
@@ -2938,9 +2953,14 @@ function daySweetB0Kcal(items) {
   return kcal;
 }
 
-// その日のお菓子累積による追加Bカウント（200kcal超で+1、それ以外は0）。
+// その日の累積による追加Bカウント（120〜200kcalで+0.5、200kcal超で+1、それ未満は0）。
+function sweetBonusFromKcal(kcal) {
+  if (kcal > SWEET_DAY_FULL_KCAL) return 1;
+  if (kcal >= SWEET_DAY_HALF_KCAL) return 0.5;
+  return 0;
+}
 function daySweetBonusB(items) {
-  return daySweetB0Kcal(items) > SWEET_DAY_THRESHOLD_KCAL ? 1 : 0;
+  return sweetBonusFromKcal(daySweetB0Kcal(items));
 }
 
 // 1日のタンパク質目標(g)。体重×1.2〜1.6g/日の幅を持たせる（体重未設定ならnull）。
@@ -5591,14 +5611,14 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v36';
+const NOTICE_KEY = 'ab-diet-notice-v37';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
   // ※コツはここでは出さない。写真の解析が終わったときに出す（オーナー指示 2026-08）。
 }
 
-// お知らせNo.34「お名前を変更する」：設定タブのお名前欄を開き、すぐ入力できる状態にする。
+// お知らせNo.34・No.35「お名前を変更する」：設定タブのお名前欄を開き、すぐ入力できる状態にする。
 // ※iPhoneでキーボードを出すため、focus は必ずタップの処理の中で同期的に呼ぶ（setTimeoutに入れない）。
 function goEditName() {
   closeUpdateNotice();
