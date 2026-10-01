@@ -115,32 +115,11 @@ def test_prompt_tells_ai_to_output_implementable_changes():
     assert "すでにある機能の焼き直しを提案しない" in src
 
 
-def test_report_section_renders():
-    """レポートメールに、コピペ用の枠つきで3件出ること。"""
-    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
-    import send_report
-
-    html = send_report._dev_proposal_section(SAMPLE)
-    assert "Claude Code に頼める改善案" in html
-    for p in SAMPLE:
-        assert p["title"] in html
-        assert p["prompt"] in html
-    assert "コピーして Claude Code に貼るだけ" in html
-    # 提案が無い日はセクションごと出さない
-    assert send_report._dev_proposal_section([]) == ""
-    assert send_report._dev_proposal_section(None) == ""
-
-
-def test_report_survives_when_proposals_fail(monkeypatch):
-    """改善案が取れなくてもレポート本体は送る（セクションだけ省略）。"""
-    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
-    import send_report
-
-    def _boom(*a, **kw):
-        raise RuntimeError("network down")
-
-    monkeypatch.setattr(send_report.requests, "get", _boom)
-    monkeypatch.setattr(send_report.time, "sleep", lambda *_: None)
-    assert send_report.fetch_dev_proposals() == []
+def test_report_no_longer_includes_proposals():
+    """オーナー指示 2026-10-01：改善案はデイリーレポートに載せない（毎回の提案の質が低いため）。
+    メールに出さないだけでなく、毎朝の取得（＝AI呼び出しの費用）も止めていること。"""
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "report", "send_report.py"), encoding="utf-8").read()
+    assert "dev-proposals" not in src, "レポートがまだ改善案を取得しています（AI費用がかかる）"
+    assert "_dev_proposal_section" not in src, "レポートに改善案の枠が残っています"
+    assert "Claude Code に頼める改善案（今日の3つ）" not in src
