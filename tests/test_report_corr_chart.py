@@ -225,34 +225,16 @@ def test_picks_at_most_ten_gained_members(client):
     assert cc["slot_days"] >= 7
 
 
-def test_slot_charts_render():
-    """ふえた人・へった人の両方のグラフがPNGとして生成できること（0名でも落ちない）。"""
-    R = _load_send_report()
-    gained = [{"name": f"増{i}", "change_kg": 2.0 + i * 0.2, "avg_b": 5.0, "since": "2026-06-01",
-               "morning_days": i, "noon_days": 14 - i, "night_days": 0} for i in range(10)]
-    lost = [{"name": f"減{i}", "change_kg": -2.0 - i * 0.3, "avg_b": 3.0, "since": "2026-05-10",
-             "morning_days": 14, "noon_days": 14, "night_days": 13} for i in range(4)]
-    data = {"cut_corr": {"slot_days": 14, "loss_band_kg": 2.0,
-                         "gained_members": gained, "lost_members": lost}}
-    assert R.chart_gained_slots(data)[:4] == b"\x89PNG"
-    assert R.chart_lost_slots(data)[:4] == b"\x89PNG"
-    empty = {"cut_corr": {"slot_days": 14, "loss_band_kg": 2.0,
-                          "gained_members": [], "lost_members": []}}
-    assert R.chart_gained_slots(empty)[:4] == b"\x89PNG"
-    assert R.chart_lost_slots(empty)[:4] == b"\x89PNG"
-
-
-def test_slot_chart_avoids_emoji():
-    """グラフ内に絵文字を使わないこと（日本語フォントに無く豆腐□になる）。"""
+def test_slot_charts_are_removed():
+    """ふえた人・へった人の「朝・昼・晩の記録状況」の表はメールに載せない。"""
+    # オーナー指示 2026-10-01：「体重が2kg以上ふえた人／へった人の朝昼晩の表」と
+    # 「記録が足りない会員」の表は「いらない。今後は記載するな」。復活させないこと。
     src = _report_src()
-    fn = src[src.index("def _slot_table"):src.index("def chart_nutrition")]
-    assert "🌅" not in fn and "🌞" not in fn and "🌙" not in fn
+    for name in ("chart_gained_slots", "chart_lost_slots", "chart_thin_slots"):
+        assert f"def {name}(" not in src, f"{name} が復活しています"
+        assert f"cid:{name}" not in src, f"{name} が本文に復活しています"
+        assert f'"{name}"' not in src, f"{name} を生成しています"
+    assert "def _slot_table" not in src
+    assert "記録漏れを探す" not in src and "うまくいっている人の記録のしかた" not in src
 
 
-def test_slot_charts_are_in_the_email():
-    """メール本文に2つのグラフが差し込まれていること。"""
-    src = _report_src()
-    for cid in ("cid:chart_gained_slots", "cid:chart_lost_slots"):
-        assert cid in src, f"{cid} が本文にありません"
-    assert '"chart_gained_slots": chart_gained_slots(data)' in src
-    assert '"chart_lost_slots":   chart_lost_slots(data)' in src

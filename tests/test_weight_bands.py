@@ -151,20 +151,14 @@ def test_needs_two_weight_records(client):
 
 
 # ── レポート側 ────────────────────────────────────────────────
-def test_report_has_two_separate_charts():
-    """メールに2つのグラフが別々に載っていること。"""
+def test_report_no_longer_has_band_charts():
+    """体重が2kg以上ふえた人／へった人の表はメールに載せない。"""
+    # オーナー指示 2026-10-01：「体重が2kg以上ふえた人／へった人の朝昼晩の表」と
+    # 「記録が足りない会員」の表は「いらない。今後は記載するな」。復活させないこと。
     with open(os.path.join(ROOT, "report", "send_report.py"), encoding="utf-8") as f:
         src = f.read()
-    assert "def chart_gained_slots" in src and "def chart_lost_slots" in src
-    assert "cid:chart_gained_slots" in src and "cid:chart_lost_slots" in src
-    # 1枚にまとめていた旧グラフは残さない
+    assert "def chart_gained_slots" not in src and "def chart_lost_slots" not in src
+    assert "cid:chart_gained_slots" not in src and "cid:chart_lost_slots" not in src
     assert "chart_no_loss_slots" not in src
 
 
-def test_report_explains_the_basis():
-    """「初回記録との比較である」ことを本文に明記すること
-    （直近の増減と誤解されると、また同じ指摘になる）。"""
-    with open(os.path.join(ROOT, "report", "send_report.py"), encoding="utf-8") as f:
-        src = f.read()
-    assert "初回記録（プレ）→最新記録（ポスト）" in src
-    assert "横ばい" in src, "どちらにも出ない人がいることの説明がありません"
