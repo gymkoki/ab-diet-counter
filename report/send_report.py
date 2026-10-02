@@ -556,54 +556,66 @@ def chart_nutrition(data: dict) -> bytes:
     return fig_to_png(fig)
 
 
+# 減量希望者の成功群／失敗群で比べる項目：(キー, 表示名, 単位, 小数桁)
+CUT_COMPARE_METRICS = (
+    ("kcal",      "摂取カロリー", "kcal", 0),
+    ("protein_g", "タンパク質",   "g",    0),
+    ("veg_g",     "野菜",         "g",    0),
+)
+C_SUCCESS = C_GREEN   # 減量成功群
+C_FAIL    = C_GRAY    # 減量失敗群（減っていない）
+
+
+def _cut_metric(csc: dict, key: str) -> dict:
+    for r in (csc or {}).get("results") or []:
+        if r.get("key") == key:
+            return r
+    return {}
+
+
 def chart_goal_compare(data: dict) -> bytes:
-    """目的別比較：減量希望 vs 体重維持のBカウント・タンパク質・野菜の平均"""
-    gc = data.get("goal_compare") or {}
-    groups = [("cut", "減量希望", C_PRIMARY), ("maintain", "体重維持", C_INDIGO)]
-    active = [(k, lbl, c) for k, lbl, c in groups if (gc.get(k) or {}).get("users", 0) > 0]
+    """④ 減量希望者：減量成功群 vs 失敗群の摂取カロリー・タンパク質・野菜（1人1日あたり）。
+    （オーナー指示 2026-10-01：「減量希望と体重維持」の比較から置き換え）"""
+    csc = data.get("cut_success_compare") or {}
+    cov = csc.get("coverage") or {}
+    n_ok, n_ng = cov.get("loss_n", 0), cov.get("gain_n", 0)
 
-    fig, (axb, axn) = plt.subplots(1, 2, figsize=(10, 3.8), gridspec_kw={"width_ratios": [1, 1.6]})
+    fig, axes = plt.subplots(1, len(CUT_COMPARE_METRICS), figsize=(10, 3.9))
+    title = "減量希望者：減量成功群 vs 失敗群（1人1日あたりの平均）"
 
-    if not active:
-        fig.suptitle("目的別比較（減量希望 vs 体重維持）", fontsize=15, fontweight="bold")
-        _axes_note(axb, "目的別データを収集中です。")
-        _axes_note(axn, "会員がアプリを利用すると\n目標（減量/維持）が自動で記録されます。")
+    if not n_ok and not n_ng:
+        fig.suptitle(title, fontsize=15, fontweight="bold")
+        _axes_note(axes[0], "比較できる会員が\nまだいません。")
+        _axes_note(axes[1], "体重を2回以上（7日以上の幅で）\n記録した減量希望者が対象です。")
+        _axes_note(axes[2], "3食以上記録した日だけを\n集計します。")
         fig.tight_layout()
         return fig_to_png(fig)
 
-    # 左：平均Bカウント
-    xs = np.arange(len(active))
-    b_vals = [(gc[k].get("avg_b") or 0) for k, _, _ in active]
-    bars = axb.bar(xs, b_vals, width=0.55, color=[c for _, _, c in active], zorder=2)
-    for x, v in zip(xs, b_vals):
-        axb.text(x, v, f"{v:.1f}", ha="center", va="bottom", fontsize=13, fontweight="bold")
-    axb.set_xticks(xs)
-    axb.set_xticklabels([f"{lbl}\n({gc[k]['users']}名)" for k, lbl, _ in active], fontsize=12)
-    axb.set_ylabel("平均Bカウント / 日", fontsize=12)
-    axb.set_title("Bカウント", fontsize=13, fontweight="bold")
-    axb.spines["top"].set_visible(False)
-    axb.spines["right"].set_visible(False)
-    axb.grid(axis="y", alpha=0.25, zorder=0)
+    groups = [("loss", f"成功群\n({n_ok}名)", C_SUCCESS), ("gain", f"失敗群\n({n_ng}名)", C_FAIL)]
+    for ax, (key, label, unit, nd) in zip(axes, CUT_COMPARE_METRICS):
+        r = _cut_metric(csc, key)
+        xs = np.arange(len(groups))
+        vals = [((r.get(g) or {}).get("mean")) for g, _, _ in groups]
+        ax.bar(xs, [v or 0 for v in vals], width=0.55, color=[c for _, _, c in groups], zorder=2)
+        top = max([v for v in vals if v is not None] or [1])
+        for x, v in zip(xs, vals):
+            txt = f"{v:,.{nd}f}" if v is not None else "—"
+            ax.text(x, (v or 0) + top * 0.02, txt, ha="center", va="bottom",
+                    fontsize=13, fontweight="bold")
+        ax.set_ylim(0, top * 1.22)
+        ax.set_xticks(xs)
+        ax.set_xticklabels([lbl for _, lbl, _ in groups], fontsize=11)
+        sub = label
+        if r.get("diff") is not None:
+            sign = "+" if r["diff"] > 0 else "−"
+            sub += f"\n成功群 {sign}{abs(r['diff']):,.{nd}f}{unit}" + (" ＊" if r.get("significant") else "")
+        ax.set_title(sub, fontsize=13, fontweight="bold")
+        ax.set_ylabel(f"{unit} / 人・日", fontsize=11)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.25, zorder=0)
 
-    # 右：タンパク質・野菜（g）
-    metrics = [("avg_protein", "タンパク質"), ("avg_veg", "野菜")]
-    width = 0.34
-    for gi, (k, lbl, color) in enumerate(active):
-        vals = [(gc[k].get(m) or 0) for m, _ in metrics]
-        pos  = np.arange(len(metrics)) + (gi - (len(active) - 1) / 2) * width
-        axn.bar(pos, vals, width=width, color=color, label=lbl, zorder=2)
-        for x, v in zip(pos, vals):
-            axn.text(x, v, f"{v:.0f}", ha="center", va="bottom", fontsize=12, fontweight="bold")
-    axn.set_xticks(np.arange(len(metrics)))
-    axn.set_xticklabels([lbl for _, lbl in metrics], fontsize=12)
-    axn.set_ylabel("平均摂取量 (g / 人・日)", fontsize=12)
-    axn.set_title("タンパク質・野菜", fontsize=13, fontweight="bold")
-    axn.legend(fontsize=11)
-    axn.spines["top"].set_visible(False)
-    axn.spines["right"].set_visible(False)
-    axn.grid(axis="y", alpha=0.25, zorder=0)
-
-    fig.suptitle("目的別比較（直近30日・1人1日あたりの平均）", fontsize=15, fontweight="bold")
+    fig.suptitle(title, fontsize=15, fontweight="bold")
     fig.tight_layout()
     return fig_to_png(fig)
 
@@ -1108,22 +1120,32 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
     else:
         fruit_avg_str, fruit_sub = "収集中", "解析データに果物計測を追加済み"
 
-    # 目的別比較テーブル
-    gc = data.get("goal_compare") or {}
-    GOAL_LABELS = [("cut", "🔥 減量希望"), ("maintain", "⚖️ 体重維持")]
+    # ④ 減量希望者：成功群 vs 失敗群のテーブル
+    csc = data.get("cut_success_compare") or {}
+    cov = csc.get("coverage") or {}
     def _fmt(v, unit="", nd=1):
-        return f"{v:.{nd}f}{unit}" if v is not None else "—"
-    goal_rows = ""
-    for key, label in GOAL_LABELS:
-        g = gc.get(key) or {}
-        goal_rows += f"""
+        return f"{v:,.{nd}f}{unit}" if v is not None else "—"
+    cut_rows = ""
+    for key, label, unit, nd in CUT_COMPARE_METRICS:
+        r = _cut_metric(csc, key)
+        ok = (r.get("loss") or {}).get("mean")
+        ng = (r.get("gain") or {}).get("mean")
+        diff = r.get("diff")
+        if diff is None:
+            diff_str = "—"
+        else:
+            diff_str = ("+" if diff > 0 else "−") + _fmt(abs(diff), unit, nd)
+            if r.get("significant"):
+                diff_str += " ＊"
+        cut_rows += f"""
         <tr style="border-bottom:1px solid #F3F4F6">
           <td style="padding:8px;font-weight:700;color:#374151">{label}</td>
-          <td style="padding:8px;text-align:center">{g.get('users', 0)}名</td>
-          <td style="padding:8px;text-align:center;font-weight:800;color:#FF6B35">{_fmt(g.get('avg_b'), ' B')}</td>
-          <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{_fmt(g.get('avg_protein'), 'g', 0)}</td>
-          <td style="padding:8px;text-align:center;font-weight:800;color:#10B981">{_fmt(g.get('avg_veg'), 'g', 0)}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#10B981">{_fmt(ok, unit, nd)}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#6B7280">{_fmt(ng, unit, nd)}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{diff_str}</td>
         </tr>"""
+    cut_n_ok, cut_n_ng = cov.get("loss_n", 0), cov.get("gain_n", 0)
+    cut_note = ("※ 人数が少ないため参考値です。" if cov.get("small_sample") else "")
 
     # Claude API クレジット状況（取得できなくてもレポートは出す）
     credit_section = _credit_section(credit or {"status": "error", "message":
@@ -1308,21 +1330,25 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
       <img class="chart" src="cid:chart_nutrition" alt="Nutrition Trend" style="margin-top:12px">
     </div>
 
-    <!-- ④ 目的別比較 -->
+    <!-- ④ 減量希望者：成功群 vs 失敗群 -->
     <div class="section">
-      <h2>🎯 4. 目的別比較（減量希望 vs 体重維持）</h2>
+      <h2>🎯 4. 減量希望者：減量成功群 vs 失敗群</h2>
+      <div style="font-size:13px;color:#374151;margin-bottom:8px">
+        成功群 <b style="color:#10B981">{cut_n_ok}名</b>（体重が減っている）／
+        失敗群 <b style="color:#6B7280">{cut_n_ng}名</b>（減っていない）
+      </div>
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px">
         <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280">
-          <th style="padding:8px;text-align:left">目標</th>
-          <th style="padding:8px">人数</th>
-          <th style="padding:8px">平均Bカウント/日</th>
-          <th style="padding:8px">平均タンパク質/日</th>
-          <th style="padding:8px">平均野菜/日</th>
-        </tr>{goal_rows}
+          <th style="padding:8px;text-align:left">1日あたり</th>
+          <th style="padding:8px">成功群</th>
+          <th style="padding:8px">失敗群</th>
+          <th style="padding:8px">差（成功−失敗）</th>
+        </tr>{cut_rows}
       </table>
-      <img class="chart" src="cid:chart_goal_compare" alt="Goal Comparison">
+      <img class="chart" src="cid:chart_goal_compare" alt="Cut members: success vs failure">
       <div style="font-size:11px;color:#9CA3AF;margin-top:4px">
-        ※ 目標（減量/維持）は会員がアプリを利用した際に自動記録されます。未記録の会員は集計対象外です。
+        ※ 対象は目標が「減量」の会員。直近60日の体重の傾きがマイナスなら成功群、0以上なら失敗群。
+        食事は3食以上記録した日だけを、会員ごとに平均してから比べています（＊＝統計的に有意な差）。{cut_note}
       </div>
     </div>
 

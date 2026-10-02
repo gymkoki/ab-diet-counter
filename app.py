@@ -2657,8 +2657,29 @@ def admin_report_data():
         "b_overall_avg":        b_overall_avg,
         "nutrition":            nutrition,
         "goal_compare":         goal_compare,
+        "cut_success_compare":  _cut_success_compare(),
         "cut_corr":             cut_corr,
     })
+
+
+def _cut_success_compare():
+    """デイリーレポート④：減量希望者だけを「減量成功群／失敗群」に分け、
+    摂取カロリー・タンパク質・野菜などの1日平均を比べる（オーナー指示 2026-10-01）。
+    判定・数え方は /api/admin/diet-analysis と同じ（直近60日の体重の傾き、3食以上の日だけ、
+    会員1人＝1票）。傾きが0以上（＝減っていない）の人は失敗群に入れる。
+    失敗してもレポート全体は落とさない。"""
+    try:
+        res = _diet_analysis(goal="cut", flat_as_gain=True)
+    except Exception as e:
+        app.logger.warning("cut success compare skipped: %s", e)
+        return None
+    return {
+        "params": res["params"],
+        "coverage": res["coverage"],
+        "results": [{k: r.get(k) for k in ("key", "label", "unit", "digits", "loss", "gain",
+                                            "diff", "p_holm", "significant", "g", "summary")}
+                    for r in res["results"]],
+    }
 
 
 @app.route("/api/admin/cut-members")
@@ -5206,7 +5227,8 @@ DIET_METRICS = (
 
 
 def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
-                   min_meals=DIET_ANALYSIS_MIN_MEALS, threshold=0.0):
+                   min_meals=DIET_ANALYSIS_MIN_MEALS, threshold=0.0,
+                   goal=None, flat_as_gain=False):
     """減量群と増量群を作り、項目ごとに Welch の t 検定をする。
 
     比べる単位は「会員」（1人の複数日は独立ではないため、日を単位にすると
@@ -5214,6 +5236,8 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
     ① 体重：直近 weight_days 日の記録から最小二乗で傾きを出し、kg/30日 に直す。
        傾きが -threshold 未満なら減量群、+threshold 超なら増量群、その間は維持群（比較から外す）。
     ② 食事：同じ期間のうち、食事を min_meals 回以上記録した日だけの平均を会員ごとに出す。
+    goal を渡すと、その目標（例 "cut"＝減量希望）の会員だけで比べる。
+    flat_as_gain=True なら「減っていない人」（傾き0も含む）を増量群側＝失敗群に入れる。
     """
     import diet_stats as ds
 
@@ -5238,8 +5262,15 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
         n_rows = cur.fetchall()
         cur.execute("SELECT user_id, display_name FROM user_profile")
         names = {r[0]: r[1] for r in cur.fetchall()}
+        goal_uids = None
+        if goal:
+            cur.execute(f"SELECT user_id FROM user_profile WHERE goal={PH}", (goal,))
+            goal_uids = {r[0] for r in cur.fetchall()}
     finally:
         conn.close()
+    if goal_uids is not None:
+        w_rows = [r for r in w_rows if r[0] in goal_uids]
+        n_rows = [r for r in n_rows if r[0] in goal_uids]
 
     # ① 体重の傾き
     weights = {}
@@ -5277,7 +5308,8 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
         if uid not in slope:
             continue
         s = slope[uid]
-        group = "loss" if s < -threshold else ("gain" if s > threshold else "flat")
+        group = "loss" if s < -threshold else (
+            "gain" if (s > threshold or flat_as_gain) else "flat")
         means = {k: (round(sum(v) / len(v), 2) if v else None) for k, v in rec.items()}
         members.append({
             "user_id_short": uid[:8],
@@ -5329,7 +5361,8 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
 
     nutrition_dates = sorted({str(r[1])[:10] for r in n_rows})
     return {
-        "params": {"weight_days": weight_days, "min_meals": min_meals, "threshold": threshold},
+        "params": {"weight_days": weight_days, "min_meals": min_meals, "threshold": threshold,
+                   "goal": goal},
         "coverage": {
             "members_with_weight_trend": len(slope),
             "members_with_3meal_days": len(per_user),
