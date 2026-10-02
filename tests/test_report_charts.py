@@ -64,7 +64,18 @@ def test_removed_charts_stay_removed():
 def test_kept_charts_are_still_there():
     """残すことになっているグラフまで消えていないこと。"""
     src = _src()
-    for name in ("chart_usage", "chart_hourly", "chart_weight_loss",
+    for name in ("chart_usage", "chart_weight_loss",
                  "chart_cut_corr", "chart_nutrition", "chart_goal_compare"):
         assert f"def {name}(" in src, f"{name} が消えています"
         assert f"cid:{name}" in src, f"{name} が本文から消えています"
+
+
+def test_system_section_stays_removed():
+    """オーナー指示 2026-10-01：「5. システム・運用状況」（時間帯別の解析分布・推定コスト表）を外した。
+    グラフの関数・本文・添付のどれにも残っていないこと（推定コストは最上部のクレジット状況に出ている）。"""
+    src = _src()
+    assert "def chart_hourly(" not in src, "時間帯別の解析分布のグラフが復活しています"
+    assert "chart_hourly" not in _referenced_cids(src)
+    assert "chart_hourly" not in _attached_cids(src)
+    assert "システム・運用状況</h2>" not in src, "「5. システム・運用状況」の見出しが残っています"
+    assert "解析ピーク時間帯" not in src
