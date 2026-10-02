@@ -158,15 +158,16 @@ def test_excluded_from_b_average_trend(client):
 
 
 # ── レポート側 ────────────────────────────────────────────────
-def test_report_has_thin_logger_table():
-    """メールに「記録が足りない会員」の表が載っていること。"""
+def test_report_no_longer_has_thin_logger_table():
+    """「記録が足りない会員」の表はメールに載せない（オーナー指示 2026-10-01）。
+    ※Bカウントの分析（相関・平均B）から外す処理はサーバー側に残っている（上のテストで確認）。"""
+    # オーナー指示 2026-10-01：「体重が2kg以上ふえた人／へった人の朝昼晩の表」と
+    # 「記録が足りない会員」の表は「いらない。今後は記載するな」。復活させないこと。
     with open(os.path.join(ROOT, "report", "send_report.py"), encoding="utf-8") as f:
         src = f.read()
-    assert "def chart_thin_slots" in src
-    assert "cid:chart_thin_slots" in src
-    assert '"chart_thin_slots":   chart_thin_slots(data)' in src, \
-        "添付画像を作っていないと、メールの枠が空になる"
-    assert "記録できた分" in src, "なぜ外したのかの説明が本文にありません"
+    assert "def chart_thin_slots" not in src
+    assert "cid:chart_thin_slots" not in src
+    assert "記録が足りない会員（" not in src
 
 
 # ── アプリ側（記録し忘れに気づける仕掛け） ──────────────────────
