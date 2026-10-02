@@ -36,10 +36,10 @@ def test_credit_heading_has_no_stale_number():
 
 
 def test_cross_reference_points_upward():
-    """システム欄からの参照が「上の」になっていること。"""
+    """古い「下の 6. クレジット状況を参照」が残っていないこと。
+    （その参照を持っていた「5. システム・運用状況」は 2026-10-01 にレポートから外した）"""
     src = _read(REPORT)
     assert "下の「6. Claude API クレジット状況」を参照" not in src
-    assert "上の「Claude API クレジット状況」を参照" in src
 
 
 def test_credit_section_shows_yesterday_cost_and_balance():

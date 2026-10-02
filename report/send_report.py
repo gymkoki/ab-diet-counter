@@ -216,29 +216,6 @@ def chart_usage(data: dict, credit=None) -> bytes:
     return fig_to_png(fig)
 
 
-def chart_hourly(data: dict) -> str:
-    """時間帯別 解析分布（棒グラフ）"""
-    hourly = data["hourly"]
-    x = range(24)
-
-    fig, ax = plt.subplots(figsize=(10, 3.2))
-    colors = [C_PRIMARY if h in (7, 8, 12, 13, 19, 20) else C_INDIGO + "99" for h in x]
-    ax.bar(x, hourly, color=colors, zorder=2)
-    ax.set_xticks(range(24))
-    ax.set_xticklabels([f"{h}" for h in range(24)], fontsize=12)
-    ax.set_xlabel("時 (JST)", fontsize=13)
-    ax.set_ylabel("解析回数", fontsize=13)
-    ax.set_title(f"時間帯別 解析分布（{data['report_date']}）", fontsize=15, fontweight="bold", pad=8)
-    ax.set_ylim(bottom=0)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, zorder=0)
-    fig.tight_layout()
-    return fig_to_png(fig)
-
-
-
-
 def chart_weight_loss(data: dict) -> str:
     """減量進捗（初回記録比）：スパゲッティ（個人）＋ 集団平均折れ線
     値は「初回体重 − その日の体重」（プラス＝減量、マイナス＝増量）を表す。"""
@@ -609,7 +586,7 @@ def chart_goal_compare(data: dict) -> bytes:
 
 
 # ── メール HTML 本文 ────────────────────────────────────────────
-# 画像は cid:chart_usage / cid:chart_hourly / cid:chart_weight_loss などで参照する
+# 画像は cid:chart_usage / cid:chart_weight_loss などで参照する
 # （send_email() が main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
 # ※API費用の日別グラフ（chart_credit）は、オーナー指示 2026-09-30 で chart_usage に統合した。
 #   似たグラフが2枚並んでいたため。費用の推移は chart_usage の赤い線で見る。
@@ -1061,11 +1038,6 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
 
-    # 時間帯ピーク
-    hourly = data["hourly"]
-    peak_h = hourly.index(max(hourly)) if max(hourly) > 0 else 0
-    peak_v = max(hourly)
-
     # 体重・Bカウント直近値
     b_avg_latest = next((v for v in reversed(data["b_avg_trend"]) if v is not None), None)
     w_avg_latest = next((v for v in reversed(data["w_avg_trend"]) if v is not None), None)
@@ -1326,34 +1298,8 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
       </div>
     </div>
 
-    <!-- ⑤ システム・運用状況 -->
-    <div class="section">
-      <h2>⚙️ 5. システム・運用状況</h2>
-
-      <!-- 時間帯別分布 -->
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px">
-          解析ピーク時間帯: <strong style="color:#FF6B35">{peak_h}:00〜{peak_h+1}:00</strong>（{peak_v}回）
-        </div>
-        <img class="chart" src="cid:chart_hourly" alt="Hourly Distribution">
-      </div>
-
-      <!-- コスト情報 -->
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <tr style="border-bottom:1px solid #F3F4F6">
-          <td style="padding:8px;color:#6B7280;font-weight:700">昨日の推定コスト</td>
-          <td style="padding:8px;font-weight:800;color:#374151">¥{data['est_cost_jpy']:,}</td>
-        </tr>
-        <tr style="border-bottom:1px solid #F3F4F6">
-          <td style="padding:8px;color:#6B7280;font-weight:700">1回あたり</td>
-          <td style="padding:8px;font-weight:800;color:#374151">約 ¥{data['cost_per_analysis']}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px;color:#6B7280;font-weight:700">APIクレジット残高</td>
-          <td style="padding:8px;color:#9CA3AF">上の「Claude API クレジット状況」を参照</td>
-        </tr>
-      </table>
-    </div>
+    <!-- 「5. システム・運用状況」（時間帯別の解析分布・推定コスト）はオーナー指示
+         （2026-10-01）でレポートから外した。昨日の推定コストは最上部のクレジット状況に出ている。 -->
 
   </div>
   <div class="footer">
@@ -1414,7 +1360,6 @@ def main():
     print("Generating charts...")
     charts = {
         "chart_usage":    chart_usage(data, credit),
-        "chart_hourly":   chart_hourly(data),
         "chart_weight_loss": chart_weight_loss(data),
         "chart_cut_corr":  chart_cut_corr(data),
         "chart_gained_slots": chart_gained_slots(data),
