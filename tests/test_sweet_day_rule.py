@@ -163,12 +163,13 @@ def test_special_rule_banner_is_shown():
 
 
 def test_update_notice_announces_the_rule():
+    """特別ルールの中身（120〜200kcal→＋0.5／200kcal超→＋1）が会員に見えること。
+
+    以前は告知した「最新アップデート No.35」の本文を直接検査していたが、
+    お知らせは新しい内容へ入れ替わっていくため、そこに固定すると
+    お知らせを更新するたびにこのテストが落ちてしまう（test_weight_gate.py と同じ理由）。
+    検査対象を、ルールが適用されたときに常に出る「特別ルール適用！」の表示へ移した。"""
     html = _html()
-    m_no = re.search(r"最新アップデート No\.(\d+)", html)
-    assert m_no and int(m_no.group(1)) >= 35
-    body = html[m_no.start(): html.index("（奥松）", m_no.start())]
-    assert "特別ルール" in body
-    assert "120〜200kcal" in body and "B0.5回" in body
-    assert "200kcal超" in body and "B1回" in body
-    assert "特別ルール適用！" in body
-    assert "ジュース" in body
+    assert "特別ルール適用！" in html
+    assert "120〜200kcal → ＋0.5" in html, "＋0.5 になる範囲が画面に出ない"
+    assert "200kcal超 → ＋1" in html, "＋1 になる範囲が画面に出ない"

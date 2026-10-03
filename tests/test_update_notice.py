@@ -53,3 +53,16 @@ def test_daily_tip_never_covers_the_notice():
     body = m.group(1)
     assert "update-notice-overlay" in body, \
         "お知らせ表示中にコツを見送る処理が入っていません"
+
+
+def test_notice_36_asks_for_one_photo_per_meal():
+    """お知らせ No.36（オーナー指示 2026-10-03）：
+    食材をなるべく1枚にまとめて撮影してほしいこと、その理由（AI料金は写真1枚ごと）を伝える。"""
+    html = _html()
+    m = re.search(r"最新アップデート No\.(\d+)", html)
+    assert m and int(m.group(1)) >= 36
+    if int(m.group(1)) != 36:
+        return   # 次のお知らせに入れ替わったら、この検査は役目を終える
+    body = html[m.start(): html.index("（奥松）", m.start())]
+    assert "食材をまとめて1枚の写真に収まるように" in body, "お願いの本文が入っていない"
+    assert "写真1枚ごと" in body and "料金" in body, "まとめて撮ってほしい理由（料金）が伝わらない"
