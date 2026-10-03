@@ -267,19 +267,22 @@ def test_credit_section_renders():
         fetcher=_fake_cost({f"2026-08-{d:02d}": 1.0 for d in range(1, 12)}),
     )
     html = send_report._credit_section(ok, 400)
-    assert "クレジット残高" in html
-    assert "¥13,350" in html          # 残高 $89 × 150
-    assert "約89日" in html
+    # 残高・残り日数はオーナー指示（2026-10-03）で載せない。コストの数字だけ出す。
+    assert "昨日のコスト（実額）" in html and "今月のコスト（実額）" in html and "1日あたり平均" in html
+    assert "¥150" in html             # 昨日 $1 × 150
+    assert "クレジット残高" not in html
+    assert "¥13,350" not in html      # 残高 $89 × 150 は出さない
+    assert "約89日" not in html
     # 日別の費用グラフはここには出さない（オーナー指示 2026-09-30：
     # 「日別 利用状況とAPI費用」の1枚に統合した。tests/test_report_usage_chart.py で確認）
     assert "cid:chart_credit" not in html
     assert "<img" not in html
 
-    # 取得できなかった場合も落ちず、案内文が出る
+    # 取得できなかった場合も落ちず、解析回数からの概算だけ出す
     ng = ac.build_credit_info(today=TODAY, env={}, fetcher=_fake_cost({}))
     html_ng = send_report._credit_section(ng, 400)
-    assert "取得できず" in html_ng
-    assert "残高" in html_ng
+    assert "昨日の推定コスト" in html_ng and "¥400" in html_ng
+    assert "取得できず" not in html_ng and "残高" not in html_ng
     assert "cid:chart_credit" not in html_ng
 
     # 費用の推移は統合グラフで描ける（クレジット情報の日別金額を使う）
@@ -291,7 +294,7 @@ def test_credit_section_renders():
 
 
 def test_credit_section_shows_auto_reload_and_limit():
-    """オートリロード中は「枯渇」ではなく「次の自動チャージ」と上限消化率を出す。"""
+    """月間支出上限の消化率と月末見込みの警告は、今月のコストのカードに出す。"""
     pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
     import send_report
 
@@ -304,9 +307,10 @@ def test_credit_section_shows_auto_reload_and_limit():
         fetcher=_fake_cost({f"2026-08-{d:02d}": 8.0 for d in range(1, 12)}),
     )
     html = send_report._credit_section(info, 400)
-    assert "次の自動チャージ" in html
+    # 「次の自動チャージ」のカードはオーナー指示（2026-10-03）で載せない
+    assert "次の自動チャージ" not in html
     assert "枯渇" not in html
-    assert "$100.00" in html
+    # 月間支出上限の警告は今月のコストのカードに残す（止まる前に気づけるように）
     assert "上限 $200.00" in html
     # 今月 $88 ＋ 残り20日×$8 = $248 で上限 $200 を超えるので警告を出す
     assert "月末見込み $248.00" in html
@@ -403,7 +407,7 @@ def test_secret_base_wins_over_dashboard():
 
 
 def test_estimated_section_uses_the_full_layout():
-    """推定でも「取得できず」ではなく、実額と同じ体裁で残高を出すこと。"""
+    """推定でも「取得できず」ではなく、実額と同じ体裁でコストを出すこと。"""
     pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
     import send_report
@@ -412,10 +416,8 @@ def test_estimated_section_uses_the_full_layout():
                                 estimate=_estimate({f"2026-08-{d:02d}": 155 for d in range(1, 12)}))
     html = send_report._credit_section(info, 400)
     assert "取得できず" not in html, "推定できるのに『取得できず』になっています"
-    assert "クレジット残高（推定）" in html
-    assert ">推定<" in html, "実額か推定かのバッジが出ていません"
-    assert "¥13,795" in html          # 残高 $89 × 155
-    assert "約89日" in html
+    assert "昨日のコスト（推定）" in html, "推定のコストが出ていません"
+    assert "クレジット残高" not in html and "約89日" not in html   # 2026-10-03 に外した
 
 
 # ── オーナー指示 2026-10-01：クレジット欄の補足メッセージと※注記は載せない ──────
@@ -456,7 +458,7 @@ def test_credit_section_has_no_notes(kind):
     # メッセージ自体はあっても（データ側には残っていても）、本文には出さない
     info = dict(info, message=info.get("message") or "これは表示されてはいけない補足です")
     html = send_report._credit_section(info, 400)
-    assert "クレジット状況" in html, "セクション自体まで消えている"
+    assert "コスト" in html, "コストのカードまで消えている"
     assert info["message"] not in html, "黄色の補足メッセージが出ている"
     for text in _REMOVED_CREDIT_NOTES:
         assert text not in html, f"削除した注記「{text}」が出ている"
@@ -471,3 +473,36 @@ def test_inapp_report_has_no_console_note():
     body = body[:body.index("\ndef ", 10)]
     assert "でご確認ください" not in body
     assert "console.anthropic.com/settings/billing" not in body
+
+
+# ── オーナー指示 2026-10-03：見出し・残高・残り日数のカードは載せない ──────────
+@pytest.mark.parametrize("kind", ["ok", "estimated", "estimated_no_base", "auto_reload", "error"])
+def test_balance_and_days_cards_are_removed(kind):
+    """赤枠で囲われた「💳 Claude API クレジット状況（推定）」の見出しと、
+    「クレジット残高」「残り日数の目安／次の自動チャージ」の2枚を、どの状態でも出さないこと。"""
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
+    import send_report
+
+    env = {"USD_JPY": "155"}
+    kw = {}
+    if kind == "ok":
+        env.update({"ANTHROPIC_ADMIN_KEY": "k", "ANTHROPIC_CREDIT_BASE": "2026-08-01:100"})
+        kw["fetcher"] = _fake_cost({f"2026-08-{d:02d}": 1.0 for d in range(1, 12)})
+    elif kind == "auto_reload":
+        env.update({"ANTHROPIC_ADMIN_KEY": "k", "ANTHROPIC_CREDIT_BASE": "2026-08-01:5.76",
+                    "ANTHROPIC_AUTO_RELOAD": "5:100"})
+        kw["fetcher"] = _fake_cost({f"2026-08-{d:02d}": 8.0 for d in range(1, 12)})
+    elif kind == "estimated":
+        kw["estimate"] = _estimate({f"2026-08-{d:02d}": 155 for d in range(1, 12)})
+    elif kind == "estimated_no_base":
+        kw["estimate"] = _estimate({f"2026-08-{d:02d}": 155 for d in range(1, 12)},
+                                   base_date=None, base_usd=None)
+    else:
+        env = {}
+        kw["fetcher"] = _fake_cost({})
+    html = send_report._credit_section(ac.build_credit_info(today=TODAY, env=env, **kw), 400)
+    for text in ("Claude API クレジット状況", "クレジット残高", "残り日数", "次の自動チャージ",
+                 "未設定", "基準残高の登録が必要", "残高または使用実績が不足", "<h2"):
+        assert text not in html, f"外したはずの「{text}」が出ている"
+    assert "コスト" in html, "コストのカードまで消えている"
