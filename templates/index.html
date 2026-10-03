@@ -703,9 +703,15 @@
     .weight-save-btn { width:100%; margin-top:14px; padding:14px; border:none; border-radius:var(--radius-md); background:var(--primary); color:white; font-size:18px; font-weight:700; cursor:pointer; transition:transform 0.1s; }
     .weight-save-btn:active { transform:scale(0.985); }
     .weight-cancel { width:100%; margin-top:8px; padding:10px; border:none; border-radius:var(--radius-md); background:none; color:var(--text-muted); font-size:17px; font-weight:700; cursor:pointer; }
-    .history-total { display:flex; align-items:center; justify-content:space-between; background:var(--primary-soft); border-radius:var(--radius-md); padding:14px 16px; margin-top:14px; }
-    .history-total .label { font-size:17px; font-weight:700; color:#A14417; }
-    .history-total .count { font-size:28px; font-weight:800; color:var(--b-color); font-variant-numeric:tabular-nums; }
+    .history-total { background:var(--primary-soft); border-radius:var(--radius-md); padding:14px 16px; margin-top:14px; }
+    .history-avg-title { font-size:17px; font-weight:800; color:#A14417; margin-bottom:10px; }
+    .history-avg-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+    .history-avg-cell { background:#fff; border-radius:10px; padding:8px 4px; text-align:center; }
+    .history-avg-cell .lbl { font-size:14px; font-weight:700; color:var(--text-muted); }
+    .history-avg-cell .val { font-size:26px; font-weight:800; color:var(--b-color); font-variant-numeric:tabular-nums; line-height:1.3; }
+    .history-avg-cell .val small { font-size:15px; font-weight:700; }
+    .history-avg-cell .days { font-size:13px; color:var(--text-muted); }
+    .history-avg-note { font-size:14px; color:var(--text-muted); line-height:1.6; margin-top:10px; }
 
     /* ── ボトムナビ ── */
     .bnav { position:fixed; bottom:0; left:0; right:0; display:flex; background:rgba(255,255,255,0.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-top:1px solid var(--border); z-index:150; padding-bottom:env(safe-area-inset-bottom,0); }
@@ -937,8 +943,9 @@
       </label>
     </div>
     <div class="history-total" id="history-total" style="display:none">
-      <span class="label">1日平均</span>
-      <span class="count" id="history-total-count">-</span>
+      <div class="history-avg-title">🍽️ あなたの1日平均Bカウント</div>
+      <div class="history-avg-grid" id="history-avg-grid"></div>
+      <div class="history-avg-note" id="history-avg-note"></div>
     </div>
     <div id="weight-chart-wrap" style="display:none;margin-top:16px">
       <div style="font-size:16px;font-weight:800;margin-bottom:6px;line-height:1.6">
@@ -5216,19 +5223,47 @@ function _composeHistoryDaily(serverData) {
   return Object.values(byDate).sort((a,b) => b.date.localeCompare(a.date));
 }
 
+// 履歴の「あなたの1日平均Bカウント」。
+// 以前は全期間の平均を整数に丸めた1つの数字（「1日平均 4回/日」）だけで、ほとんど動かず
+// 目標の回数と見分けがつかなかった（会員の声 2026-10）。期間ごとに小数1桁で出す。
+// ・記録した日だけで割る（記録なしの日を0回として数えると、平均が実際より小さく出る）
+// ・今日は除く（まだ記録の途中なので、入れると平均が下がって見える）
+const HIST_AVG_WINDOWS = [
+  { key: 'd7',  label: '直近7日',  days: 7 },
+  { key: 'd30', label: '直近30日', days: 30 },
+  { key: 'all', label: '全期間',   days: null },
+];
+function historyAverages(daily, today) {
+  const past = (daily || []).filter(d => d.b_count != null && d.date < today);
+  const daysAgo = n => { const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - n); return d.toLocaleDateString('sv-SE'); };
+  return HIST_AVG_WINDOWS.map(w => {
+    const from = w.days ? daysAgo(w.days) : '';
+    const rows = past.filter(d => d.date >= from);
+    const avg = rows.length ? rows.reduce((s, d) => s + d.b_count, 0) / rows.length : null;
+    return { key: w.key, label: w.label, days: rows.length, avg: avg == null ? null : Math.round(avg * 10) / 10 };
+  });
+}
+
 function _paintHistory(daily) {
   const listEl  = document.getElementById('history-list');
   const totalEl = document.getElementById('history-total');
-  const totalCountEl = document.getElementById('history-total-count');
   const fmtDate = s => { const d = new Date(s+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}`; };
   const dow    = s => { const d = new Date(s+'T00:00:00'); return WEEKDAY_JA[d.getDay()]; };
 
-  // 平均（上部）— 表示中のデータから算出
-  const withB = daily.filter(d => d.b_count != null);
-  if (withB.length > 0) {
-    const sum = withB.reduce((s,d) => s + d.b_count, 0);
-    totalCountEl.textContent = `${Math.round(sum / withB.length)}回/日`;
-    totalEl.style.display = 'flex';
+  // 自分の平均（上部）— 直近7日・直近30日・全期間
+  if (daily.some(d => d.b_count != null)) {
+    const avgs = historyAverages(daily, getTodayJST());
+    document.getElementById('history-avg-grid').innerHTML = avgs.map(a => `
+      <div class="history-avg-cell">
+        <div class="lbl">${a.label}</div>
+        <div class="val">${a.avg != null ? `${a.avg.toFixed(1)}<small>回</small>` : '—'}</div>
+        <div class="days">${a.days > 0 ? `${a.days}日分` : '記録なし'}</div>
+      </div>`).join('');
+    const tgt = getGoalTarget(getProfile());
+    document.getElementById('history-avg-note').innerHTML =
+      '記録した日だけで計算しています（今日は記録の途中なので含めません）。'
+      + (tgt ? `目標は<span style="white-space:nowrap">1日 B${tgt.label}</span>（${tgt.goalName}）です。` : '');
+    totalEl.style.display = '';
   } else {
     totalEl.style.display = 'none';
   }
