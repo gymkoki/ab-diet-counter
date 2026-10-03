@@ -57,11 +57,11 @@ def test_strict_estimation_rules_are_kept():
 
 # ── ② ワンタップで量を直せる ────────────────────────────────────
 def test_quantity_buttons_exist():
-    """半分・1.5倍・2倍のボタンが用意されていること。"""
+    """0.5倍・1.5倍・2倍のボタンが用意されていること。"""
     html = _html()
     assert "QTY_FACTORS" in html
     factors = re.search(r"const QTY_FACTORS = \[(.*?)\];", html, re.S).group(1)
-    for label in ("半分", "1.5倍", "2倍"):
+    for label in ("0.5倍", "1.5倍", "2倍"):
         assert label in factors, f"「{label}」のボタンがありません"
 
 
