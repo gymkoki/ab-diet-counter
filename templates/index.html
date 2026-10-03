@@ -211,6 +211,14 @@
     .copy-b-btn { border:1px solid var(--primary-line); background:var(--primary-soft); color:var(--b-color); border-radius:var(--radius-sm); padding:6px 9px; font-size:16px; font-weight:700; cursor:pointer; white-space:nowrap; flex-shrink:0; }
     .copy-b-btn:active { background:#FFE3D5; }
     .copy-del { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:var(--radius-sm); width:34px; height:34px; font-size:17px; cursor:pointer; flex-shrink:0; }
+    /* コピーご飯の複数選択（オーナー要望 2026-10-03：組み合わせを1回の食事としてまとめて追加） */
+    #copy-picker-list { max-height:55vh; overflow-y:auto; }
+    .copy-pick-hint { font-size:15px; color:var(--text-muted); line-height:1.6; margin:-4px 0 10px; text-align:left; }
+    .copy-item .copy-check { width:26px; height:26px; border:2px solid var(--border); border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800; color:#fff; background:var(--surface); }
+    .copy-item.selected { border-color:var(--primary); background:var(--primary-soft); }
+    .copy-item.selected .copy-check { border-color:var(--primary); background:var(--primary); }
+    .btn-copy-add { display:block; width:100%; margin-top:6px; padding:14px; border:none; border-radius:var(--radius-md); background:var(--primary); color:#fff; font-size:17px; font-weight:800; cursor:pointer; }
+    .btn-copy-add:disabled { opacity:0.45; cursor:not-allowed; }
     .copy-empty { text-align:center; color:var(--text-muted); font-size:17px; padding:14px 0; line-height:1.7; }
     .oil-btn:active { border-color:var(--primary); color:var(--primary); background:var(--primary-soft); }
     /* 「Bだけ追加」の選択欄(.oil-menu / .oil-opt / .btn-oil-save)は機能ごと廃止して削除した。
@@ -963,7 +971,9 @@
 <div id="copy-picker-overlay" onclick="closeCopyPicker()">
   <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:360px">
     <h3>🍚 コピーご飯を選ぶ</h3>
+    <div class="copy-pick-hint" id="copy-pick-hint">一緒に食べたものを<b>まとめて選べます</b>。選んだものは<b>1回の食事</b>として記録されます。</div>
     <div id="copy-picker-list"></div>
+    <button class="btn-copy-add" id="copy-add-btn" onclick="addSelectedCopyMeals()" disabled>選んでください</button>
     <button class="weight-cancel" onclick="closeCopyPicker()">閉じる</button>
   </div>
 </div>
@@ -3058,24 +3068,115 @@ function saveCopyMeals(arr) {
 }
 
 // 記録画面：コピーご飯を選ぶモーダル
+// 複数を選んで「まとめて追加」できる（オーナー要望 2026-10-03）。
+// 1品ずつ追加すると「朝だけで2回記録」になってしまうため、選んだ組み合わせは1回の食事にまとめる。
+let _copySelected = [];   // 選んだコピーご飯のID（選んだ順）
 function openCopyPicker(mealId) {
   _copyPickerMeal = mealId;
+  _copySelected = [];
   const list = document.getElementById('copy-picker-list');
   const meals = getCopyMeals();
-  if (!meals.length) {
+  const hasMeals = meals.length > 0;
+  document.getElementById('copy-pick-hint').style.display = meals.length > 1 ? '' : 'none';
+  document.getElementById('copy-add-btn').style.display = hasMeals ? '' : 'none';
+  if (!hasMeals) {
     list.innerHTML = '<div class="copy-empty">まだ登録がありません。<br>右下の「設定」→「コピーご飯を追加」から登録できます。</div>';
   } else {
     list.innerHTML = meals.map(cm => `
-      <button class="copy-item" onclick="addCopyMealToRecord('${cm.id}')">
+      <button class="copy-item" id="copy-pick-${cm.id}" onclick="toggleCopyPick('${cm.id}')">
+        <span class="copy-check"></span>
         ${cm.previewSrc ? `<img src="${cm.previewSrc}" alt="">` : ''}
         <span class="copy-name">${esc(cm.name)}</span>
         <span class="copy-b">B ${fmtCount((cm.result && cm.result.total_b_count) || 0)}</span>
       </button>`).join('');
   }
+  updateCopyPickButton();
   document.getElementById('copy-picker-overlay').classList.add('show');
 }
 function closeCopyPicker() {
   document.getElementById('copy-picker-overlay').classList.remove('show');
+  _copySelected = [];
+}
+function toggleCopyPick(copyId) {
+  const i = _copySelected.indexOf(copyId);
+  if (i >= 0) _copySelected.splice(i, 1); else _copySelected.push(copyId);
+  const el = document.getElementById(`copy-pick-${copyId}`);
+  if (el) {
+    const on = i < 0;
+    el.classList.toggle('selected', on);
+    const ck = el.querySelector('.copy-check');
+    if (ck) ck.textContent = on ? '✓' : '';
+  }
+  updateCopyPickButton();
+}
+function updateCopyPickButton() {
+  const btn = document.getElementById('copy-add-btn');
+  if (!btn) return;
+  const meals = getCopyMeals();
+  const picked = _copySelected.map(id => meals.find(c => c.id === id)).filter(Boolean);
+  btn.disabled = picked.length === 0;
+  if (!picked.length) { btn.textContent = '選んでください'; return; }
+  const b = picked.reduce((s, cm) => s + ((cm.result && cm.result.total_b_count) || 0), 0);
+  btn.textContent = picked.length === 1
+    ? `この1品を追加（B ${fmtCount(b)}）`
+    : `${picked.length}品をまとめて追加（B ${fmtCount(b)}）`;
+}
+
+// 選んだコピーご飯（複数可）を1つの結果にまとめる。
+// 食材の行はそのまま並べ、Bカウント・タンパク質・野菜・果物は合計する。
+function mergeCopyResults(cms) {
+  const merged = { foods: [], total_b_count: 0, total_protein_g: 0, total_veg_g: 0, advice: '' };
+  let fruit = null;
+  cms.forEach(cm => {
+    const r = JSON.parse(JSON.stringify(cm.result || { foods: [], total_b_count: 0 }));
+    delete r.clarify;
+    merged.foods = merged.foods.concat(r.foods || []);
+    merged.total_b_count += Number(r.total_b_count) || 0;
+    merged.total_protein_g += mealProtein(r);
+    merged.total_veg_g += mealVeg(r);
+    let fr = r.total_fruit_g;
+    if (typeof fr !== 'number' && (r.foods || []).some(f => f && 'fruit_g' in f)) {
+      fr = (r.foods || []).reduce((s, f) => s + (Number(f.fruit_g) || 0), 0);
+    }
+    if (typeof fr === 'number') fruit = (fruit || 0) + fr;
+  });
+  if (fruit !== null) merged.total_fruit_g = fruit;
+  if (cms.length === 1) {
+    // 1品だけなら従来どおり保存済みの結果をそのまま使う（アドバイス等も残す）
+    const r = JSON.parse(JSON.stringify(cms[0].result || merged));
+    delete r.clarify;
+    return r;
+  }
+  return merged;
+}
+
+function addSelectedCopyMeals() {
+  const meals = getCopyMeals();
+  const picked = _copySelected.map(id => meals.find(c => c.id === id)).filter(Boolean);
+  if (!picked.length) return;
+  const mealId = _copyPickerMeal || 'food';
+  const item = {
+    id: nextItemId(), file:null,
+    previewSrc: (picked.find(cm => cm.previewSrc) || {}).previewSrc || null,
+    loading:false, error:null, isCopy:true,
+    result: mergeCopyResults(picked),
+  };
+  state[mealId].items.push(item);
+  closeCopyPicker();
+  renderStrip(mealId);
+  renderResults(mealId);
+  updateDailyTotal();
+  saveState();
+  logAction('copy');       // 「コピーご飯」の利用を記録（集計用）
+  // タンパク質・野菜が未計算のコピーご飯なら、名前からAIで推定して補い、
+  // 今追加した記録にも、保存済みのコピーご飯（今後の追加）にも反映する。
+  picked.forEach(cm => fillCopyMealNutrition(cm, item, mealId, picked.length > 1));
+}
+
+// 1品だけ追加（以前の呼び出し口。中身は複数選択と同じ処理）
+function addCopyMealToRecord(copyId) {
+  _copySelected = [copyId];
+  addSelectedCopyMeals();
 }
 
 // 記録画面：解析済みの食事（写真・文章・手動）をそのままコピーご飯に登録する。
@@ -3104,28 +3205,6 @@ function saveItemAsCopyMeal(mealId, itemId) {
   if (btn) { btn.textContent = '✅ コピーご飯に登録しました'; btn.disabled = true; btn.style.opacity = '0.7'; }
 }
 
-// コピーご飯を記録に追加（AI解析なし・保存済みの結果を使う）
-function addCopyMealToRecord(copyId) {
-  const cm = getCopyMeals().find(c => c.id === copyId);
-  if (!cm) return;
-  const mealId = _copyPickerMeal || 'food';
-  const id = nextItemId();
-  const item = {
-    id, file:null, previewSrc: cm.previewSrc || null, loading:false, error:null,
-    isCopy:true, result: cm.result
-  };
-  state[mealId].items.push(item);
-  closeCopyPicker();
-  renderStrip(mealId);
-  renderResults(mealId);
-  updateDailyTotal();
-  saveState();
-  logAction('copy');       // 「コピーご飯」の利用を記録（集計用）
-  // タンパク質・野菜が未計算のコピーご飯なら、名前からAIで推定して補い、
-  // 今追加した記録にも、保存済みのコピーご飯（今後の追加）にも反映する。
-  fillCopyMealNutrition(cm, item, mealId);
-}
-
 // /estimate-nutrition で名前からタンパク質・野菜(g)だけを推定する（Bカウントは変えない）
 async function estimateCopyNutrition(name) {
   try {
@@ -3152,7 +3231,8 @@ function applyNutritionToResult(result, nut) {
 }
 
 // コピーご飯のタンパク質・野菜が未設定なら推定して補う（記録アイテム＋保存済み両方）
-async function fillCopyMealNutrition(cm, item, mealId) {
+// merged=true のときは、まとめて追加した記録の合計に「足す」（他の品の分を上書きしない）。
+async function fillCopyMealNutrition(cm, item, mealId, merged = false) {
   const r = cm.result;
   const hasNut = r && (typeof r.total_protein_g === 'number' || typeof r.total_veg_g === 'number');
   if (hasNut) return;   // 写真登録のコピーご飯などは既に栄養がある
@@ -3168,7 +3248,12 @@ async function fillCopyMealNutrition(cm, item, mealId) {
   }
   // ② いま記録に追加したアイテムに反映（当日の合計・表示に即反映）
   if (item && item.result) {
-    applyNutritionToResult(item.result, nut);
+    if (merged) {
+      item.result.total_protein_g = (Number(item.result.total_protein_g) || 0) + nut.total_protein_g;
+      item.result.total_veg_g = (Number(item.result.total_veg_g) || 0) + nut.total_veg_g;
+    } else {
+      applyNutritionToResult(item.result, nut);
+    }
     renderResults(mealId);
     updateDailyTotal();
     saveState();
