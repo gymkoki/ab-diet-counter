@@ -32,7 +32,6 @@ def test_credit_heading_has_no_stale_number():
     """先頭に移動したので「6.」の通し番号が残っていないこと。"""
     src = _read(REPORT)
     assert "6. Claude API クレジット状況" not in src, "古い通し番号が残っています"
-    assert "Claude API クレジット状況" in src
 
 
 def test_cross_reference_points_upward():
@@ -42,10 +41,11 @@ def test_cross_reference_points_upward():
     assert "下の「6. Claude API クレジット状況」を参照" not in src
 
 
-def test_credit_section_shows_yesterday_cost_and_balance():
-    """昨日の推定コストとクレジット残高の両方が載っていること。"""
+def test_credit_section_shows_yesterday_cost_only():
+    """最上部には昨日のコストを出し、クレジット残高は出さないこと（オーナー指示 2026-10-03）。"""
     src = _read(REPORT)
     start = src.index("def _credit_section")
-    block = src[start:start + 6000]
-    assert "昨日の推定コスト" in block
-    assert "クレジット残高" in block
+    block = src[start:src.index("def fetch_credit_estimate", start)]
+    assert "昨日の推定コスト" in block and "昨日のコスト" in block
+    assert "kpi-lbl\">💳 クレジット残高" not in block
+    assert "⏳ 残り日数の目安" not in block and "🔁 次の自動チャージ" not in block

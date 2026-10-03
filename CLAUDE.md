@@ -62,6 +62,11 @@
   見出し横の「実額／推定」バッジだけ。`credit["message"]` はデータとして残っていても本文に出さない。
   アプリ内テスト送信版の「残高は Anthropic Console でご確認ください」も同じ理由で削除した。
   戻さないこと（`tests/test_report_credit.py` の `test_credit_section_has_no_notes` が回帰を検知する）。
+- **「💳 Claude API クレジット状況」の見出しと「クレジット残高」「残り日数の目安（次の自動チャージ）」の
+  2枚のカードも削除した（オーナー指示 2026-10-03：赤枠で「いらない」）**。基準残高が未登録だと
+  「未設定」「—」が並ぶだけだったため。最上部に残すのは**昨日／今月／1日あたり平均のコストのカード3枚だけ**
+  （月間支出上限の警告は今月のカードに残す）。`_credit_section()` は見出しを出さない。戻さないこと
+  （`tests/test_report_credit.py::test_balance_and_days_cards_are_removed` が回帰を検知する）。
 - `COACH_PROMPT` と `DEV_PROPOSAL_PROMPT` は、呼び戻し施策（復帰キャンペーン・安否確認・再開うながし）の
   提案を**明示的に禁止**している。この禁止を外さないこと（`tests/test_report_scope.py` が回帰を検知する）。
 

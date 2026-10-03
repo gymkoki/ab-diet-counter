@@ -482,10 +482,12 @@ def chart_goal_compare(data: dict) -> bytes:
 
 
 def _credit_section(credit: dict, est_cost_jpy: int) -> str:
-    """💳 Claude API クレジット状況セクション。
+    """レポート最上部のAPIコストのカード（昨日／今月／1日あたり平均）。
 
-    Anthropic に残高を返すAPIは無いため、
-    「Cost API の実使用額」＋「オーナーが控えた基準残高」から残りを算出している。
+    【オーナー指示 2026-10-03】「💳 Claude API クレジット状況」の見出しと、
+    「クレジット残高」「残り日数の目安（次の自動チャージ）」の2枚はレポートに載せない
+    （基準残高が未登録だと「未設定」「—」が並ぶだけで役に立たなかったため）。
+    残すのはコストの数字だけ。黄色の補足メッセージ・※注記も 2026-10-01 に削除済み。戻さないこと。
     """
     rate = credit.get("usd_jpy") or 155.0
 
@@ -496,61 +498,19 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         return f"${usd:,.2f}" if usd is not None else "—"
 
     status = credit.get("status")
-
-    est = bool(credit.get("estimated"))
-    kind = "推定" if est else "実額"
+    kind = "推定" if credit.get("estimated") else "実額"
 
     if status not in ("ok", "estimated"):
-        # 実額も推定も出せないときだけ、簡易表示にする
-        head = f"""
+        # 実額も推定も出せないときは、解析回数からの概算だけを出す
+        cards = f"""
       <div class="kpi-row">
         <div class="kpi">
           <div class="kpi-lbl">昨日の推定コスト</div>
           <div class="kpi-val" style="font-size:22px">¥{est_cost_jpy:,}</div>
           <div class="kpi-sub">解析回数からの概算</div>
         </div>
-        <div class="kpi">
-          <div class="kpi-lbl">クレジット残高</div>
-          <div class="kpi-val" style="font-size:20px;color:#9CA3AF">取得できず</div>
-          <div class="kpi-sub"><a href="{credit.get('console_url')}">Console で確認 →</a></div>
-        </div>
       </div>"""
     else:
-        remaining = credit.get("remaining_usd")
-        if remaining is None:
-            rem_val, rem_sub, rem_color = "未設定", "基準残高の登録が必要", "#9CA3AF"
-        else:
-            rem_val = _yen(remaining)
-            rem_sub = f"{_usd(remaining)}（{credit.get('base_date')} 時点 {_usd(credit.get('base_usd'))} 基準）"
-            if credit.get("auto_reload_amount_usd"):
-                # 自動チャージがある間は残高が少なくても止まらないので赤にしない
-                rem_color = "#10B981"
-            else:
-                rem_color = ("#10B981" if remaining > (credit.get("spend_7d_avg_usd") or 0) * 14
-                             else "#EF4444")
-
-        reload_amount = credit.get("auto_reload_amount_usd")
-        if reload_amount:
-            # オートリロードが有効なら「枯渇」しない。次にカードへ請求が走る日を出す
-            next_days = credit.get("next_reload_days")
-            next_lbl = "🔁 次の自動チャージ"
-            if next_days is None:
-                days_val, days_sub = "—", "使用実績が不足"
-            else:
-                days_val = "まもなく" if next_days == 0 else f"約{next_days}日後"
-                days_sub = (f"{credit.get('next_reload_date')} 頃に "
-                            f"{_usd(reload_amount)}（{_yen(reload_amount)}）を自動チャージ")
-            count = credit.get("reload_count")
-            if count:
-                days_sub += f"／基準日以降 推定{count}回"
-        else:
-            next_lbl = "⏳ 残り日数の目安"
-            if credit.get("days_left") is not None:
-                days_val = f"約{credit['days_left']}日"
-                days_sub = f"この使用ペースだと {credit.get('empty_date')} 頃に枯渇"
-            else:
-                days_val, days_sub = "—", "残高または使用実績が不足"
-
         # 月間支出上限：これに達すると残高があってもAPIが止まるので、超えそうなら赤で警告
         limit = credit.get("spend_limit_usd")
         month_color = ""
@@ -563,20 +523,8 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         else:
             month_sub = _usd(credit.get("spend_month_usd"))
 
-        head = f"""
+        cards = f"""
       <div class="kpi-row">
-        <div class="kpi">
-          <div class="kpi-lbl">💳 クレジット残高（{kind}）</div>
-          <div class="kpi-val" style="font-size:24px;color:{rem_color}">{rem_val}</div>
-          <div class="kpi-sub">{rem_sub}</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-lbl">{next_lbl}</div>
-          <div class="kpi-val" style="font-size:22px">{days_val}</div>
-          <div class="kpi-sub">{days_sub}</div>
-        </div>
-      </div>
-      <div class="kpi-row" style="margin-top:10px">
         <div class="kpi">
           <div class="kpi-lbl">昨日のコスト（{kind}）</div>
           <div class="kpi-val" style="font-size:20px">{_yen(credit.get('spend_yesterday_usd'))}</div>
@@ -594,23 +542,9 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         </div>
       </div>"""
 
-    # 見出しの右に「実額 / 推定」を出して、数字の性格が一目で分かるようにする
-    if status == "ok":
-        badge = ('<span style="margin-left:8px;background:#ECFDF5;color:#047857;border-radius:999px;'
-                 'padding:2px 10px;font-size:11px;font-weight:800;vertical-align:2px">実額</span>')
-    elif status == "estimated":
-        badge = ('<span style="margin-left:8px;background:#EFF6FF;color:#1D4ED8;border-radius:999px;'
-                 'padding:2px 10px;font-size:11px;font-weight:800;vertical-align:2px">推定</span>')
-    else:
-        badge = ""
-
-    # 黄色の補足メッセージ（「推定値です」「基準残高を登録してください」など）と、
-    # 下の「※『推定』は…円換算レート」の注記は、オーナー指示（2026-10-01：「カスなので今後は記載しない」）で
-    # 載せないことにした。数字の性格は見出し横の「実額／推定」バッジで分かる。戻さないこと。
     # 日別の費用グラフはここには出さない（「📈 日別 利用状況とAPI費用」の1枚に統合済み）
     return f"""
-    <div class="section">
-      <h2>💳 Claude API クレジット状況{badge}</h2>{head}
+    <div class="section">{cards}
     </div>"""
 
 
@@ -1031,7 +965,7 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
   </div>
   <div class="body">
 
-    <!-- 最上部：昨日の推定コストとクレジット残高（オーナー指示 2026-08） -->
+    <!-- 最上部：APIコストのカード（昨日／今月／1日あたり）。残高・残り日数はオーナー指示 2026-10-03 で外した -->
     {credit_section}
 
     <!-- 実際の食事写真（オーナー指示 2026-09-22：文章より先に、目で見て分かるように） -->
