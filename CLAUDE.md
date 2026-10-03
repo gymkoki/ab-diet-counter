@@ -272,3 +272,12 @@ python3 app.py          # http://localhost:5001
 
 - Playwright は `/opt/pw-browsers/chromium` を `executablePath` に指定して起動する（`playwright install` は不要）。
 - `usage.db` はローカル実行で生成されるためコミットしない（`.gitignore` 済み）。
+
+## 履歴タブの「あなたの1日平均Bカウント」（会員の声 2026-10）
+
+- 以前は全期間の平均を整数に丸めた「1日平均 4回/日」1つだけで、ほとんど動かず、
+  会員が「自分の平均」か「目標」か分からなかった。
+- いまは **直近7日・直近30日・全期間** を小数1桁で並べ、目標は下の注記で別に示す
+  （`historyAverages()` / `HIST_AVG_WINDOWS`）。
+- **記録した日だけで割る**（記録なしの日を0回にしない）、**今日は除く**（記録の途中なので平均が下がって見える）。
+- `tests/test_history_average.py` が回帰を検知する。
