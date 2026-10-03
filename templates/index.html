@@ -1251,32 +1251,28 @@
   <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
    <div class="modal-scroll">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.35</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.36</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:12px;padding:12px 14px;margin-bottom:14px">
-        <b style="color:#B4460F">🍬 お菓子・スイーツ・ジュースの「特別ルール」を追加しました</b>
+        <b style="color:#B4460F">📸 食事の写真は「なるべく1枚にまとめて」撮影をお願いします</b>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">🍪</span>
-        <span>これまで、1回の量が少ない（120kcal未満の）お菓子・スイーツ・ジュースは<b>B0回</b>として計算していました。</span>
+        <span style="font-size:20px;flex-shrink:0">🍱</span>
+        <span>食事の写真をアップする際は、なるべく<b>食材をまとめて1枚の写真に収まるように</b>撮影してからアップしてください。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">📏</span>
-        <span>これからは<b>1日の合計カロリー</b>で数えます。<br>
-          ・合計 <b>120〜200kcal</b> → <b>B0.5回</b> を追加<br>
-          ・合計 <b>200kcal超</b> → <b>B1回</b> を追加</span>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🔔</span>
-        <span>追加されたときは、画面上の「今日のB合計」の下に<b>「特別ルール適用！」</b>と表示されます。</span>
+        <span style="font-size:20px;flex-shrink:0">💴</span>
+        <span>AIの使用料金は<b>写真1枚ごと</b>にかかります。同じ食事を何枚にも分けて撮ると、そのぶん料金が増えてしまうため、まとめての撮影にご協力をお願いします。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
         <span style="font-size:20px;flex-shrink:0">✅</span>
-        <span>1回で<b>B0.5回以上</b>が付いたお菓子やジュースは、その時点で数えているので<b>二重には数えません</b>。</span>
+        <span>例：定食なら、ご飯・おかず・汁物を<b>1枚</b>に収めて撮影してください。</span>
       </div>
       <div style="border-top:1px dashed #E7DED6;margin-top:18px;padding-top:14px;font-size:15px;color:#6B625B">
-        <b>📝 前回のお願い（No.34）</b><br>
-        お名前を<b>ニックネーム</b>か<b>苗字</b>に変えていただけると、アプリの改善にとても助かります。まだの方は下のボタンから変更できます。
+        <b>📝 前回のお知らせ（No.35）</b><br>
+        お菓子・スイーツ・ジュースは<b>1日の合計カロリー</b>で数えるようになりました（合計120〜200kcalでB0.5回、200kcal超でB1回を追加）。
+        <div style="margin-top:10px"><b>📝 お願い（No.34）</b><br>
+        お名前を<b>ニックネーム</b>か<b>苗字</b>に変えていただけると、アプリの改善にとても助かります。まだの方は下のボタンから変更できます。</div>
       </div>
     </div>
     <div style="font-size:16px;color:#85807A;text-align:right;margin-bottom:18px">（奥松）</div>
@@ -5611,14 +5607,14 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v37';
+const NOTICE_KEY = 'ab-diet-notice-v38';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
   // ※コツはここでは出さない。写真の解析が終わったときに出す（オーナー指示 2026-08）。
 }
 
-// お知らせNo.34・No.35「お名前を変更する」：設定タブのお名前欄を開き、すぐ入力できる状態にする。
+// お知らせNo.34〜No.36「お名前を変更する」：設定タブのお名前欄を開き、すぐ入力できる状態にする。
 // ※iPhoneでキーボードを出すため、focus は必ずタップの処理の中で同期的に呼ぶ（setTimeoutに入れない）。
 function goEditName() {
   closeUpdateNotice();
