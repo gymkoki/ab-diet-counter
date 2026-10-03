@@ -875,6 +875,14 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+        # 既存DBへの列追加（小鉢の数の比較用 2026-10-03）：その日の皿の数・B食材を含む皿の数・
+        # 1品ではB0になった小さなB食材の数とkcal。追加前の行は NULL＝未計測。列が既にあれば無視。
+        for col in ("dish_count", "b_dish_count", "small_b_count", "small_b_kcal"):
+            try:
+                cur.execute(f"ALTER TABLE daily_nutrition ADD COLUMN {col} REAL")
+                conn.commit()
+            except Exception:
+                conn.rollback()
     finally:
         conn.close()
 
@@ -5272,7 +5280,7 @@ def _refresh_nutrition_kcal():
             cur.execute(
                 """SELECT m.user_id, m.date, m.payload FROM daily_meals m
                    LEFT JOIN daily_nutrition n ON n.user_id = m.user_id AND n.date = m.date
-                   WHERE n.user_id IS NULL OR n.kcal IS NULL""")
+                   WHERE n.user_id IS NULL OR n.kcal IS NULL OR n.dish_count IS NULL""")
             rows = cur.fetchall()
             for uid, date, payload in rows:
                 _save_daily_nutrition(cur, uid, date, payload, ts)
@@ -5303,10 +5311,23 @@ DIET_METRICS = (
     ("meals",     "食事の回数",   "回",   1),
 )
 
+# 「小鉢の数」の比較（オーナーの仮説の検証 2026-10-03）で比べる項目。
+# 既存の DIET_METRICS とは別の組にする（同じ組に足すと、既存の比較の Holm 補正の
+# 対象が増えて、これまで有意だった結果が変わってしまうため）。
+DISH_METRICS = (
+    ("dishes_per_meal",   "皿（小鉢）の数",              "皿",   1, "1食あたり"),
+    ("b_dishes_per_meal", "B食材を含む皿の数",           "皿",   1, "1食あたり"),
+    ("small_b_count",     "1品ではB0の小さなB食材の数",  "品",   1, "1日あたり"),
+    ("small_b_kcal",      "1品ではB0の小さなB食材のkcal", "kcal", 0, "1日あたり"),
+    ("kcal",              "摂取カロリー",                "kcal", 0, "1日あたり"),
+    ("b_count",           "Bカウント",                   "B",    1, "1日あたり"),
+)
+
 
 def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
                    min_meals=DIET_ANALYSIS_MIN_MEALS, threshold=0.0,
-                   goal=None, flat_as_gain=False):
+                   goal=None, flat_as_gain=False, metrics=DIET_METRICS,
+                   group_names=("減量群", "増量群")):
     """減量群と増量群を作り、項目ごとに Welch の t 検定をする。
 
     比べる単位は「会員」（1人の複数日は独立ではないため、日を単位にすると
@@ -5316,6 +5337,8 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
     ② 食事：同じ期間のうち、食事を min_meals 回以上記録した日だけの平均を会員ごとに出す。
     goal を渡すと、その目標（例 "cut"＝減量希望）の会員だけで比べる。
     flat_as_gain=True なら「減っていない人」（傾き0も含む）を増量群側＝失敗群に入れる。
+    metrics で比べる項目の組を差し替えられる（既定は DIET_METRICS。小鉢の比較は DISH_METRICS）。
+    group_names は結論の文で使う2群の呼び名。
     """
     import diet_stats as ds
 
@@ -5335,7 +5358,8 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
         cur.execute(f"SELECT user_id, date, weight FROM daily_weight "
                     f"WHERE date>={PH} AND weight>0 ORDER BY user_id, date", (start,))
         w_rows = cur.fetchall()
-        cur.execute(f"SELECT user_id, date, meal_count, kcal, b_count, protein_g, veg_g, fruit_g "
+        cur.execute(f"SELECT user_id, date, meal_count, kcal, b_count, protein_g, veg_g, fruit_g, "
+                    f"dish_count, b_dish_count, small_b_count, small_b_kcal "
                     f"FROM daily_nutrition WHERE date>={PH}", (start,))
         n_rows = cur.fetchall()
         cur.execute("SELECT user_id, display_name FROM user_profile")
@@ -5370,14 +5394,23 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
     # ② 3食以上の日だけで、会員ごとの平均
     days_all, days_ok = 0, 0
     per_user = {}
-    for uid, d, meals, kcal, b, p, v, fr in n_rows:
+    metric_keys = [mt[0] for mt in metrics]
+    day_counts = {}
+    for uid, d, meals, kcal, b, p, v, fr, dish, b_dish, small_b, small_b_kcal in n_rows:
         days_all += 1
         if (meals or 0) < min_meals:
             continue
         days_ok += 1
-        rec = per_user.setdefault(uid, {k: [] for k, *_ in DIET_METRICS})
-        for key, val in (("meals", meals), ("kcal", kcal), ("b_count", b),
-                         ("protein_g", p), ("veg_g", v), ("fruit_g", fr)):
+        day_counts[uid] = day_counts.get(uid, 0) + 1
+        rec = per_user.setdefault(uid, {k: [] for k in metric_keys})
+        # 皿の数は「1食あたり」に直して比べる（記録した回数の多い日ほど皿が多く見えないように）
+        per_meal = (lambda x: (float(x) / meals) if (x is not None and meals) else None)
+        row = {"meals": meals, "kcal": kcal, "b_count": b, "protein_g": p, "veg_g": v,
+               "fruit_g": fr, "dishes_per_meal": per_meal(dish),
+               "b_dishes_per_meal": per_meal(b_dish),
+               "small_b_count": small_b, "small_b_kcal": small_b_kcal}
+        for key in metric_keys:
+            val = row.get(key)
             if val is not None:
                 rec[key].append(float(val))
 
@@ -5394,7 +5427,7 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
             "name": names.get(uid) or None,
             "group": group,
             "slope_kg_30d": round(s, 2),
-            "days": len(rec["meals"]),
+            "days": day_counts.get(uid, 0),
             "means": means,
         })
     members.sort(key=lambda m: m["slope_kg_30d"])
@@ -5403,13 +5436,16 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
     gain = [m for m in members if m["group"] == "gain"]
 
     results = []
-    for key, label, unit, nd in DIET_METRICS:
+    for mt in metrics:
+        key, label, unit, nd = mt[:4]
+        per = mt[4] if len(mt) > 4 else "1日あたり"
         a = [m["means"][key] for m in loss if m["means"][key] is not None]
         b = [m["means"][key] for m in gain if m["means"][key] is not None]
         tt = ds.welch_ttest(a, b)
         g = ds.hedges_g(a, b)
         results.append({
-            "key": key, "label": label, "unit": unit, "digits": nd,
+            "key": key, "label": label, "unit": unit, "digits": nd, "per": per,
+            "group_names": list(group_names),
             "loss": {"n": len(a), "mean": ds.mean(a) if a else None,
                      "sd": (ds.sample_var(a) ** 0.5) if len(a) >= 2 else None},
             "gain": {"n": len(b), "mean": ds.mean(b) if b else None,
@@ -5463,19 +5499,20 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
 
 def _diet_metric_sentence(r):
     """1項目ぶんの結論を、オーナーが読める日本語1文にする。"""
+    gl, gg = (r.get("group_names") or ("減量群", "増量群"))[:2]
     if r["diff"] is None:
         g1, g2 = r.get("loss_members", 0), r.get("gain_members", 0)
         if g1 < 2 or g2 < 2:
-            return f"{r['label']}：人数が足りず比較できません（減量群{g1}人・増量群{g2}人。各2人以上必要）。"
+            return f"{r['label']}：人数が足りず比較できません（{gl}{g1}人・{gg}{g2}人。各2人以上必要）。"
         n1, n2 = r["loss"]["n"], r["gain"]["n"]
         if n1 == 0 and n2 == 0:
             return f"{r['label']}：まだ計測データがありません。"
-        return f"{r['label']}：計測できた人が足りず比較できません（減量群{n1}人・増量群{n2}人。各2人以上必要）。"
+        return f"{r['label']}：計測できた人が足りず比較できません（{gl}{n1}人・{gg}{n2}人。各2人以上必要）。"
     nd = r["digits"]
     diff = r["diff"]
     amount = f"{abs(diff):,.{nd}f}{r['unit']}"
     direction = "多い" if diff > 0 else "少ない"
-    head = f"{r['label']}：減量群の方が1日あたり {amount} {direction}"
+    head = f"{r['label']}：{gl}の方が{r.get('per') or '1日あたり'} {amount} {direction}"
     p = r["p_holm"]
     ptxt = f"p={p:.3f}" if p is not None and p >= 0.001 else "p<0.001"
     g = abs(r["g"] or 0)
@@ -5504,6 +5541,50 @@ def admin_diet_analysis():
     except Exception as e:
         app.logger.error("diet analysis failed: %s", e)
         return jsonify({"error": "解析に失敗しました。時間をおいてお試しください。"}), 500
+    return jsonify(data)
+
+
+@app.route("/api/admin/dish-analysis")
+@_admin_required
+def admin_dish_analysis():
+    """【管理者専用】減量希望者のうち「減量できている人」と「できていない人」で、
+    1食あたりの皿（小鉢）の数や、1品ではB0になる小さなB食材に差があるか（t 検定）。
+
+    オーナーの仮説（2026-10-03）：「減量に苦戦している人は小鉢が6個ほど並んでいて、
+    知らず知らずのうちにB食材が増えているのでは」。
+    群の分け方・数え方はデイリーレポート④（成功群 vs 失敗群）と同じ：
+    目標が減量の会員だけ／直近60日の体重の傾きがマイナス＝できている、0以上＝できていない／
+    1日3回以上記録した日だけ／会員1人＝1票。"""
+    def _arg(name, cast, default, lo, hi):
+        try:
+            return max(lo, min(hi, cast(request.args.get(name, default))))
+        except (TypeError, ValueError):
+            return default
+    try:
+        data = _diet_analysis(
+            weight_days=_arg("weight_days", int, DIET_ANALYSIS_WEIGHT_DAYS, 14, 365),
+            min_meals=_arg("min_meals", int, DIET_ANALYSIS_MIN_MEALS, 1, 10),
+            goal="cut", flat_as_gain=True, metrics=DISH_METRICS,
+            group_names=("減量できている人", "減量できていない人"),
+        )
+    except Exception as e:
+        app.logger.error("dish analysis failed: %s", e)
+        return jsonify({"error": "解析に失敗しました。時間をおいてお試しください。"}), 500
+    # 皿の数を数えられた日（＝この機能を入れてから記録された日／明細が残っていた日）の範囲。
+    # それ以前の日は皿の数が未計測なので、比較に使える日数を正直に出す。
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT MIN(date), MAX(date), COUNT(*) FROM daily_nutrition "
+                        f"WHERE dish_count IS NOT NULL AND meal_count>={PH}",
+                        (DIET_ANALYSIS_MIN_MEALS,))
+            mn, mx, cnt = cur.fetchone()
+        finally:
+            conn.close()
+        data["dish_coverage"] = {"from": mn, "to": mx, "days": int(cnt or 0)}
+    except Exception:
+        data["dish_coverage"] = {"from": None, "to": None, "days": 0}
     return jsonify(data)
 
 
@@ -6776,6 +6857,78 @@ def _day_sweet_bonus_b(sweet_kcal):
     return 0.0
 
 
+# ── 1回の食事に写っている「皿（小鉢）の数」を数える（オーナーの仮説の検証用 2026-10-03） ──
+# 仮説：「減量に苦戦している人は小鉢が6個ほど並んでいて、知らず知らずのうちにB食材が増えている」。
+# AIの解析結果は1皿を複数の行に分けることがある（揚げ物の「本体」と「吸収油」、豚汁の
+# 「豚バラ」と「具・汁」など）ので、行の数をそのまま数えると皿の数より多く出てしまう。
+# そこで ①油・調味料・飲み物の行は皿に数えない ②「〇〇の…」「〇〇本体」のように
+# 同じ料理を分けた行は1皿にまとめる、の2つを行ってから数える。
+_DISH_HELPER_WORDS = ("吸収油", "揚げ油", "炒め油", "調理油", "ドレッシング", "マヨネーズ",
+                      "ケチャップ", "調味料", "シロップ")
+_DISH_HELPER_ENDS = ("ソース", "たれ", "タレ", "醤油", "しょうゆ", "ジャム", "油")
+# 「じゃがバター」のような料理名を誤って外さないよう、これらは名前がそれだけのときに限る
+_DISH_HELPER_EXACT = ("バター", "マーガリン", "砂糖", "塩", "こしょう", "わさび", "からし", "生姜", "ポン酢")
+_DISH_DRINK_WORDS = ("お茶", "緑茶", "麦茶", "ほうじ茶", "烏龍茶", "ウーロン茶", "コーヒー", "珈琲",
+                     "紅茶", "ジュース", "牛乳", "豆乳", "ビール", "ワイン", "日本酒", "焼酎",
+                     "ハイボール", "サワー", "コーラ", "サイダー", "ドリンク", "スムージー",
+                     "プロテイン", "炭酸水", "ラテ")
+_DISH_DRINK_EXACT = ("水", "お水", "ミネラルウォーター")
+
+
+def _dish_base_name(name):
+    """表記ゆれを除いた料理名（かっこ書きと「本体」を外す）。"""
+    n = re.sub(r"[（(].*?[）)]", "", str(name or "")).strip()
+    for suf in ("本体",):
+        if n.endswith(suf):
+            n = n[: -len(suf)].strip()
+    return n
+
+
+def _is_dish_helper(name):
+    """皿に数えない行（油・調味料・飲み物）か。"""
+    n = _dish_base_name(name)
+    if not n:
+        return True
+    if any(w in n for w in _DISH_HELPER_WORDS):
+        return True
+    if any(n.endswith(w) for w in _DISH_HELPER_ENDS) or n in _DISH_HELPER_EXACT:
+        return True
+    if n in _DISH_DRINK_EXACT or any(w in n for w in _DISH_DRINK_WORDS):
+        return True
+    return False
+
+
+def _count_meal_dishes(foods):
+    """1回の食事の (皿の数, B食材を含む皿の数, 1品ではB0の小さなB食材の数, そのkcal合計)。"""
+    items = [f for f in (foods or []) if isinstance(f, dict) and not _is_dish_helper(f.get("name"))]
+    # 「豚汁の豚バラ」「豚汁の具・汁」のように、同じ料理を分けた行を1皿にまとめる。
+    # 「〇〇の」の〇〇が2文字以上で、同じ食事の中に2行以上あるときだけまとめる
+    # （「鶏の唐揚げ」のような普通の料理名を誤ってまとめないように）。
+    prefixes = {}
+    for f in items:
+        base = _dish_base_name(f.get("name"))
+        if "の" in base:
+            pre = base.split("の", 1)[0]
+            if len(pre) >= 2:
+                prefixes[pre] = prefixes.get(pre, 0) + 1
+    dishes = {}
+    small_b = 0
+    small_b_kcal = 0.0
+    for i, f in enumerate(items):
+        base = _dish_base_name(f.get("name"))
+        pre = base.split("の", 1)[0] if "の" in base else None
+        key = pre if (pre and prefixes.get(pre, 0) >= 2) else (base or f"#{i}")
+        is_b = str(f.get("category") or "").upper().startswith("B") or str(f.get("category") or "") in ("Good B", "グッドB")
+        dishes[key] = dishes.get(key, False) or is_b
+        bc = f.get("b_count")
+        if is_b and isinstance(bc, (int, float)) and bc == 0:
+            small_b += 1
+            k = f.get("kcal_per_serving")
+            if isinstance(k, (int, float)):
+                small_b_kcal += float(k)
+    return len(dishes), sum(1 for v in dishes.values() if v), small_b, small_b_kcal
+
+
 def _summarize_day_meals(payload_str):
     """1人1日ぶんの食事payloadを要約して
     {"meal_count": 件数, "protein_g": g, "veg_g": g, "fruit_g": g or None} を返す。
@@ -6797,6 +6950,8 @@ def _summarize_day_meals(payload_str):
     kcal = b_total = 0.0
     kcal_known = False
     day_foods = []          # お菓子・スイーツ・ジュースの1日累積ルール用
+    dish = b_dish = small_b = 0
+    small_b_kcal = 0.0
     for key in MEAL_SECTION_KEYS:
         sec = payload.get(key)
         if not isinstance(sec, dict):
@@ -6827,13 +6982,21 @@ def _summarize_day_meals(payload_str):
             b_total += float(tb) if isinstance(tb, (int, float)) else sum(
                 float(f.get("b_count") or 0) for f in foods if isinstance(f, dict))
             day_foods.extend(foods)
+            d, bd, sb, sbk = _count_meal_dishes(foods)
+            dish += d
+            b_dish += bd
+            small_b += sb
+            small_b_kcal += sbk
     if not count:
         return None
     # アプリの「今日のB合計」と同じく、お菓子・スイーツ・ジュースの累積分を足す
     b_total += _day_sweet_bonus_b(_day_sweet_b0_kcal(day_foods))
     return {"meal_count": count, "protein_g": round(protein, 1),
             "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1)),
-            "kcal": (round(kcal, 1) if kcal_known else None), "b_count": round(b_total, 2)}
+            "kcal": (round(kcal, 1) if kcal_known else None), "b_count": round(b_total, 2),
+            # 小鉢の数の比較用（_count_meal_dishes）。その日の合計値
+            "dish_count": dish, "b_dish_count": b_dish,
+            "small_b_count": small_b, "small_b_kcal": round(small_b_kcal, 1)}
 
 
 # 記録件数に数える操作（action_log）。写真・文章・コピーご飯・Bだけ追加（廃止前の分）。
@@ -6936,26 +7099,36 @@ def _save_daily_nutrition(cur, uid, date, payload_str, ts):
         cur.execute(f"DELETE FROM daily_nutrition WHERE user_id={PH} AND date={PH}", (uid, date))
         return
     vals = (uid, date, summary["meal_count"], summary["protein_g"],
-            summary["veg_g"], summary["fruit_g"], summary.get("kcal"), summary.get("b_count"), ts)
+            summary["veg_g"], summary["fruit_g"], summary.get("kcal"), summary.get("b_count"),
+            summary.get("dish_count"), summary.get("b_dish_count"),
+            summary.get("small_b_count"), summary.get("small_b_kcal"), ts)
     if USE_PG:
         cur.execute(
             """INSERT INTO daily_nutrition
-                 (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count, created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count,
+                  dish_count, b_dish_count, small_b_count, small_b_kcal, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (user_id, date) DO UPDATE SET
                  meal_count=EXCLUDED.meal_count, protein_g=EXCLUDED.protein_g,
                  veg_g=EXCLUDED.veg_g, fruit_g=EXCLUDED.fruit_g,
-                 kcal=EXCLUDED.kcal, b_count=EXCLUDED.b_count, created_at=EXCLUDED.created_at""",
+                 kcal=EXCLUDED.kcal, b_count=EXCLUDED.b_count,
+                 dish_count=EXCLUDED.dish_count, b_dish_count=EXCLUDED.b_dish_count,
+                 small_b_count=EXCLUDED.small_b_count, small_b_kcal=EXCLUDED.small_b_kcal,
+                 created_at=EXCLUDED.created_at""",
             vals)
     else:
         cur.execute(
             """INSERT INTO daily_nutrition
-                 (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)
+                 (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count,
+                  dish_count, b_dish_count, small_b_count, small_b_kcal, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(user_id, date) DO UPDATE SET
                  meal_count=excluded.meal_count, protein_g=excluded.protein_g,
                  veg_g=excluded.veg_g, fruit_g=excluded.fruit_g,
-                 kcal=excluded.kcal, b_count=excluded.b_count, created_at=excluded.created_at""",
+                 kcal=excluded.kcal, b_count=excluded.b_count,
+                 dish_count=excluded.dish_count, b_dish_count=excluded.b_dish_count,
+                 small_b_count=excluded.small_b_count, small_b_kcal=excluded.small_b_kcal,
+                 created_at=excluded.created_at""",
             vals)
 
 
