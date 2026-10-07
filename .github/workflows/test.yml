@@ -26,5 +26,10 @@ jobs:
           # anthropic の依存として入ることに頼っていたが、それが外れると
           # テストが丸ごと収集エラーになるので、ここで明示的に入れる。
           pip install pytest httpx
+          # デイリーレポート（report/send_report.py）の依存。
+          # 入れていないと、レポートを import するテストが CI で収集エラーになり、
+          # テスト全体が1件も実行されずに失敗する（2026-10-07 に実際に発生）。
+          # 入れておけば、これまで CI でスキップされていたレポート系テストも実際に動く。
+          pip install -r report/requirements.txt
       - name: Run regression tests
         run: pytest tests/ -q

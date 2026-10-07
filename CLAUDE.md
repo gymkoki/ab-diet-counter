@@ -300,6 +300,11 @@ pip install pytest && python3 -m pytest tests/ -q
   アプリ全体が止まる**。テストが `node --check` で検知するので、マージ前に必ず通すこと。
   同じ理由で、**後ろで定義される `const` を前の行で参照しない**（読み込み時に
   ReferenceError になりアプリ全体が起動しなくなる）。
+- 経緯（2026-10-07）：レポートを import するテストを足したら、CI だけ「tests 失敗」になった。
+  CI がレポートの依存（`report/requirements.txt`）を入れておらず、収集エラーでテストが1件も動かなかった
+  （手元には依存が入っていたので通っていた）。CI で `pip install -r report/requirements.txt` するようにし、
+  **send_report をファイル先頭で import するテストは、import の前に `pytest.importorskip` で守る**決まりにした
+  （`tests/test_ci_setup.py` が回帰を検知する）。
 
 ## ローカル動作確認
 
