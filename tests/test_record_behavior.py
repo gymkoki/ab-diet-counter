@@ -10,9 +10,12 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
 import app as m  # noqa: E402
-import send_report as sr  # noqa: E402
+
+# report/send_report.py は import しない（requests・matplotlib が要り、CI には入っていないため
+# 収集エラーで全テストが止まる）。中身の確認はファイルを文字列として読むだけで足りる。
+REPORT_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "report", "send_report.py")
 
 
 @pytest.fixture
@@ -100,5 +103,5 @@ def test_late_night_counts_as_previous_evening():
 
 
 def test_report_shows_record_table():
-    src = open(sr.__file__, encoding="utf-8").read()
+    src = open(REPORT_SRC, encoding="utf-8").read()
     assert "記録のしかたの違い" in src

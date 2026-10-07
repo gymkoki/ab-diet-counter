@@ -260,3 +260,66 @@ def test_photo_section_protects_gmail_body_limit():
         "写真セルがクラス化されていない（本文が膨らんでGmailに切られる）"
     # 写真の取得に失敗してもレポート自体は送る
     assert "photo section failed" in src
+
+
+# ── ⑥ 毎日入れ替わる（オーナー指示 2026-10-07） ─────────────────────
+def _clear_rotation():
+    conn = m._get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM settings WHERE key LIKE 'report-photos-%'")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _names(d, group):
+    return [x["name"] for x in d[group]]
+
+
+def test_photos_rotate_day_by_day(client, monkeypatch):
+    """順調な会員が6人いれば、1日目と2日目でまったく別の3人が載ること。
+    3日目は、いちばん前に載った人たちに戻ってくること。"""
+    _clear_rotation()
+    for i in range(6):
+        _seed_member(f"u_g{i}", f"順調{i}", 70.0, 67.0 - i * 0.3)
+    days = ["2026-10-07", "2026-10-08", "2026-10-09"]
+    shown = []
+    for day in days:
+        fixed = datetime.datetime.fromisoformat(day + "T08:00:00+09:00")
+
+        class _DT(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed if tz else fixed.replace(tzinfo=None)
+
+        monkeypatch.setattr(m.datetime, "datetime", _DT)
+        d = client.get("/api/admin/report-photos", headers=ADMIN).get_json()
+        shown.append(set(_names(d, "good")))
+        monkeypatch.undo()
+    assert len(shown[0]) == 3 and len(shown[1]) == 3
+    assert not (shown[0] & shown[1]), f"2日続けて同じ人が載っています: {shown[0] & shown[1]}"
+    assert shown[0] | shown[1] == {f"順調{i}" for i in range(6)}, "載らないまま残っている人がいる"
+    assert shown[2] == shown[0], "全員が一巡したら、いちばん前に載った人に戻るはず"
+    _clear_rotation()
+
+
+def test_photos_same_day_is_stable(client):
+    """同じ日にレポートを作り直しても（再送・テスト送信）、顔ぶれが変わらないこと。"""
+    _clear_rotation()
+    for i in range(6):
+        _seed_member(f"u_s{i}", f"同日{i}", 70.0, 67.0)
+    first = client.get("/api/admin/report-photos", headers=ADMIN).get_json()
+    second = client.get("/api/admin/report-photos", headers=ADMIN).get_json()
+    assert _names(first, "good") == _names(second, "good"), "同じ日なのに顔ぶれが変わっています"
+    _clear_rotation()
+
+
+def test_photos_rotation_survives_broken_history(client):
+    """記録が壊れていても、レポートは止めずに写真を返すこと。"""
+    _clear_rotation()
+    m._set_setting(m.REPORT_PHOTO_HISTORY_KEY, "{これはJSONではない")
+    _seed_member("u_ok", "だいじょうぶ子", 70.0, 67.0)
+    d = client.get("/api/admin/report-photos", headers=ADMIN).get_json()
+    assert _names(d, "good") == ["だいじょうぶ子"]
+    _clear_rotation()
