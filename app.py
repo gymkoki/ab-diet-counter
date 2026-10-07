@@ -3992,9 +3992,11 @@ def _recent_dm_user_ids(days=COACH_DM_COOLDOWN_DAYS):
     try:
         cur = conn.cursor()
         cur.execute(
+            # 「お名前の登録のお願い」は応援の声かけではないので、間隔の判定に数えない
             f"SELECT DISTINCT user_id FROM coach_messages "
-            f"WHERE (status='sent' AND sent_at>={PH}) OR status='draft'",
-            (since,)
+            f"WHERE ((status='sent' AND sent_at>={PH}) OR status='draft') "
+            f"AND (reason IS NULL OR reason<>{PH})",
+            (since, NAME_REQUEST_REASON)
         )
         return {r[0] for r in cur.fetchall()}
     finally:
@@ -4213,17 +4215,74 @@ def admin_coach_message_discard(mid):
     return jsonify({"ok": True})
 
 
+# お名前が未設定の会員への「お名前の登録のお願い」（オーナー指示 2026-10-07）。
+# 管理画面で「会員a463」のように表示され、誰の記録か分からないため。
+# 会員がアプリを開いたとき、お名前が無ければコーチメッセージとして1人1回だけ送る。
+NAME_REQUEST_REASON = "お名前の登録のお願い"
+NAME_REQUEST_MESSAGE = (
+    "いつもアプリをご利用いただきありがとうございます。\n"
+    "このアプリはリオールジムの会員さまだけが使っています。"
+    "記録をもとにアプリを良くしていくため、どなたの記録かおおよそ分かるよう、"
+    "お名前をニックネームか苗字で登録していただけると助かります。\n"
+    "下の「お名前を登録する」から、すぐに変更できます。（奥松）"
+)
+
+
+def _maybe_queue_name_request(cur, uid):
+    """お名前が未設定で、前日までに記録がある会員へ、お願いを1回だけ送る。
+
+    入会したその日の人には送らない（最初の設定の途中かもしれないため）。
+    一度送った人には、読んだかどうかに関係なく二度と送らない。
+    """
+    cur.execute(f"SELECT display_name FROM user_profile WHERE user_id={PH}", (uid,))
+    row = cur.fetchone()
+    if row and (row[0] or "").strip():
+        return False
+    today = datetime.datetime.now(JST).date().isoformat()
+    cur.execute(
+        f"SELECT 1 FROM daily_b_count WHERE user_id={PH} AND date < {PH} LIMIT 1",
+        (uid, today)
+    )
+    if not cur.fetchone():
+        return False
+    cur.execute(
+        f"SELECT 1 FROM coach_messages WHERE user_id={PH} AND reason={PH} LIMIT 1",
+        (uid, NAME_REQUEST_REASON)
+    )
+    if cur.fetchone():
+        return False
+    ts = datetime.datetime.now(JST).isoformat()
+    cur.execute(
+        f"""INSERT INTO coach_messages (user_id, name, reason, message, status, created_at, sent_at)
+           VALUES ({PH},NULL,{PH},{PH},'sent',{PH},{PH})""",
+        (uid, NAME_REQUEST_REASON, NAME_REQUEST_MESSAGE, ts, ts)
+    )
+    return True
+
+
 @app.route("/api/coach-messages")
 def get_coach_messages():
     """会員本人向け：自分あての送信済みメッセージ（下書きは絶対に返さない）。"""
     uid = (request.args.get("user_id") or "").strip()
     if not uid:
         return jsonify({"items": []})
+    # お名前が未設定なら「お名前の登録のお願い」を届ける（失敗しても通常の表示は続ける）
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                if _maybe_queue_name_request(cur, uid):
+                    conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        print(f"[name-request] skipped: {e}")
     conn = _get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            f"""SELECT id, message, sent_at, read_at FROM coach_messages
+            f"""SELECT id, message, sent_at, read_at, reason FROM coach_messages
                WHERE user_id={PH} AND status='sent'
                ORDER BY sent_at DESC LIMIT 20""",
             (uid,)
@@ -4232,7 +4291,8 @@ def get_coach_messages():
     finally:
         conn.close()
     items = [
-        {"id": r[0], "message": r[1], "sent_at": r[2], "read": bool(r[3])}
+        {"id": r[0], "message": r[1], "sent_at": r[2], "read": bool(r[3]),
+         "ask_name": r[4] == NAME_REQUEST_REASON}
         for r in rows
     ]
     return jsonify({"items": items})
