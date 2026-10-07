@@ -2759,13 +2759,22 @@ def _cut_success_compare():
     except Exception as e:
         app.logger.warning("cut success compare skipped: %s", e)
         return None
-    return {
+    keys = ("key", "label", "unit", "digits", "per", "loss", "gain",
+            "diff", "p_holm", "significant", "g", "summary")
+    out = {
         "params": res["params"],
         "coverage": res["coverage"],
-        "results": [{k: r.get(k) for k in ("key", "label", "unit", "digits", "loss", "gain",
-                                            "diff", "p_holm", "significant", "g", "summary")}
-                    for r in res["results"]],
+        "results": [{k: r.get(k) for k in keys} for r in res["results"]],
     }
+    # 記録のしかた（写真の枚数・間食など）の比較（オーナー指摘 2026-10-07）
+    try:
+        rb = _record_behavior_compare(goal="cut")
+        out["record"] = {"loss_n": rb["loss_n"], "gain_n": rb["gain_n"],
+                         "results": [{k: r.get(k) for k in keys} for r in rb["results"]]}
+    except Exception as e:
+        app.logger.warning("record behavior compare skipped: %s", e)
+        out["record"] = None
+    return out
 
 
 @app.route("/api/admin/cut-members")
@@ -5324,6 +5333,173 @@ DISH_METRICS = (
 )
 
 
+def _weight_slopes(w_rows, today):
+    """(user_id, date, weight) の行から、会員ごとの体重の傾き（kg/30日・最小二乗）を出す。
+    記録が2回未満、または記録の幅が DIET_ANALYSIS_MIN_SPAN_DAYS 日未満の会員は出さない。"""
+    import diet_stats as ds
+    weights = {}
+    for uid, d, w in w_rows:
+        try:
+            day = (datetime.date.fromisoformat(str(d)[:10]) - today).days
+        except ValueError:
+            continue
+        weights.setdefault(uid, []).append((day, float(w)))
+    slope = {}
+    for uid, pts in weights.items():
+        span = max(p[0] for p in pts) - min(p[0] for p in pts)
+        if len(pts) < 2 or span < DIET_ANALYSIS_MIN_SPAN_DAYS:
+            continue
+        s = ds.slope_per_day(pts)
+        if s is not None:
+            slope[uid] = s * 30.0
+    return slope
+
+
+# ══════════════════════════════════════════════════════════════
+#  減量の成功群と失敗群で「記録のしかた」を比べる（オーナー指摘 2026-10-07）
+#  「失敗群の方が摂取カロリーが少ないのはおかしい。写真をアップしていないのでは？
+#   写真の枚数や間食の枚数に違いがあるのでは？」の検証。
+#  食事の比較は「3食以上の日だけ」だが、ここは記録漏れそのものを見るので**絞らない**。
+#  元データは action_log（記録した操作の履歴・400日保持）と daily_nutrition。
+# ══════════════════════════════════════════════════════════════
+# 時間帯の区切りはデイリーレポートの朝昼晩と同じ（朝 4〜10時／昼 10〜16時／晩 16〜翌4時）
+RECORD_SLOT_DEFS = (("morning", 4, 10), ("noon", 10, 16), ("night", 16, 28))
+
+# (キー, 表示名, 単位, 小数桁, 何あたり)
+RECORD_METRICS = (
+    ("record_day_rate",  "記録した日の割合",          "%",    0, "期間中"),
+    ("records_per_day",  "記録の回数",                "回",   1, "記録した日1日あたり"),
+    ("photos_per_day",   "写真の枚数",                "枚",   1, "記録した日1日あたり"),
+    ("snacks_per_day",   "間食・追加の記録",          "回",   1, "記録した日1日あたり"),
+    ("full_day_rate",    "3回以上記録した日の割合",   "%",    0, "記録した日のうち"),
+    ("kcal_all_days",    "摂取カロリー（全記録日）",  "kcal", 0, "記録した日1日あたり"),
+)
+
+
+def _record_slot(hour):
+    h = hour + 24 if hour < 4 else hour   # 深夜0〜3時は前日の「晩」
+    for key, start, end in RECORD_SLOT_DEFS:
+        if start <= h < end:
+            return key
+    return None
+
+
+def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
+                             group_names=("成功群", "失敗群")):
+    """減量の成功群（体重の傾きがマイナス）と失敗群（0以上）で、記録のしかたを比べる。
+
+    会員ごとに直近 weight_days 日の値を出し、会員1人＝1票で Welch の t 検定＋Holm補正。
+    ・記録した日の割合：その会員の最初の記録日（期間の初日より前なら期間の初日）〜今日のうち、
+      1件でも記録した日の割合
+    ・記録の回数／写真の枚数：記録した日1日あたり（写真＝「写真で記録」の操作の回数）
+    ・間食・追加の記録：朝・昼・晩それぞれの時間帯で、2件目以降の記録の数（1日あたり）。
+      食事は時間帯ごとに1回とみなし、それを超える分を間食・追加の食事として数える
+    ・3回以上記録した日の割合：食事の比較（3食以上の日だけ）に使える日がどれだけあるか
+    ・摂取カロリー（全記録日）：3食未満の日も含めた1日平均（記録漏れの日を含むと下がる）
+    """
+    import diet_stats as ds
+
+    today = datetime.datetime.now(JST).date()
+    start = (today - datetime.timedelta(days=weight_days)).isoformat()
+    ph = ",".join([PH] * len(_RECORD_ACTIONS))
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT user_id, date, weight FROM daily_weight "
+                    f"WHERE date>={PH} AND weight>0 ORDER BY user_id, date", (start,))
+        w_rows = cur.fetchall()
+        cur.execute(f"SELECT user_id, action, created_at FROM action_log "
+                    f"WHERE created_at>={PH} AND action IN ({ph})", (start, *_RECORD_ACTIONS))
+        a_rows = cur.fetchall()
+        cur.execute(f"SELECT user_id, date, meal_count, kcal FROM daily_nutrition "
+                    f"WHERE date>={PH}", (start,))
+        n_rows = cur.fetchall()
+        goal_uids = None
+        if goal:
+            cur.execute(f"SELECT user_id FROM user_profile WHERE goal={PH}", (goal,))
+            goal_uids = {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+    if goal_uids is not None:
+        w_rows = [r for r in w_rows if r[0] in goal_uids]
+
+    slope = _weight_slopes(w_rows, today)
+
+    # 会員ごと・日ごと・時間帯ごとの記録数
+    per_day = {}      # uid -> date -> {"n":件数, "photo":写真, "slots":{slot:件数}}
+    for uid, action, ts in a_rows:
+        if uid not in slope:
+            continue
+        ts = str(ts)
+        try:
+            d = datetime.date.fromisoformat(ts[:10])
+            hour = int(ts[11:13])
+        except ValueError:
+            continue
+        if hour < 4:                      # 深夜の記録は前日の晩として扱う
+            d -= datetime.timedelta(days=1)
+        day = per_day.setdefault(uid, {}).setdefault(d, {"n": 0, "photo": 0, "slots": {}})
+        day["n"] += 1
+        if action == "photo":
+            day["photo"] += 1
+        slot = _record_slot(hour)
+        if slot:
+            day["slots"][slot] = day["slots"].get(slot, 0) + 1
+
+    nut = {}          # uid -> [(meal_count, kcal)]
+    for uid, _d, meals, kcal in n_rows:
+        if uid in slope:
+            nut.setdefault(uid, []).append((meals or 0, kcal))
+
+    start_d = datetime.date.fromisoformat(start)
+    members = []
+    for uid, s in slope.items():
+        days = per_day.get(uid) or {}
+        means = {k[0]: None for k in RECORD_METRICS}
+        if days:
+            first = max(min(days), start_d)
+            span = (today - first).days + 1
+            n_days = len(days)
+            means["record_day_rate"] = round(100.0 * n_days / span, 1) if span > 0 else None
+            means["records_per_day"] = sum(v["n"] for v in days.values()) / n_days
+            means["photos_per_day"] = sum(v["photo"] for v in days.values()) / n_days
+            means["snacks_per_day"] = sum(sum(max(0, c - 1) for c in v["slots"].values())
+                                          for v in days.values()) / n_days
+        rows = nut.get(uid) or []
+        if rows:
+            means["full_day_rate"] = 100.0 * sum(1 for m, _ in rows if m >= DIET_ANALYSIS_MIN_MEALS) / len(rows)
+            kc = [float(k) for _, k in rows if k is not None]
+            means["kcal_all_days"] = (sum(kc) / len(kc)) if kc else None
+        if not days and not rows:
+            continue                      # 期間中に1件も食事の記録がない人は比べようがない
+        members.append({"group": "loss" if s < 0 else "gain", "means": means})
+
+    loss = [m for m in members if m["group"] == "loss"]
+    gain = [m for m in members if m["group"] == "gain"]
+    results = []
+    for key, label, unit, nd, per in RECORD_METRICS:
+        a = [m["means"][key] for m in loss if m["means"][key] is not None]
+        b = [m["means"][key] for m in gain if m["means"][key] is not None]
+        tt = ds.welch_ttest(a, b)
+        g = ds.hedges_g(a, b)
+        results.append({
+            "key": key, "label": label, "unit": unit, "digits": nd, "per": per,
+            "group_names": list(group_names),
+            "loss": {"n": len(a), "mean": ds.mean(a) if a else None},
+            "gain": {"n": len(b), "mean": ds.mean(b) if b else None},
+            "diff": tt["diff"] if tt else None,
+            "p": tt["p"] if tt else None,
+            "g": g, "effect": ds.effect_label(g),
+            "loss_members": len(loss), "gain_members": len(gain),
+        })
+    adj = ds.holm([r["p"] for r in results])
+    for r, pa in zip(results, adj):
+        r["p_holm"] = pa
+        r["significant"] = pa is not None and pa < 0.05
+        r["summary"] = _diet_metric_sentence(r)
+    return {"loss_n": len(loss), "gain_n": len(gain), "results": results}
+
+
 def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
                    min_meals=DIET_ANALYSIS_MIN_MEALS, threshold=0.0,
                    goal=None, flat_as_gain=False, metrics=DIET_METRICS,
@@ -5375,21 +5551,7 @@ def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
         n_rows = [r for r in n_rows if r[0] in goal_uids]
 
     # ① 体重の傾き
-    weights = {}
-    for uid, d, w in w_rows:
-        try:
-            day = (datetime.date.fromisoformat(str(d)[:10]) - today).days
-        except ValueError:
-            continue
-        weights.setdefault(uid, []).append((day, float(w)))
-    slope = {}
-    for uid, pts in weights.items():
-        span = max(p[0] for p in pts) - min(p[0] for p in pts)
-        if len(pts) < 2 or span < DIET_ANALYSIS_MIN_SPAN_DAYS:
-            continue
-        s = ds.slope_per_day(pts)
-        if s is not None:
-            slope[uid] = s * 30.0
+    slope = _weight_slopes(w_rows, today)
 
     # ② 3食以上の日だけで、会員ごとの平均
     days_all, days_ok = 0, 0
