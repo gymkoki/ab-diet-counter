@@ -415,6 +415,7 @@ CUT_COMPARE_METRICS = (
     ("kcal",      "摂取カロリー", "kcal", 0),
     ("protein_g", "タンパク質",   "g",    0),
     ("veg_g",     "野菜",         "g",    0),
+    ("b_count",   "Bカウント",    "回",   1),   # オーナー要望 2026-10-07「Bの平均数も知りたい」
 )
 C_SUCCESS = C_GREEN   # 減量成功群
 C_FAIL    = C_GRAY    # 減量失敗群（減っていない）
@@ -428,20 +429,25 @@ def _cut_metric(csc: dict, key: str) -> dict:
 
 
 def chart_goal_compare(data: dict) -> bytes:
-    """④ 減量希望者：減量成功群 vs 失敗群の摂取カロリー・タンパク質・野菜（1人1日あたり）。
+    """④ 減量希望者：減量成功群 vs 失敗群の摂取カロリー・タンパク質・野菜・Bカウント（1人1日あたり）。
     （オーナー指示 2026-10-01：「減量希望と体重維持」の比較から置き換え）"""
     csc = data.get("cut_success_compare") or {}
     cov = csc.get("coverage") or {}
     n_ok, n_ng = cov.get("loss_n", 0), cov.get("gain_n", 0)
 
-    fig, axes = plt.subplots(1, len(CUT_COMPARE_METRICS), figsize=(10, 3.9))
+    fig, axes = plt.subplots(1, len(CUT_COMPARE_METRICS), figsize=(3.2 * len(CUT_COMPARE_METRICS), 3.9))
     title = "減量希望者：減量成功群 vs 失敗群（1人1日あたりの平均）"
 
     if not n_ok and not n_ng:
         fig.suptitle(title, fontsize=15, fontweight="bold")
-        _axes_note(axes[0], "比較できる会員が\nまだいません。")
-        _axes_note(axes[1], "体重を2回以上（7日以上の幅で）\n記録した減量希望者が対象です。")
-        _axes_note(axes[2], "3食以上記録した日だけを\n集計します。")
+        notes = ("比較できる会員が\nまだいません。",
+                 "体重を2回以上（7日以上の幅で）\n記録した減量希望者が対象です。",
+                 "3食以上記録した日だけを\n集計します。")
+        for i, ax in enumerate(axes):
+            if i < len(notes):
+                _axes_note(ax, notes[i])
+            else:
+                ax.axis("off")
         fig.tight_layout()
         return fig_to_png(fig)
 

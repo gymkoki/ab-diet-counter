@@ -60,3 +60,32 @@ def test_report_shows_success_vs_failure():
                      "significant": True}]}}
     assert sr.chart_goal_compare(data)[:4] == b"\x89PNG"
     assert sr.chart_goal_compare({})[:4] == b"\x89PNG", "データが無くても落ちないこと"
+
+
+def test_b_count_average_is_compared(seeded):  # noqa: F811
+    """オーナー要望 2026-10-07「Bの平均数も知りたい」：
+    サーバーは成功群・失敗群それぞれの1日平均Bカウントを返すこと。"""
+    _set_goal(["loss-0", "loss-1", "gain-0", "gain-1"], "cut")
+    csc = m._cut_success_compare()
+    b = next(r for r in csc["results"] if r["key"] == "b_count")
+    assert b["loss"]["mean"] is not None and b["gain"]["mean"] is not None
+
+
+def test_report_table_and_chart_include_b_count(seeded):  # noqa: F811
+    """実際のレポート用データ（/api/admin/report-data）からメール本文を作り、
+    ④の表と図に成功群・失敗群のBの平均が出ること。"""
+    pytest.importorskip("requests", reason="requests 未インストール")
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    import send_report as sr
+    assert ("b_count", "Bカウント", "回", 1) in sr.CUT_COMPARE_METRICS
+    _set_goal(["loss-0", "loss-1", "gain-0", "gain-1"], "cut")
+    m.app.config["TESTING"] = True
+    with m.app.test_client() as c:
+        data = c.get("/api/admin/report-data",
+                     headers={"X-Admin-Password": m.ADMIN_PASSWORD}).get_json()
+    b = sr._cut_metric(data["cut_success_compare"], "b_count")
+    ok, ng = b["loss"]["mean"], b["gain"]["mean"]
+    html = sr.build_html(data)
+    sec = html[html.index("減量成功群 vs 失敗群"):]
+    assert f"{ok:,.1f}回" in sec and f"{ng:,.1f}回" in sec, "④の表にBの平均が出ていない"
+    assert sr.chart_goal_compare(data)[:4] == b"\x89PNG"
