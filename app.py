@@ -3282,6 +3282,52 @@ REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下しか減っていない＝順�
 REPORT_PHOTO_BAD_MIN    = 0.0      # これ以上＝減っていない・増えている
 
 
+# 毎日同じ人ばかり載らないよう、順調／停滞それぞれで「しばらく載っていない人」から順に選ぶ
+# （オーナー指示 2026-10-07：「やせた人・太った人は同じ人ばかり出てくる。毎回入れ替えてほしい」）。
+# 以前は「いちばん減った人／いちばん増えた人」から固定で上位3人を取っていたため、
+# 体重の順位が変わらない限り毎朝まったく同じ顔ぶれになっていた。
+REPORT_PHOTO_HISTORY_KEY = "report-photos-history"       # {"good": {uid: 最後に載せた日}, "bad": {...}}
+REPORT_PHOTO_PICK_KEY    = "report-photos-pick-{date}"   # その日に選んだ人（同じ日の再送で入れ替わらないように）
+
+
+def _load_json_setting(key, default):
+    """settings の JSON を読む。DBが読めない・壊れているときは default（レポートを止めない）。"""
+    try:
+        raw = _get_setting(key, "")
+        val = json.loads(raw) if raw else default
+        return val if isinstance(val, type(default)) else default
+    except Exception as e:
+        print(f"[REPORT-PHOTOS] {key} を読めませんでした: {type(e).__name__}: {e}")
+        return default
+
+
+def _save_json_setting(key, value):
+    try:
+        _set_setting(key, json.dumps(value, ensure_ascii=False))
+    except Exception as e:
+        print(f"[REPORT-PHOTOS] {key} を保存できませんでした: {type(e).__name__}: {e}")
+
+
+def _rotation_order(pool, last_shown, today, group, today_pick=()):
+    """写真を載せる候補の並び順を決める。
+      1. 今日すでに選んだ人（同じ日にレポートを作り直しても顔ぶれが変わらないように）
+      2. まだ一度も載っていない人
+      3. 最後に載ったのが古い人ほど先
+    同じ条件の人どうしは、日付から決まる乱数で並べる（毎日違う並びになる）。"""
+    rng = random.Random(f"{today}:{group}")
+    pinned = {uid: i for i, uid in enumerate(today_pick)}
+    keyed = []
+    for mem in pool:
+        uid = mem["uid"]
+        if uid in pinned:
+            key = (0, "", pinned[uid])
+        else:
+            key = (1, last_shown.get(uid, ""), rng.random())   # "" は最優先（未掲載）
+        keyed.append((key, mem))
+    keyed.sort(key=lambda t: t[0])
+    return [mem for _, mem in keyed]
+
+
 def _shrink_report_photo(src):
     """食事写真（data:image のbase64）をレポート用サムネに縮小する。
     縮小できないときは None を返す（載せない）。"""
@@ -3429,7 +3475,8 @@ def admin_report_photos():
 
     ※このAPIは管理画面・レポート専用。会員向けアプリ(index.html)からは決して呼ばない。
       他の会員の食事写真が含まれるため、認証なしでは 404 を返す（_admin_required）。
-    ※2週間以上まったく記録がない会員は対象から外す（オーナー方針 2026-09-09）。"""
+    ※2週間以上まったく記録がない会員は対象から外す（オーナー方針 2026-09-09）。
+    ※毎日、しばらく載っていない人から順に入れ替える（オーナー指示 2026-10-07）。"""
     try:
         per_group = min(5, max(1, int(request.args.get("members", REPORT_PHOTO_MEMBERS))))
     except (TypeError, ValueError):
@@ -3443,7 +3490,7 @@ def admin_report_photos():
 
     members = _active_members(_collect_cut_member_stats())
     with_change = [m for m in members if isinstance(m.get("change_30d_kg"), (int, float))]
-    # 順調＝よく減っている順、停滞＝増えている順に並べ、それぞれ上位から写真を探す
+    # 順調／停滞に分ける（並び順は下の _rotation_order で「しばらく載っていない人から」に並べ直す）
     good_pool = sorted([m for m in with_change if m["change_30d_kg"] <= REPORT_PHOTO_GOOD_MAX],
                        key=lambda m: m["change_30d_kg"])
     bad_pool  = sorted([m for m in with_change if m["change_30d_kg"] >= REPORT_PHOTO_BAD_MIN],
@@ -3451,12 +3498,23 @@ def admin_report_photos():
 
     since_date = (datetime.datetime.now(JST) - datetime.timedelta(days=REPORT_PHOTO_DAYS)).strftime("%Y-%m-%d")
 
+    # 毎日入れ替える（しばらく載っていない人から順に）。同じ日の再送では顔ぶれを変えない。
+    today = datetime.datetime.now(JST).strftime("%Y-%m-%d")
+    history = _load_json_setting(REPORT_PHOTO_HISTORY_KEY, {})
+    pick_key = REPORT_PHOTO_PICK_KEY.format(date=today)
+    today_pick = _load_json_setting(pick_key, {})
+    good_pool = _rotation_order(good_pool, history.get("good") or {}, today, "good",
+                                today_pick.get("good") or [])
+    bad_pool  = _rotation_order(bad_pool, history.get("bad") or {}, today, "bad",
+                                today_pick.get("bad") or [])
+    chosen = {"good": [], "bad": []}
+
     conn = _get_conn()
     try:
         cur = conn.cursor()
 
-        def _pick(pool):
-            """写真が実際にある会員だけを、上位から必要人数ぶん選ぶ。"""
+        def _pick(pool, group):
+            """写真が実際にある会員だけを、ローテーション順に必要人数ぶん選ぶ。"""
             picked = []
             for mem in pool:
                 if len(picked) >= per_group:
@@ -3464,6 +3522,7 @@ def admin_report_photos():
                 photos = _member_report_photos(cur, mem["uid"], per_member, since_date)
                 if not photos:
                     continue
+                chosen[group].append(mem["uid"])
                 picked.append({
                     "name": (mem.get("name") or "").strip()[:12] or f"会員{mem['uid'][:4]}",
                     "user_id_short": mem["user_id_short"],
@@ -3477,10 +3536,19 @@ def admin_report_photos():
                 })
             return picked
 
-        good = _pick(good_pool)
-        bad  = _pick(bad_pool)
+        good = _pick(good_pool, "good")
+        bad  = _pick(bad_pool, "bad")
     finally:
         conn.close()
+
+    # 載せた人と日付を記録する（次の日以降、この人たちは後回しになる）
+    if chosen["good"] or chosen["bad"]:
+        for group in ("good", "bad"):
+            hist = history.setdefault(group, {})
+            for uid in chosen[group]:
+                hist[uid] = today
+        _save_json_setting(REPORT_PHOTO_HISTORY_KEY, history)
+        _save_json_setting(pick_key, chosen)
 
     return jsonify({
         "good": good,
