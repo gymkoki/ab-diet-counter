@@ -5605,6 +5605,8 @@ def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
         if goal:
             cur.execute(f"SELECT user_id FROM user_profile WHERE goal={PH}", (goal,))
             goal_uids = {r[0] for r in cur.fetchall()}
+        cur.execute("SELECT user_id, display_name FROM user_profile")
+        names = {r[0]: r[1] for r in cur.fetchall()}
     finally:
         conn.close()
     if goal_uids is not None:
@@ -5659,7 +5661,10 @@ def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
             means["kcal_all_days"] = (sum(kc) / len(kc)) if kc else None
         if not days and not rows:
             continue                      # 期間中に1件も食事の記録がない人は比べようがない
-        members.append({"group": "loss" if s < 0 else "gain", "means": means})
+        members.append({"group": "loss" if s < 0 else "gain", "means": means,
+                        "user_id_short": uid[:8], "name": names.get(uid) or None,
+                        "slope_kg_30d": round(s, 2)})
+    members.sort(key=lambda m: m["slope_kg_30d"])
 
     loss = [m for m in members if m["group"] == "loss"]
     gain = [m for m in members if m["group"] == "gain"]
@@ -5684,7 +5689,8 @@ def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
         r["p_holm"] = pa
         r["significant"] = pa is not None and pa < 0.05
         r["summary"] = _diet_metric_sentence(r)
-    return {"loss_n": len(loss), "gain_n": len(gain), "results": results}
+    return {"loss_n": len(loss), "gain_n": len(gain), "results": results,
+            "weight_days": weight_days, "members": members}
 
 
 def _diet_analysis(weight_days=DIET_ANALYSIS_WEIGHT_DAYS,
@@ -5863,7 +5869,10 @@ def _diet_metric_sentence(r):
     direction = "多い" if diff > 0 else "少ない"
     head = f"{r['label']}：{gl}の方が{r.get('per') or '1日あたり'} {amount} {direction}"
     p = r["p_holm"]
-    ptxt = f"p={p:.3f}" if p is not None and p >= 0.001 else "p<0.001"
+    if p is None:
+        # 両群とも全員が同じ値などで、ばらつきが無く検定できないとき
+        return f"{head}（ばらつきが無いため検定はできません）。"
+    ptxt = f"p={p:.3f}" if p >= 0.001 else "p<0.001"
     g = abs(r["g"] or 0)
     if r["significant"]:
         return f"{head}（統計的に有意な差・{ptxt}・{r['effect']}）。"
@@ -5890,6 +5899,23 @@ def admin_diet_analysis():
     except Exception as e:
         app.logger.error("diet analysis failed: %s", e)
         return jsonify({"error": "解析に失敗しました。時間をおいてお試しください。"}), 500
+    return jsonify(data)
+
+
+@app.route("/api/admin/record-analysis")
+@_admin_required
+def admin_record_analysis():
+    """【管理者専用】減量希望者の成功群と失敗群で「記録のしかた」（写真の枚数・間食など）を比べる。
+    （オーナー指摘 2026-10-07。デイリーレポート④の「記録のしかたの違い」と同じ計算）"""
+    try:
+        days = max(14, min(365, int(request.args.get("weight_days", DIET_ANALYSIS_WEIGHT_DAYS))))
+    except (TypeError, ValueError):
+        days = DIET_ANALYSIS_WEIGHT_DAYS
+    try:
+        data = _record_behavior_compare(weight_days=days, goal="cut")
+    except Exception as e:
+        app.logger.error("record analysis failed: %s", e)
+        return jsonify({"error": "集計に失敗しました。時間をおいてお試しください。"}), 500
     return jsonify(data)
 
 

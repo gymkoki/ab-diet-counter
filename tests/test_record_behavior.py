@@ -105,3 +105,30 @@ def test_late_night_counts_as_previous_evening():
 def test_report_shows_record_table():
     src = open(REPORT_SRC, encoding="utf-8").read()
     assert "記録のしかたの違い" in src
+
+
+def test_admin_endpoint(planted):
+    c = m.app.test_client()
+    assert c.get("/api/admin/record-analysis").status_code in (401, 403, 404)
+    r = c.get("/api/admin/record-analysis", headers={"X-Admin-Password": m.ADMIN_PASSWORD})
+    d = r.get_json()
+    assert r.status_code == 200 and d["loss_n"] == 6 and len(d["members"]) == 12
+
+
+def test_report_payload_has_no_member_list(planted):
+    """メール用のデータには会員ごとの内訳（名前）を入れない。"""
+    rec = m._cut_success_compare()["record"]
+    assert "members" not in rec
+
+
+def test_dashboard_has_record_card():
+    html = open(os.path.join(os.path.dirname(m.__file__), "templates", "admin.html"), encoding="utf-8").read()
+    assert 'id="record-analysis"' in html and "loadRecordAnalysis()" in html
+
+
+def test_untestable_metric_is_not_called_no_difference(planted):
+    """ばらつきが無く検定できない項目を「差は見られません（p<0.001）」と書かないこと。"""
+    r = _by_key(m._record_behavior_compare())["record_day_rate"]
+    if r["p_holm"] is None and r["diff"] is not None:
+        assert "検定はできません" in r["summary"]
+        assert "差は見られません" not in r["summary"]

@@ -399,6 +399,25 @@
     <div id="diet-analysis"><div class="spinner"></div></div>
   </div>
 
+  <!-- 記録のしかた：成功群 vs 失敗群（オーナー指摘 2026-10-07） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>📷 記録のしかたの違い：減量できている人 vs できていない人</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.7">
+      「できていない人の方が摂取カロリーが少ないのは、写真をアップしていないからでは？」を確かめます。
+      目標が「減量」の会員を、直近の体重の傾きで<b>成功群</b>（減っている）と<b>失敗群</b>（減っていない）に分け、
+      写真の枚数・間食などの記録の状況を比べます。<b>記録漏れそのものを見るため、3食未満の日も含めています。</b>
+      「間食・追加の記録」は、朝（4〜10時）・昼（10〜16時）・晩（16〜翌4時）の各時間帯で2件目以降の記録の数です。
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px">
+      <label>期間
+        <select id="ra-days" style="padding:6px 8px;border:1.5px solid #E5E7EB;border-radius:8px;font-family:inherit">
+          <option value="30">30日</option><option value="60" selected>60日</option><option value="90">90日</option>
+        </select></label>
+      <button class="apikey-save" style="width:auto;padding:6px 16px;font-size:13px" onclick="loadRecordAnalysis()">再計算</button>
+    </div>
+    <div id="record-analysis"><div class="spinner"></div></div>
+  </div>
+
   <!-- 小鉢の数：減量できている人 vs できていない人（オーナーの仮説の検証 2026-10-03） -->
   <div class="card" style="margin-bottom:20px">
     <h2>🍱 小鉢の数：減量できている人 vs できていない人</h2>
@@ -1504,6 +1523,75 @@
     return p < 0.001 ? '&lt;0.001' : p.toFixed(3);
   }
 
+  async function loadRecordAnalysis() {
+    const wrap = document.getElementById('record-analysis');
+    if (!wrap) return;
+    const days = document.getElementById('ra-days').value;
+    wrap.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await fetch(`/api/admin/record-analysis?weight_days=${days}`);
+      const d = await r.json();
+      if (!r.ok) { wrap.innerHTML = `<div class="no-data">${escapeHtml(d.error || '読み込みに失敗しました')}</div>`; return; }
+      const rows = d.results.map(x => {
+        const nd = x.digits;
+        const sig = x.significant
+          ? '<span style="background:#DCFCE7;color:#166534;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800">有意</span>'
+          : (x.g != null && Math.abs(x.g) >= 0.8
+              ? '<span style="background:#FEF3C7;color:#92400E;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800">要注目</span>' : '');
+        const diff = x.diff == null ? '—' : `${x.diff > 0 ? '+' : ''}${_daFmt(x.diff, nd)}${escapeHtml(x.unit)}`;
+        return `<tr style="border-bottom:1px solid #F3F4F6">
+          <td style="padding:8px;font-weight:700">${escapeHtml(x.label)}<div style="font-size:10px;color:#9CA3AF;font-weight:400">${escapeHtml(x.per || '')}</div></td>
+          <td style="padding:8px;text-align:right">${_daFmt(x.loss.mean, nd)}${escapeHtml(x.unit)}</td>
+          <td style="padding:8px;text-align:right">${_daFmt(x.gain.mean, nd)}${escapeHtml(x.unit)}</td>
+          <td style="padding:8px;text-align:right;font-weight:800">${diff}</td>
+          <td style="padding:8px;text-align:right">${_daP(x.p_holm)}</td>
+          <td style="padding:8px;text-align:center">${sig}</td>
+        </tr>`;
+      }).join('');
+      const head = `<div style="font-size:12px;color:#6B7280;margin-bottom:10px">
+        比較した人数：<b>成功群 ${d.loss_n}人</b> ／ <b>失敗群 ${d.gain_n}人</b>（直近${d.weight_days}日）
+        ${Math.min(d.loss_n, d.gain_n) < 5 ? '<span style="color:#92400E">※ 人数が少ないため参考程度</span>' : ''}</div>`;
+      const table = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:12px">
+          <th style="padding:8px;text-align:left">項目</th>
+          <th style="padding:8px;text-align:right">成功群<br>平均</th>
+          <th style="padding:8px;text-align:right">失敗群<br>平均</th>
+          <th style="padding:8px;text-align:right">差<br>(成功−失敗)</th>
+          <th style="padding:8px;text-align:right">p値<br>(Holm補正)</th>
+          <th style="padding:8px"></th>
+        </tr>${rows}</table></div>`;
+      const sentences = `<div style="margin-top:10px">${d.results.map(x =>
+        `<div style="font-size:12px;color:#374151;line-height:1.8">・${escapeHtml(x.summary)}</div>`).join('')}</div>`;
+      const gname = { loss: '成功群', gain: '失敗群' };
+      const mem = d.members.length ? `<details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">会員ごとの内訳（${d.members.length}人・体重が減っている順）</summary>
+        <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+          <tr style="color:#6B7280;border-bottom:1px solid #E5E7EB">
+            <th style="padding:6px;text-align:left">名前</th><th style="padding:6px">群</th>
+            <th style="padding:6px;text-align:right">体重の傾き<br>kg/30日</th>
+            <th style="padding:6px;text-align:right">記録した日<br>の割合</th>
+            <th style="padding:6px;text-align:right">記録<br>回/日</th>
+            <th style="padding:6px;text-align:right">写真<br>枚/日</th>
+            <th style="padding:6px;text-align:right">間食・追加<br>回/日</th>
+            <th style="padding:6px;text-align:right">kcal/日<br>(全記録日)</th>
+          </tr>
+          ${d.members.map(mm => `<tr style="border-bottom:1px solid #F3F4F6">
+            <td style="padding:6px">${escapeHtml(mm.name || mm.user_id_short + '…')}</td>
+            <td style="padding:6px;text-align:center">${gname[mm.group]}</td>
+            <td style="padding:6px;text-align:right;color:${mm.slope_kg_30d < 0 ? '#059669' : '#DC2626'}">${mm.slope_kg_30d > 0 ? '+' : ''}${mm.slope_kg_30d.toFixed(2)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.record_day_rate, 0)}%</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.records_per_day, 1)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.photos_per_day, 1)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.snacks_per_day, 1)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.kcal_all_days, 0)}</td>
+          </tr>`).join('')}
+        </table></div></details>` : '';
+      wrap.innerHTML = head + table + sentences + mem;
+    } catch (e) {
+      wrap.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+    }
+  }
+
   async function loadDietAnalysis() {
     const wrap = document.getElementById('diet-analysis');
     if (!wrap) return;
@@ -1928,7 +2016,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadDietAnalysis(), loadDishAnalysis()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
