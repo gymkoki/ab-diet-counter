@@ -864,6 +864,69 @@ def _photo_section(photos: dict, charts: dict) -> str:
 
 # 「AI減量コーチ｜今日の提案」はオーナー指示（2026-09-30）でレポートから削除した。
 # 中身が役に立たないうえ、載せるたびにAIを呼んで費用もかかっていたため。戻さないこと。
+def _sweet_rule_section(sr) -> str:
+    """🍬 お菓子・スイーツ・ジュースの特別ルールが、昨日何人に適用されたか（オーナー依頼 2026-10-07）。
+    ルールは1人1日1回まで（その日の合計が120〜200kcalで+0.5、200kcal超で+1）なので、
+    適用人数＝適用回数。直近7日の推移も小さな表で並べる。人数だけで名前は出さない。"""
+    if not sr or not sr.get("day"):
+        return ""
+    day = sr["day"]
+    half_k, full_k = sr.get("half_kcal", 120), sr.get("full_kcal", 200)
+    if not day.get("measured"):
+        body = """<div style="font-size:13px;color:#6B7280;line-height:1.7">
+          まだ集計できるデータがありません（この集計は導入日以降の記録から数えます）。</div>"""
+    else:
+        rate = day.get("rate")
+        rate_str = f"{rate}%" if rate is not None else "—"
+        body = f"""
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-lbl">特別ルールが適用された人</div>
+          <div class="kpi-val" style="font-size:24px">{day['applied']}人</div>
+          <div class="kpi-sub">記録した{day['measured']}人中・{rate_str}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">＋0.5（合計{half_k}〜{full_k}kcal）</div>
+          <div class="kpi-val" style="font-size:22px;color:#F59E0B">{day['half']}人</div>
+          <div class="kpi-sub">&nbsp;</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">＋1（合計{full_k}kcal超）</div>
+          <div class="kpi-val" style="font-size:22px;color:#EF4444">{day['full']}人</div>
+          <div class="kpi-sub">&nbsp;</div>
+        </div>
+      </div>"""
+    rows = ""
+    for t in sr.get("trend") or []:
+        md = t["date"][5:].replace("-", "/")
+        if t.get("measured"):
+            cells = (f"<td style='padding:5px 6px;text-align:center;font-weight:800'>{t['applied']}人</td>"
+                     f"<td style='padding:5px 6px;text-align:center;color:#F59E0B'>{t['half']}</td>"
+                     f"<td style='padding:5px 6px;text-align:center;color:#EF4444'>{t['full']}</td>"
+                     f"<td style='padding:5px 6px;text-align:center;color:#6B7280'>{t['measured']}人</td>")
+        else:
+            # 記録はあるが導入前の日＝未計測／そもそも記録が無い日＝記録なし
+            lbl = "未計測" if t.get("recorded") else "記録なし"
+            cells = f"<td colspan='4' style='padding:5px 6px;text-align:center;color:#9CA3AF'>{lbl}</td>"
+        rows += f"<tr style='border-bottom:1px solid #F3F4F6'><td style='padding:5px 6px'>{md}</td>{cells}</tr>"
+    table = f"""
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280">
+          <th style="padding:5px 6px;text-align:left">日付</th><th style="padding:5px 6px">適用</th>
+          <th style="padding:5px 6px">＋0.5</th><th style="padding:5px 6px">＋1</th>
+          <th style="padding:5px 6px">記録した人</th>
+        </tr>{rows}
+      </table>""" if rows else ""
+    return f"""
+    <div class="section">
+      <h2>🍬 お菓子・スイーツ・ジュースの特別ルール（{sr['date']}）</h2>
+      {body}{table}
+      <div style="font-size:11px;color:#9CA3AF;margin-top:6px;line-height:1.6">
+        ※ 1回ではB0だったお菓子・スイーツ・ジュースの1日の合計で判定。<b>1人1日1回まで</b>なので、適用人数＝適用回数です。
+      </div>
+    </div>"""
+
+
 def build_html(data: dict, credit=None, photo_section="") -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
@@ -1063,6 +1126,9 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
         </div>
       </div>
     </div>
+
+    <!-- 🍬 お菓子・スイーツ・ジュースの特別ルールの適用人数（オーナー依頼 2026-10-07） -->
+    {_sweet_rule_section(data.get("sweet_rule"))}
 
     <!-- ① 日別推移グラフ（利用状況とAPI費用を1枚に統合。オーナー指示 2026-09-30） -->
     <div class="section">

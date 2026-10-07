@@ -883,6 +883,14 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+        # 既存DBへの列追加（デイリーレポート用 2026-10-07）：その日のお菓子・スイーツ・ジュースの
+        # 1日累積ルールで足されたB（0／0.5／1）と、その元になった合計kcal。追加前の行は NULL＝未計測。
+        for col in ("sweet_kcal", "sweet_bonus"):
+            try:
+                cur.execute(f"ALTER TABLE daily_nutrition ADD COLUMN {col} REAL")
+                conn.commit()
+            except Exception:
+                conn.rollback()
     finally:
         conn.close()
 
@@ -2745,7 +2753,57 @@ def admin_report_data():
         "goal_compare":         goal_compare,
         "cut_success_compare":  _cut_success_compare(),
         "cut_corr":             cut_corr,
+        "sweet_rule":           _sweet_rule_stats(target_date),
     })
+
+
+SWEET_RULE_TREND_DAYS = 7
+
+
+def _sweet_rule_stats(target_date, days=SWEET_RULE_TREND_DAYS):
+    """デイリーレポート用：お菓子・スイーツ・ジュースの1日累積ルールが何人に適用されたか
+    （オーナー依頼 2026-10-07「毎日何回くらい適用されている？」）。
+    ルールは1人1日1回まで（その日の合計で +0.5 か +1）なので、「適用された人数」＝「適用回数」。
+    対象日を含む直近 days 日について、記録した人数・適用人数（+0.5／+1の内訳）を返す。
+    累積ルールの結果は daily_nutrition.sweet_bonus に残している。導入前の日は未計測（NULL）。
+    会員の名前は返さない（人数だけ）。"""
+    try:
+        _refresh_nutrition_kcal()          # 明細が残っている日で未計算の分を埋める
+    except Exception as e:
+        app.logger.warning("sweet rule refresh skipped: %s", e)
+    try:
+        end = datetime.date.fromisoformat(target_date)
+    except ValueError:
+        return None
+    dates = [(end - datetime.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT date, sweet_bonus FROM daily_nutrition WHERE date>={PH} AND date<={PH}",
+                    (dates[0], dates[-1]))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    by_day = {d: {"date": d, "recorded": 0, "measured": 0, "applied": 0, "half": 0, "full": 0}
+              for d in dates}
+    for d, bonus in rows:
+        rec = by_day.get(str(d)[:10])
+        if rec is None:
+            continue
+        rec["recorded"] += 1
+        if bonus is None:
+            continue                       # 導入前の日（未計測）
+        rec["measured"] += 1
+        if bonus >= 1:
+            rec["full"] += 1
+        elif bonus >= 0.5:
+            rec["half"] += 1
+    for rec in by_day.values():
+        rec["applied"] = rec["half"] + rec["full"]
+        rec["rate"] = (round(rec["applied"] / rec["measured"] * 100) if rec["measured"] else None)
+    trend = [by_day[d] for d in dates]
+    return {"date": target_date, "day": by_day[target_date], "trend": trend,
+            "half_kcal": SWEET_DAY_HALF_KCAL, "full_kcal": SWEET_DAY_FULL_KCAL}
 
 
 def _cut_success_compare():
@@ -5417,7 +5475,8 @@ def _refresh_nutrition_kcal():
             cur.execute(
                 """SELECT m.user_id, m.date, m.payload FROM daily_meals m
                    LEFT JOIN daily_nutrition n ON n.user_id = m.user_id AND n.date = m.date
-                   WHERE n.user_id IS NULL OR n.kcal IS NULL OR n.dish_count IS NULL""")
+                   WHERE n.user_id IS NULL OR n.kcal IS NULL OR n.dish_count IS NULL
+                         OR n.sweet_bonus IS NULL""")
             rows = cur.fetchall()
             for uid, date, payload in rows:
                 _save_daily_nutrition(cur, uid, date, payload, ts)
@@ -7280,13 +7339,17 @@ def _summarize_day_meals(payload_str):
     if not count:
         return None
     # アプリの「今日のB合計」と同じく、お菓子・スイーツ・ジュースの累積分を足す
-    b_total += _day_sweet_bonus_b(_day_sweet_b0_kcal(day_foods))
+    sweet_kcal = _day_sweet_b0_kcal(day_foods)
+    sweet_bonus = _day_sweet_bonus_b(sweet_kcal)
+    b_total += sweet_bonus
     return {"meal_count": count, "protein_g": round(protein, 1),
             "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1)),
             "kcal": (round(kcal, 1) if kcal_known else None), "b_count": round(b_total, 2),
             # 小鉢の数の比較用（_count_meal_dishes）。その日の合計値
             "dish_count": dish, "b_dish_count": b_dish,
-            "small_b_count": small_b, "small_b_kcal": round(small_b_kcal, 1)}
+            "small_b_count": small_b, "small_b_kcal": round(small_b_kcal, 1),
+            # お菓子・スイーツ・ジュースの1日累積ルール（デイリーレポートで適用人数を出す）
+            "sweet_kcal": round(sweet_kcal, 1), "sweet_bonus": sweet_bonus}
 
 
 # 記録件数に数える操作（action_log）。写真・文章・コピーご飯・Bだけ追加（廃止前の分）。
@@ -7391,33 +7454,38 @@ def _save_daily_nutrition(cur, uid, date, payload_str, ts):
     vals = (uid, date, summary["meal_count"], summary["protein_g"],
             summary["veg_g"], summary["fruit_g"], summary.get("kcal"), summary.get("b_count"),
             summary.get("dish_count"), summary.get("b_dish_count"),
-            summary.get("small_b_count"), summary.get("small_b_kcal"), ts)
+            summary.get("small_b_count"), summary.get("small_b_kcal"),
+            summary.get("sweet_kcal"), summary.get("sweet_bonus"), ts)
     if USE_PG:
         cur.execute(
             """INSERT INTO daily_nutrition
                  (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count,
-                  dish_count, b_dish_count, small_b_count, small_b_kcal, created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                  dish_count, b_dish_count, small_b_count, small_b_kcal,
+                  sweet_kcal, sweet_bonus, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (user_id, date) DO UPDATE SET
                  meal_count=EXCLUDED.meal_count, protein_g=EXCLUDED.protein_g,
                  veg_g=EXCLUDED.veg_g, fruit_g=EXCLUDED.fruit_g,
                  kcal=EXCLUDED.kcal, b_count=EXCLUDED.b_count,
                  dish_count=EXCLUDED.dish_count, b_dish_count=EXCLUDED.b_dish_count,
                  small_b_count=EXCLUDED.small_b_count, small_b_kcal=EXCLUDED.small_b_kcal,
+                 sweet_kcal=EXCLUDED.sweet_kcal, sweet_bonus=EXCLUDED.sweet_bonus,
                  created_at=EXCLUDED.created_at""",
             vals)
     else:
         cur.execute(
             """INSERT INTO daily_nutrition
                  (user_id, date, meal_count, protein_g, veg_g, fruit_g, kcal, b_count,
-                  dish_count, b_dish_count, small_b_count, small_b_kcal, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  dish_count, b_dish_count, small_b_count, small_b_kcal,
+                  sweet_kcal, sweet_bonus, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(user_id, date) DO UPDATE SET
                  meal_count=excluded.meal_count, protein_g=excluded.protein_g,
                  veg_g=excluded.veg_g, fruit_g=excluded.fruit_g,
                  kcal=excluded.kcal, b_count=excluded.b_count,
                  dish_count=excluded.dish_count, b_dish_count=excluded.b_dish_count,
                  small_b_count=excluded.small_b_count, small_b_kcal=excluded.small_b_kcal,
+                 sweet_kcal=excluded.sweet_kcal, sweet_bonus=excluded.sweet_bonus,
                  created_at=excluded.created_at""",
             vals)
 
