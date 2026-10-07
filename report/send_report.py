@@ -917,6 +917,48 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
           <td style="padding:8px;text-align:center;font-weight:800;color:#6B7280">{_fmt(ng, unit, nd)}</td>
           <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{diff_str}</td>
         </tr>"""
+    # 記録のしかた（写真の枚数・間食など）の比較（オーナー指摘 2026-10-07：
+    # 「失敗群の方がカロリーが少ないのはおかしい。写真をアップしていないのでは？」の検証）
+    rec = csc.get("record") or {}
+    rec_rows = ""
+    for r in rec.get("results") or []:
+        nd, unit = r.get("digits", 1), r.get("unit", "")
+        ok = (r.get("loss") or {}).get("mean")
+        ng = (r.get("gain") or {}).get("mean")
+        diff = r.get("diff")
+        if diff is None:
+            diff_str = "—"
+        else:
+            diff_str = ("+" if diff > 0 else "−") + _fmt(abs(diff), unit, nd)
+            if r.get("significant"):
+                diff_str += " ＊"
+        rec_rows += f"""
+        <tr style="border-bottom:1px solid #F3F4F6">
+          <td style="padding:8px;font-weight:700;color:#374151">{r.get('label', '')}
+            <div style="font-size:11px;font-weight:400;color:#9CA3AF">{r.get('per') or ''}</div></td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#10B981">{_fmt(ok, unit, nd)}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#6B7280">{_fmt(ng, unit, nd)}</td>
+          <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{diff_str}</td>
+        </tr>"""
+    if rec_rows:
+        rec_html = f"""
+      <h3 style="font-size:14px;margin:18px 0 6px;color:#374151">📷 記録のしかたの違い
+        <span style="font-weight:400;color:#6B7280">（成功群 {rec.get('loss_n', 0)}名／失敗群 {rec.get('gain_n', 0)}名）</span></h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:6px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280">
+          <th style="padding:8px;text-align:left">項目</th>
+          <th style="padding:8px">成功群</th>
+          <th style="padding:8px">失敗群</th>
+          <th style="padding:8px">差（成功−失敗）</th>
+        </tr>{rec_rows}
+      </table>
+      <div style="font-size:11px;color:#9CA3AF">
+        ※ 記録漏れそのものを見るため、こちらは3食未満の日も含めて数えています（直近60日）。
+        「間食・追加の記録」は朝（4〜10時）・昼（10〜16時）・晩（16〜翌4時）の各時間帯で2件目以降の記録の数。
+        写真の枚数は「写真で記録」した回数です。
+      </div>"""
+    else:
+        rec_html = ""
     cut_n_ok, cut_n_ng = cov.get("loss_n", 0), cov.get("gain_n", 0)
     cut_note = ("※ 人数が少ないため参考値です。" if cov.get("small_sample") else "")
 
@@ -1098,7 +1140,7 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
       <div style="font-size:11px;color:#9CA3AF;margin-top:4px">
         ※ 対象は目標が「減量」の会員。直近60日の体重の傾きがマイナスなら成功群、0以上なら失敗群。
         食事は3食以上記録した日だけを、会員ごとに平均してから比べています（＊＝統計的に有意な差）。{cut_note}
-      </div>
+      </div>{rec_html}
     </div>
 
     <!-- 「5. システム・運用状況」（時間帯別の解析分布・推定コスト）はオーナー指示
