@@ -759,6 +759,7 @@
     .drum-speed-label { text-align:center; font-size:17px; font-weight:700; color:var(--text-muted); margin-top:6px; }
     .ex-edit-btn { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:var(--radius-sm); width:34px; height:34px; font-size:18px; cursor:pointer; flex-shrink:0; transition:all 0.15s; }
     .ex-edit-btn:active { background:var(--primary-soft); border-color:var(--primary); color:var(--primary); }
+    .ex-del-btn:active { background:#FEF2F2; border-color:#EF4444; color:#EF4444; }
 
     /* ── 設定ビュー ── */
     .setting-card { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin:12px 16px 0; }
@@ -1662,7 +1663,15 @@ async function syncHistoryFromServer() {
     const wlog = getWeightLog(), blog = getBCountLog(), dlog = getDiaryLog(), clog = getCharaLog();
     let wch = false, bch = false, dch = false, cch = false;
     (data.daily || []).forEach(dd => {
-      if (dd.ex_b_count != null) _serverExByDate[dd.date] = dd.ex_b_count;
+      if (dd.ex_b_count != null) {
+        if (_getExTouched()[dd.date]) {
+          const mine = _localExBCountForDate(dd.date);
+          if (Number(dd.ex_b_count) !== mine) submitDailyExercise(mine, dd.date);
+          _serverExByDate[dd.date] = mine;
+        } else {
+          _serverExByDate[dd.date] = dd.ex_b_count;
+        }
+      }
       if (dd.weight  != null && wlog[dd.date] == null) { wlog[dd.date] = dd.weight;  wch = true; }
       if (dd.b_count != null && blog[dd.date] == null) { blog[dd.date] = dd.b_count; bch = true; }
       if (dd.diary   != null && dlog[dd.date] == null) { dlog[dd.date] = dd.diary;   dch = true; }
@@ -4567,6 +4576,18 @@ function getProfile() {
 //  運動トラッキング
 // ═══════════════════════════════════════════
 const EXERCISE_KEY = 'ab-diet-exercise-v1';
+// この端末で運動を「削除」または「修正」した日。その日は端末の記録を正とする。
+// 以前は「端末とサーバーの大きい方」を採用していたため、削除しても・時間を短く直しても、
+// サーバーに残った古い（大きい）値で −B が復活し、消せなかった（会員の声 2026-10）。
+const EX_TOUCHED_KEY = 'ab-diet-exercise-touched-v1';
+function _getExTouched() {
+  try { return JSON.parse(localStorage.getItem(EX_TOUCHED_KEY)) || {}; } catch { return {}; }
+}
+function _markExTouched(date) {
+  const t = _getExTouched();
+  t[date] = 1;
+  try { localStorage.setItem(EX_TOUCHED_KEY, JSON.stringify(t)); } catch (e) {}
+}
 // 散歩と室内散歩（室内ウォーキング）、ヨガとストレッチはそれぞれ強度がほぼ同じなので1種目に統合
 const MET_BASE = { '散歩/室内歩行': 3.25, 'ランニング': 8.0, '筋トレ': 5.0, 'ヨガ／ストレッチ': 2.5, 'リオールジムオンラインレッスン': 5.0 };
 // 時間・体重に関係なく固定のBカウントを消費する種目（対面トレーニングは一律B1消費）
@@ -5112,7 +5133,11 @@ function recordExercise() {
 
   if (_editingTs !== null) {
     const i = logs.findIndex(l => l.ts === _editingTs);
-    if (i >= 0) logs[i] = { ...logs[i], type: _exType, min: minVal, floors, steps, kcal, bc, speedLabel, speedKmh, met: metVal };
+    if (i >= 0) {
+      logs[i] = { ...logs[i], type: _exType, min: minVal, floors, steps, kcal, bc, speedLabel, speedKmh, met: metVal };
+      // 修正した日も端末の記録が正（時間を短く直したときに古い大きい値へ戻らないように）
+      _markExTouched(logs[i].date);
+    }
     _editingTs = null;
     document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
   } else {
@@ -5120,6 +5145,7 @@ function recordExercise() {
   }
 
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
+  if (_getExTouched()[today]) _serverExByDate[today] = _localExBCountForDate(today);
   submitDailyExercise(getExBCountForDate(today), today);
   _exType = null; _exDuration = 30; _exFloors = 5; _customExLastMin = null;
   document.querySelectorAll('#chips-type .chip').forEach(b => b.classList.remove('sel'));
@@ -5144,9 +5170,14 @@ function deleteExercise(ts) {
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
   const removed = logs.find(l => l.ts === ts);
+  if (!removed) return;
+  if (!confirm('この運動の記録を削除しますか？')) return;
   logs = logs.filter(l => l.ts !== ts);
   localStorage.setItem(EXERCISE_KEY, JSON.stringify(logs));
-  if (removed) submitDailyExercise(getExBCountForDate(removed.date), removed.date);
+  // 削除した日は端末の記録が正。サーバーの古い値でも上書きされないよう、先に印を付けてから送る。
+  _markExTouched(removed.date);
+  _serverExByDate[removed.date] = _localExBCountForDate(removed.date);
+  submitDailyExercise(_localExBCountForDate(removed.date), removed.date);
   if (_editingTs === ts) {
     _editingTs = null;
     document.querySelector('.btn-record-ex').textContent = '💾 この運動を保存する';
@@ -5165,7 +5196,7 @@ function renderExLog() {
   const list = document.getElementById('ex-log-list');
   const titleEl = document.getElementById('ex-log-title');
   if (titleEl) titleEl.textContent = _editingDate ? `📋 ${_fmtMD(date)} の運動記録` : '📋 今日の運動記録';
-  if (todayLogs.length === 0) { card.style.display = 'none'; return; }
+  if (todayLogs.length === 0) { card.style.display = 'none'; list.innerHTML = ''; return; }
   card.style.display = '';
   list.innerHTML = todayLogs.map(l => {
     const isFixedLog = (FIXED_EX_BCOUNT[l.type] != null);
@@ -5181,15 +5212,24 @@ function renderExLog() {
         <div style="font-weight:800;font-size:18px">${detail}</div>
         <div style="font-size:17px;color:var(--text-muted);margin-top:3px">${isFixedLog ? '' : `${l.kcal} kcal ／ `}−${fmtCount(l.bc)} B${l.met ? ` ／ ${l.met} メッツ` : ''}</div>
       </div>
-      <button class="ex-edit-btn" onclick="editExercise(${l.ts})">✏️</button>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="ex-edit-btn" onclick="editExercise(${l.ts})" aria-label="修正">✏️</button>
+        <button class="ex-edit-btn ex-del-btn" onclick="deleteExercise(${l.ts})" aria-label="削除">🗑️</button>
+      </div>
     </div>`;
   }).join('');
 }
 
-function getExBCountForDate(date) {
+function _localExBCountForDate(date) {
   let logs = [];
   try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
-  const local = logs.filter(l => l.date === date).reduce((s, l) => s + l.bc, 0);
+  return logs.filter(l => l.date === date).reduce((s, l) => s + (Number(l.bc) || 0), 0);
+}
+
+function getExBCountForDate(date) {
+  const local = _localExBCountForDate(date);
+  // この端末で削除・修正した日は、端末の記録が正（サーバーの古い値で復活させない）。
+  if (_getExTouched()[date]) return local;
   // 他の端末で記録された運動（サーバー値）も反映する。
   // 同じ端末の記録はサーバー値と一致するため、大きい方を採用すれば二重計上にならない。
   const server = _serverExByDate[date] || 0;
@@ -5208,7 +5248,7 @@ function _composeHistoryDaily(serverData) {
   const byDate = {};
   ((serverData && serverData.daily) || []).forEach(d => {
     byDate[d.date] = { date:d.date, b_count:d.b_count, weight:d.weight, diary:d.diary };
-    if (d.ex_b_count != null) _serverExByDate[d.date] = d.ex_b_count;
+    if (d.ex_b_count != null) _serverExByDate[d.date] = _getExTouched()[d.date] ? _localExBCountForDate(d.date) : d.ex_b_count;
   });
   const wlog = getWeightLog();
   Object.keys(wlog).forEach(date => {
