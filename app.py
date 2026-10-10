@@ -3420,6 +3420,63 @@ def _shrink_report_photo(src):
         return None
 
 
+# ── 写真が「朝・昼・夕・間食」のどれかをざっくり推測する（オーナー指示 2026-10-10） ──
+# 記録の id は端末で作った時刻（Date.now()×100＋連番）なので、そこから記録した時刻が分かる。
+# 時間帯（時・分を分に直した値）： 朝 4:00〜10:30／昼 10:30〜15:00／間食 15:00〜17:00／夕 17:00〜翌4:00
+MEAL_SLOT_BOUNDS = ((4 * 60, "朝"), (10 * 60 + 30, "昼"), (15 * 60, "間食"), (17 * 60, "夕"))
+# 旧データ（朝・昼・晩・間食を分けて記録していた頃）の区分はそのまま使う
+LEGACY_MEAL_SLOT = {"breakfast": "朝", "lunch": "昼", "dinner": "夕", "snack": "間食"}
+# この kcal 未満の記録は、時間帯にかかわらず間食とみなす（飴・コーヒーなど）
+MEAL_SLOT_SNACK_KCAL = 120
+
+
+def _item_recorded_at(item, record_date):
+    """記録の id から、その写真を記録したJSTの日時を返す。
+    別の日に後から入れた記録（過去日の編集など）は、時刻が食べた時間と関係ないので None。"""
+    raw = item.get("id")
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, str) and raw.isdigit():
+        raw = int(raw)
+    if not isinstance(raw, (int, float)):
+        return None
+    try:
+        at = datetime.datetime.fromtimestamp(int(raw) // 100 / 1000, JST)
+        day = datetime.date.fromisoformat(str(record_date))
+    except (ValueError, OverflowError, OSError):
+        return None
+    if at.date() == day:
+        return at
+    if at.date() == day + datetime.timedelta(days=1) and at.hour < 4:   # 深夜は前日の夕食
+        return at
+    return None
+
+
+def _guess_meal_slot(item, res, record_date, section_key="food"):
+    """写真1件が「朝」「昼」「夕」「間食」のどれかを推測する。分からなければ None。
+    ・お菓子・スイーツ・ジュースだけの記録や、ごく少量の記録は「間食」
+    ・それ以外は記録した時刻の時間帯で決める"""
+    if section_key in LEGACY_MEAL_SLOT:
+        return LEGACY_MEAL_SLOT[section_key]
+    foods = [f for f in (res.get("foods") or []) if isinstance(f, dict)]
+    kcals = [f.get("kcal_per_serving") for f in foods]
+    snack_like = bool(foods) and (
+        all(isinstance(f.get("sweet_kcal"), (int, float)) and f["sweet_kcal"] > 0 for f in foods)
+        or (all(isinstance(k, (int, float)) for k in kcals) and sum(kcals) < MEAL_SLOT_SNACK_KCAL)
+    )
+    if snack_like:
+        return "間食"
+    at = _item_recorded_at(item, record_date)
+    if at is None:
+        return None
+    minutes = at.hour * 60 + at.minute
+    slot = "夕"                          # 0:00〜4:00 は前日の夕食の続き
+    for start, name in MEAL_SLOT_BOUNDS:
+        if minutes >= start:
+            slot = name
+    return slot
+
+
 def _member_report_photos(cur, uid, per_member, since_date):
     """1人ぶんの直近の食事写真を新しい順に取り出す（写真が無い記録は飛ばす）。
     per_member が 0 なら期間内の写真をすべて返す（安全弁の上限まで）。"""
@@ -3455,8 +3512,9 @@ def _member_report_photos(cur, uid, per_member, since_date):
                         day_b += float(b)
                 src = item.get("previewSrc")
                 if isinstance(src, str) and src.startswith("data:image") and len(src) <= REPORT_PHOTO_MAX_CHARS:
-                    day_items.append((src, res if isinstance(res, dict) else {}))
-        for src, res in day_items:
+                    res = res if isinstance(res, dict) else {}
+                    day_items.append((src, res, _guess_meal_slot(item, res, dt, key)))
+        for src, res, slot in day_items:
             thumb = _shrink_report_photo(src)
             if not thumb:
                 continue
@@ -3470,6 +3528,7 @@ def _member_report_photos(cur, uid, per_member, since_date):
                 "veg_g": res.get("total_veg_g"),
                 "foods": "・".join(str(n) for n in foods[:4]),
                 "day_b_count": round(day_b, 1),
+                "meal_slot": slot,          # 「朝」「昼」「夕」「間食」（推測。分からなければ None）
             })
             if len(photos) >= limit:
                 return photos
