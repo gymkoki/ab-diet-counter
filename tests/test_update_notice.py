@@ -66,3 +66,20 @@ def test_notice_36_asks_for_one_photo_per_meal():
     body = html[m.start(): html.index("（奥松）", m.start())]
     assert "食材をまとめて1枚の写真に収まるように" in body, "お願いの本文が入っていない"
     assert "写真1枚ごと" in body and "料金" in body, "まとめて撮ってほしい理由（料金）が伝わらない"
+
+
+def test_notice_37_asks_to_record_everything():
+    """お知らせ No.37（オーナー指示 2026-10-10）：
+    減量できている方は1日約5回・苦戦中の方は約3回写真をアップしていたこと、
+    記録した分しかBカウントが数えられないこと、文章入力でもよいので正確に記録してほしいことを伝える。"""
+    html = _html()
+    m = re.search(r"最新アップデート No\.(\d+)", html)
+    assert m and int(m.group(1)) >= 37
+    if int(m.group(1)) != 37:
+        return   # 次のお知らせに入れ替わったら、この検査は役目を終える
+    body = html[m.start(): html.index("（奥松）", m.start())]
+    text = re.sub(r"<[^>]+>", "", body)
+    assert "減量できている方は1日に約5回" in text and "苦戦している方は約3回" in text
+    assert "記録した分しかBカウントが数えられない" in text
+    assert "文章での入力" in text and "正確に" in text
+    assert "1枚にまとめて" in text, "No.36（1枚にまとめて撮影）と食い違って読めてしまう"
