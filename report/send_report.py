@@ -746,6 +746,10 @@ def _photo_rate_line(rate) -> str:
             f'📷 食事の写真：{body}</div>')
 
 
+# 写真に添える時間帯の表示（app.py の _guess_meal_slot が返す値）
+MEAL_SLOT_LABELS = ("朝", "昼", "夕", "間食")
+
+
 def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget: int = MAX_PHOTOS_TOTAL) -> str:
     """会員1人ぶんの写真カード（名前・体重変化・その人の写真すべて）を組み立てる。
     budget は「セクション全体であと何枚載せられるか」。"""
@@ -783,10 +787,14 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         ] if x)
         foods = (ph.get("foods") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         day_b = ph.get("day_b_count")
-        day_lbl = f"　この日の合計 B{day_b:g}" if isinstance(day_b, (int, float)) else ""
+        # 写真の幅が狭いので「この日の合計」は日付の次の行に置く（途中で折り返さないように）
+        day_lbl = f"<br>この日の合計 B{day_b:g}" if isinstance(day_b, (int, float)) else ""
+        # 朝・昼・夕・間食（記録した時刻と中身からの推測。分からない写真には付けない）
+        slot = ph.get("meal_slot")
+        slot_lbl = f'<b class="ps">{slot}</b> ' if slot in MEAL_SLOT_LABELS else ""
         cells.append(
             f'<td class="pc"><img src="cid:{cid}" alt="meal" class="pi">'
-            f'<div class="pt">{ph.get("date", "")}{day_lbl}<br>'
+            f'<div class="pt">{slot_lbl}{ph.get("date", "")}{day_lbl}<br>'
             f'<b class="{"pg" if good else "pb"}">{sub}</b><br>'
             f'<span class="pf">{foods}</span></div></td>'
         )
@@ -1082,6 +1090,7 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
   .pg{{color:#10B981}}
   .pb{{color:#EF4444}}
   .pf{{color:#9CA3AF}}
+  .ps{{display:inline-block;padding:0 6px;border-radius:8px;background:#374151;color:#fff;font-weight:700}}
   .footer{{margin-top:20px;font-size:11px;color:#9CA3AF;text-align:center}}
   a{{color:#FF6B35}}
 </style>
