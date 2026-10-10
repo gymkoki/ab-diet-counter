@@ -3482,6 +3482,51 @@ PROGRESS_MAX_POINTS = 400
 PROGRESS_COMPARE_DAYS = 7
 
 
+def _member_photo_rate(cur, uid, days=PROGRESS_COMPARE_DAYS):
+    """直近 days 日に食事の写真を1日平均何枚上げているか（オーナー指示 2026-10-10）。
+
+    数え方は「記録のしかたの違い」（_record_behavior_compare の photos_per_day）と同じ：
+    ・写真の枚数＝「写真で記録」の操作の回数（解析が終わった写真1枚ごとに1件）
+    ・割る日数＝期間内に1件でも記録した日（写真・文章・コピー・B手入力のどれか）
+    ・深夜0〜3時は前日の晩
+    action_log が読めなければ None（レポートは止めない）。"""
+    today = datetime.datetime.now(JST).date()
+    first = today - datetime.timedelta(days=days - 1)
+    since = datetime.datetime.combine(first, datetime.time(4), tzinfo=JST).isoformat()
+    ph = ",".join([PH] * len(_RECORD_ACTIONS))
+    try:
+        cur.execute(f"SELECT action, created_at FROM action_log WHERE user_id={PH} "
+                    f"AND created_at>={PH} AND action IN ({ph})", (uid, since, *_RECORD_ACTIONS))
+        rows = cur.fetchall()
+    except Exception as e:
+        app.logger.warning("member photo rate skipped: %s", e)
+        try:
+            cur.connection.rollback()   # PostgreSQL：失敗したままだと同じ接続の後続の問い合わせが全部落ちる
+        except Exception:
+            pass
+        return None
+    per_day = {}
+    for action, ts in rows:
+        ts = str(ts)
+        try:
+            d = datetime.date.fromisoformat(ts[:10])
+            hour = int(ts[11:13])
+        except ValueError:
+            continue
+        if hour < 4:
+            d -= datetime.timedelta(days=1)
+        if d < first:
+            continue
+        per_day[d] = per_day.get(d, 0) + (1 if action == "photo" else 0)
+    photos = sum(per_day.values())
+    return {
+        "days": days,
+        "record_days": len(per_day),
+        "photos": photos,
+        "photos_per_day": round(photos / len(per_day), 1) if per_day else None,
+    }
+
+
 def _member_progress(cur, uid):
     """会員の「始めたとき → いま」を返す（デイリーレポートのピックアップ用）。
 
@@ -3600,6 +3645,8 @@ def admin_report_photos():
                     "photos": photos,
                     # 開始時 → いま の推移（オーナー指示 2026-09-30）
                     "progress": _member_progress(cur, mem["uid"]),
+                    # 直近7日の写真の枚数（1日平均。オーナー指示 2026-10-10）
+                    "photo_rate": _member_photo_rate(cur, mem["uid"]),
                 })
             return picked
 
