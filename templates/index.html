@@ -2176,8 +2176,10 @@ const CHARA_KIKI_MAX_SCORE = 29;
 // 見かけの点数が高くなり（キーラン君・成果フンバ）、記録できていないことに
 // 本人も運営も気づけないため、危機管鳥だけを出して記録を促す。
 // ※判定するのは「記録できた食事の数」であって、写真の枚数ではない。
-//   写真が1枚でも、文章などで2食以上記録できていれば通常どおり計算する。
-const MIN_MEALS_FOR_FULL_SCORE = 2;
+//   写真が1枚でも、文章などで3回以上記録できていれば通常どおり計算する。
+// 変更（オーナー指示 2026-10-11）：1日の記録が**2回以下**の日も、タンパク質・野菜の
+//   点数に関係なく必ず危機管鳥にする（以前は1回だけの日が対象だった）。
+const MIN_MEALS_FOR_FULL_SCORE = 3;
 
 function scoreFromTotals(foodTotal, protein, veg, exBc, mealCount = null) {
   const net = Math.max(0, foodTotal - (exBc || 0));
@@ -2205,7 +2207,7 @@ function scoreFromTotals(foodTotal, protein, veg, exBc, mealCount = null) {
   // Bカウントは最重要指標：目標をオーバーした日は、タンパク質・野菜が
   // 満点でも29点を上限にして、キャラが危機管鳥（〜29点）になるようにする。
   if (bOver) score = Math.min(score, CHARA_KIKI_MAX_SCORE);
-  // 記録が1食だけの日は、写真が上がりきっていない可能性が高い。
+  // 記録が2回以下の日は、写真が上がりきっていない可能性が高い。
   // 見かけの高得点でごまかさず、危機管鳥だけを出して記録を促す。
   const tooFewMeals = (mealCount != null && mealCount > 0
                        && mealCount < MIN_MEALS_FOR_FULL_SCORE);
@@ -2235,7 +2237,7 @@ function calcCharaScore() {
 function charaAdvice(s) {
   if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
   if (s.tooFewMeals) {
-    return '記録が1食分しかありません。写真がうまく上がっていないことがあるので、記録できていない食事があれば追加してください。2食以上記録できれば、通常どおりの採点になります📷';
+    return `今日の記録はまだ${s.count}回分です。記録が${MIN_MEALS_FOR_FULL_SCORE - 1}回以下の日は、タンパク質や野菜の量に関係なく危機管鳥になります。記録できていない食事があれば追加してください。${MIN_MEALS_FOR_FULL_SCORE}回以上記録できれば、通常どおりの採点になります📷`;
   }
   if (s.bLocked) {
     return 'タンパク質と野菜がまだ0%です。どちらかが増えるまでBカウントの達成率は加点されません。まずはタンパク質か野菜を1品プラスしましょう🥩🥗';
