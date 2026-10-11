@@ -1,4 +1,6 @@
-# 「1日1食しか記録が無い日は危機管鳥だけを出す」の回帰テスト（オーナー指示 2026-09）。
+# 「1日の記録が少ない日は危機管鳥だけを出す」の回帰テスト（オーナー指示 2026-09）。
+# 変更（オーナー指示 2026-10-11）：対象を「1回だけの日」から「2回以下の日」に広げた。
+#   タンパク質・野菜の点数に関係なく、記録が2回以下なら必ず危機管鳥。
 #
 # 経緯：1日1食しか記録が無い人は、たいてい写真がうまく上がっていないだけで、
 #   実際にはもっと食べている。そのまま計算すると見かけの点数が高くなり
@@ -76,17 +78,19 @@ def test_one_meal_day_is_capped_to_kikikancho():
 
 
 @needs_node
-def test_two_meals_are_scored_normally():
-    """2食以上記録できていれば、写真が1枚でも通常どおりの採点になる。"""
+def test_two_meals_are_capped_to_kikikancho():
+    """オーナー指示 2026-10-11：記録が2回の日も、栄養が満点でも危機管鳥。"""
     [two] = _run_score([{**PERFECT, "mealCount": 2}])
-    assert two["tooFewMeals"] is False
-    assert two["score"] == 100, "2食記録した日まで点数が下がっている"
+    assert two["tooFewMeals"] is True
+    assert two["score"] <= 29, "2回だけの日に危機管鳥以外が出てしまう"
 
 
 @needs_node
 def test_three_meals_are_scored_normally():
+    """3回以上記録できていれば、写真が1枚でも通常どおりの採点になる。"""
     [three] = _run_score([{**PERFECT, "mealCount": 3}])
-    assert three["score"] == 100
+    assert three["tooFewMeals"] is False
+    assert three["score"] == 100, "3回記録した日まで点数が下がっている"
 
 
 @needs_node
@@ -167,4 +171,5 @@ def test_advice_explains_why():
     html = _html()
     advice = re.search(r"function charaAdvice\(s\) \{.*?\n\}", html, re.S).group(0)
     assert "s.tooFewMeals" in advice, "1食だけの日の案内が無い"
-    assert "1食" in advice and "2食以上" in advice
+    assert "MIN_MEALS_FOR_FULL_SCORE" in advice, "案内の回数がしきい値とずれる書き方になっている"
+    assert "危機管鳥" in advice
