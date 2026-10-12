@@ -1532,7 +1532,7 @@
       const r = await fetch(`/api/admin/record-analysis?weight_days=${days}`);
       const d = await r.json();
       if (!r.ok) { wrap.innerHTML = `<div class="no-data">${escapeHtml(d.error || '読み込みに失敗しました')}</div>`; return; }
-      const rows = d.results.map(x => {
+      const toRows = list => (list || []).map(x => {
         const nd = x.digits;
         const sig = x.significant
           ? '<span style="background:#DCFCE7;color:#166534;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800">有意</span>'
@@ -1548,10 +1548,11 @@
           <td style="padding:8px;text-align:center">${sig}</td>
         </tr>`;
       }).join('');
+      const rows = toRows(d.results);
       const head = `<div style="font-size:12px;color:#6B7280;margin-bottom:10px">
         比較した人数：<b>成功群 ${d.loss_n}人</b> ／ <b>失敗群 ${d.gain_n}人</b>（直近${d.weight_days}日）
         ${Math.min(d.loss_n, d.gain_n) < 5 ? '<span style="color:#92400E">※ 人数が少ないため参考程度</span>' : ''}</div>`;
-      const table = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
+      const tableOf = body => `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
         <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:12px">
           <th style="padding:8px;text-align:left">項目</th>
           <th style="padding:8px;text-align:right">成功群<br>平均</th>
@@ -1559,13 +1560,20 @@
           <th style="padding:8px;text-align:right">差<br>(成功−失敗)</th>
           <th style="padding:8px;text-align:right">p値<br>(Holm補正)</th>
           <th style="padding:8px"></th>
-        </tr>${rows}</table></div>`;
-      const sentences = `<div style="margin-top:10px">${d.results.map(x =>
+        </tr>${body}</table></div>`;
+      const sentencesOf = list => `<div style="margin-top:10px">${(list || []).map(x =>
         `<div style="font-size:12px;color:#374151;line-height:1.8">・${escapeHtml(x.summary)}</div>`).join('')}</div>`;
+      const table = tableOf(rows);
+      const sentences = sentencesOf(d.results);
+      // 朝・昼・夕・間食の比較（オーナー質問 2026-10-12「体感的に夕食の写真が上がっていない気がする」）
+      const slot = (d.slot_results && d.slot_results.length) ? `
+        <div style="font-size:14px;font-weight:800;color:#374151;margin:18px 0 6px">🍽 朝・昼・夕・間食の記録のしかた</div>
+        <div style="font-size:12px;color:#6B7280;margin-bottom:8px">1件でも記録した日のうち、その時間帯に記録があった日の割合。「間食」は同じ時間帯に2件目以降の記録があった日。差は％の差（ポイント）。</div>
+        ${tableOf(toRows(d.slot_results))}${sentencesOf(d.slot_results)}` : '';
       const gname = { loss: '成功群', gain: '失敗群' };
       const mem = d.members.length ? `<details style="margin-top:12px">
         <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">会員ごとの内訳（${d.members.length}人・体重が減っている順）</summary>
-        <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+        <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px">
           <tr style="color:#6B7280;border-bottom:1px solid #E5E7EB">
             <th style="padding:6px;text-align:left">名前</th><th style="padding:6px">群</th>
             <th style="padding:6px;text-align:right">体重の傾き<br>kg/30日</th>
@@ -1574,6 +1582,10 @@
             <th style="padding:6px;text-align:right">写真<br>枚/日</th>
             <th style="padding:6px;text-align:right">間食・追加<br>回/日</th>
             <th style="padding:6px;text-align:right">kcal/日<br>(全記録日)</th>
+            <th style="padding:6px;text-align:right">朝<br>の日%</th>
+            <th style="padding:6px;text-align:right">昼<br>の日%</th>
+            <th style="padding:6px;text-align:right">夕<br>の日%</th>
+            <th style="padding:6px;text-align:right">間食<br>の日%</th>
           </tr>
           ${d.members.map(mm => `<tr style="border-bottom:1px solid #F3F4F6">
             <td style="padding:6px">${escapeHtml(mm.name || mm.user_id_short + '…')}</td>
@@ -1584,9 +1596,13 @@
             <td style="padding:6px;text-align:right">${_daFmt(mm.means.photos_per_day, 1)}</td>
             <td style="padding:6px;text-align:right">${_daFmt(mm.means.snacks_per_day, 1)}</td>
             <td style="padding:6px;text-align:right">${_daFmt(mm.means.kcal_all_days, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.morning_rate, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.noon_rate, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.night_rate, 0)}</td>
+            <td style="padding:6px;text-align:right">${_daFmt(mm.means.snack_rate, 0)}</td>
           </tr>`).join('')}
         </table></div></details>` : '';
-      wrap.innerHTML = head + table + sentences + mem;
+      wrap.innerHTML = head + table + sentences + slot + mem;
     } catch (e) {
       wrap.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
     }

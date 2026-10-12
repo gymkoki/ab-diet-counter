@@ -132,3 +132,38 @@ def test_untestable_metric_is_not_called_no_difference(planted):
     if r["p_holm"] is None and r["diff"] is not None:
         assert "検定はできません" in r["summary"]
         assert "差は見られません" not in r["summary"]
+
+
+# ── 朝・昼・夕・間食の比較（オーナー質問 2026-10-12「体感的に夕食の写真が上がっていない気がする」）──
+def _slots(res):
+    return {r["key"]: r for r in res["slot_results"]}
+
+
+def test_slot_rates(planted):
+    """成功群は毎日 朝7時・昼12時・15時・晩19時。失敗群は昼12時と晩20時だけ。"""
+    s = _slots(m._record_behavior_compare())
+    assert s["morning_rate"]["loss"]["mean"] == pytest.approx(100.0)
+    assert s["morning_rate"]["gain"]["mean"] == pytest.approx(0.0)
+    assert s["noon_rate"]["loss"]["mean"] == pytest.approx(100.0)
+    assert s["noon_rate"]["gain"]["mean"] == pytest.approx(100.0)
+    assert s["night_rate"]["gain"]["mean"] == pytest.approx(100.0)
+    # 15時は昼の2件目＝間食。失敗群は各時間帯1件ずつなので間食の日は0
+    assert s["snack_rate"]["loss"]["mean"] == pytest.approx(100.0)
+    assert s["snack_rate"]["gain"]["mean"] == pytest.approx(0.0)
+    assert "夕ごはん" in s["night_rate"]["label"]
+
+
+def test_slot_comparison_does_not_change_existing_results(planted):
+    """朝昼夕の比較は別の組で補正する（既存の6項目の Holm 補正を変えないため）。"""
+    res = m._record_behavior_compare()
+    assert [r["key"] for r in res["results"]] == [k[0] for k in m.RECORD_METRICS]
+    assert [r["key"] for r in res["slot_results"]] == [k[0] for k in m.RECORD_SLOT_METRICS]
+
+
+def test_slot_comparison_reaches_report_and_dashboard(planted):
+    rec = m._cut_success_compare()["record"]
+    assert [r["key"] for r in rec["slot_results"]] == [k[0] for k in m.RECORD_SLOT_METRICS]
+    src = open(REPORT_SRC, encoding="utf-8").read()
+    assert 'rec.get("slot_results")' in src and "朝・昼・夕・間食の記録のしかた" in src
+    html = open(os.path.join(os.path.dirname(m.__file__), "templates", "admin.html"), encoding="utf-8").read()
+    assert "d.slot_results" in html and "朝・昼・夕・間食の記録のしかた" in html
