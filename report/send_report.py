@@ -1015,19 +1015,23 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
     # 記録のしかた（写真の枚数・間食など）の比較（オーナー指摘 2026-10-07：
     # 「失敗群の方がカロリーが少ないのはおかしい。写真をアップしていないのでは？」の検証）
     rec = csc.get("record") or {}
-    rec_rows = ""
-    for r in rec.get("results") or []:
-        nd, unit = r.get("digits", 1), r.get("unit", "")
-        ok = (r.get("loss") or {}).get("mean")
-        ng = (r.get("gain") or {}).get("mean")
-        diff = r.get("diff")
-        if diff is None:
-            diff_str = "—"
-        else:
-            diff_str = ("+" if diff > 0 else "−") + _fmt(abs(diff), unit, nd)
-            if r.get("significant"):
-                diff_str += " ＊"
-        rec_rows += f"""
+
+    def _rec_rows(results):
+        rows = ""
+        for r in results or []:
+            nd, unit = r.get("digits", 1), r.get("unit", "")
+            ok = (r.get("loss") or {}).get("mean")
+            ng = (r.get("gain") or {}).get("mean")
+            diff = r.get("diff")
+            if diff is None:
+                diff_str = "—"
+            elif round(abs(diff), nd) == 0:
+                diff_str = "±0"
+            else:
+                diff_str = ("+" if diff > 0 else "−") + _fmt(abs(diff), unit, nd)
+                if r.get("significant"):
+                    diff_str += " ＊"
+            rows += f"""
         <tr style="border-bottom:1px solid #F3F4F6">
           <td style="padding:8px;font-weight:700;color:#374151">{r.get('label', '')}
             <div style="font-size:11px;font-weight:400;color:#9CA3AF">{r.get('per') or ''}</div></td>
@@ -1035,6 +1039,11 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
           <td style="padding:8px;text-align:center;font-weight:800;color:#6B7280">{_fmt(ng, unit, nd)}</td>
           <td style="padding:8px;text-align:center;font-weight:800;color:#374151">{diff_str}</td>
         </tr>"""
+        return rows
+
+    rec_rows = _rec_rows(rec.get("results"))
+    # 朝・昼・夕・間食の比較（オーナー質問 2026-10-12「体感的に夕食の写真が上がっていない気がする」）
+    slot_rows = _rec_rows(rec.get("slot_results"))
     if rec_rows:
         rec_html = f"""
       <h3 style="font-size:14px;margin:18px 0 6px;color:#374151">📷 記録のしかたの違い
@@ -1051,6 +1060,21 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
         ※ 記録漏れそのものを見るため、こちらは3食未満の日も含めて数えています（直近60日）。
         「間食・追加の記録」は朝（4〜10時）・昼（10〜16時）・晩（16〜翌4時）の各時間帯で2件目以降の記録の数。
         写真の枚数は「写真で記録」した回数です。
+      </div>"""
+        if slot_rows:
+            rec_html += f"""
+      <h3 style="font-size:14px;margin:18px 0 6px;color:#374151">🍽 朝・昼・夕・間食の記録のしかた</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:6px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280">
+          <th style="padding:8px;text-align:left">項目</th>
+          <th style="padding:8px">成功群</th>
+          <th style="padding:8px">失敗群</th>
+          <th style="padding:8px">差（成功−失敗）</th>
+        </tr>{slot_rows}
+      </table>
+      <div style="font-size:11px;color:#9CA3AF">
+        ※ 1件でも記録した日のうち、その時間帯に記録があった日の割合（直近60日・会員ごとに出して平均）。
+        「間食」は同じ時間帯に2件目以降の記録があった日。差は％の差（ポイント）です。
       </div>"""
     else:
         rec_html = ""

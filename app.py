@@ -2828,7 +2828,9 @@ def _cut_success_compare():
     try:
         rb = _record_behavior_compare(goal="cut")
         out["record"] = {"loss_n": rb["loss_n"], "gain_n": rb["gain_n"],
-                         "results": [{k: r.get(k) for k in keys} for r in rb["results"]]}
+                         "results": [{k: r.get(k) for k in keys} for r in rb["results"]],
+                         # 朝・昼・夕・間食の比較（オーナー質問 2026-10-12）
+                         "slot_results": [{k: r.get(k) for k in keys} for r in rb["slot_results"]]}
     except Exception as e:
         app.logger.warning("record behavior compare skipped: %s", e)
         out["record"] = None
@@ -5669,6 +5671,17 @@ RECORD_METRICS = (
 )
 
 
+# 朝・昼・夕・間食の比較（オーナー質問 2026-10-12「体感的に夕食の写真が上がっていない気がする」）。
+# 上の RECORD_METRICS とは別の組にして別に Holm 補正する（同じ組に足すと、既存の比較の
+# 補正の対象が増えて、これまでの結果が変わってしまうため）。分母はどれも「記録した日」。
+RECORD_SLOT_METRICS = (
+    ("morning_rate", "朝ごはん（4〜10時）を記録した日",  "%", 0, "記録した日のうち"),
+    ("noon_rate",    "昼ごはん（10〜16時）を記録した日", "%", 0, "記録した日のうち"),
+    ("night_rate",   "夕ごはん（16〜翌4時）を記録した日", "%", 0, "記録した日のうち"),
+    ("snack_rate",   "間食を記録した日",                 "%", 0, "記録した日のうち"),
+)
+
+
 def _record_slot(hour):
     h = hour + 24 if hour < 4 else hour   # 深夜0〜3時は前日の「晩」
     for key, start, end in RECORD_SLOT_DEFS:
@@ -5750,7 +5763,7 @@ def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
     members = []
     for uid, s in slope.items():
         days = per_day.get(uid) or {}
-        means = {k[0]: None for k in RECORD_METRICS}
+        means = {k[0]: None for k in RECORD_METRICS + RECORD_SLOT_METRICS}
         if days:
             first = max(min(days), start_d)
             span = (today - first).days + 1
@@ -5760,6 +5773,11 @@ def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
             means["photos_per_day"] = sum(v["photo"] for v in days.values()) / n_days
             means["snacks_per_day"] = sum(sum(max(0, c - 1) for c in v["slots"].values())
                                           for v in days.values()) / n_days
+            for slot in ("morning", "noon", "night"):
+                means[f"{slot}_rate"] = 100.0 * sum(1 for v in days.values()
+                                                    if v["slots"].get(slot)) / n_days
+            means["snack_rate"] = 100.0 * sum(1 for v in days.values()
+                                              if any(c >= 2 for c in v["slots"].values())) / n_days
         rows = nut.get(uid) or []
         if rows:
             means["full_day_rate"] = 100.0 * sum(1 for m, _ in rows if m >= DIET_ANALYSIS_MIN_MEALS) / len(rows)
@@ -5774,28 +5792,34 @@ def _record_behavior_compare(weight_days=DIET_ANALYSIS_WEIGHT_DAYS, goal="cut",
 
     loss = [m for m in members if m["group"] == "loss"]
     gain = [m for m in members if m["group"] == "gain"]
-    results = []
-    for key, label, unit, nd, per in RECORD_METRICS:
-        a = [m["means"][key] for m in loss if m["means"][key] is not None]
-        b = [m["means"][key] for m in gain if m["means"][key] is not None]
-        tt = ds.welch_ttest(a, b)
-        g = ds.hedges_g(a, b)
-        results.append({
-            "key": key, "label": label, "unit": unit, "digits": nd, "per": per,
-            "group_names": list(group_names),
-            "loss": {"n": len(a), "mean": ds.mean(a) if a else None},
-            "gain": {"n": len(b), "mean": ds.mean(b) if b else None},
-            "diff": tt["diff"] if tt else None,
-            "p": tt["p"] if tt else None,
-            "g": g, "effect": ds.effect_label(g),
-            "loss_members": len(loss), "gain_members": len(gain),
-        })
-    adj = ds.holm([r["p"] for r in results])
-    for r, pa in zip(results, adj):
-        r["p_holm"] = pa
-        r["significant"] = pa is not None and pa < 0.05
-        r["summary"] = _diet_metric_sentence(r)
-    return {"loss_n": len(loss), "gain_n": len(gain), "results": results,
+
+    def compare(metrics):
+        results = []
+        for key, label, unit, nd, per in metrics:
+            a = [m["means"][key] for m in loss if m["means"][key] is not None]
+            b = [m["means"][key] for m in gain if m["means"][key] is not None]
+            tt = ds.welch_ttest(a, b)
+            g = ds.hedges_g(a, b)
+            results.append({
+                "key": key, "label": label, "unit": unit, "digits": nd, "per": per,
+                "group_names": list(group_names),
+                "loss": {"n": len(a), "mean": ds.mean(a) if a else None},
+                "gain": {"n": len(b), "mean": ds.mean(b) if b else None},
+                "diff": tt["diff"] if tt else None,
+                "p": tt["p"] if tt else None,
+                "g": g, "effect": ds.effect_label(g),
+                "loss_members": len(loss), "gain_members": len(gain),
+            })
+        adj = ds.holm([r["p"] for r in results])
+        for r, pa in zip(results, adj):
+            r["p_holm"] = pa
+            r["significant"] = pa is not None and pa < 0.05
+            r["summary"] = _diet_metric_sentence(r)
+        return results
+
+    return {"loss_n": len(loss), "gain_n": len(gain),
+            "results": compare(RECORD_METRICS),
+            "slot_results": compare(RECORD_SLOT_METRICS),
             "weight_days": weight_days, "members": members}
 
 
