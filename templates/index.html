@@ -1151,6 +1151,18 @@
 
 <!-- 設定ビュー -->
 <div id="view-settings" style="display:none;padding-bottom:80px">
+  <!-- 有料化（2026-11-01〜）：ご利用プラン。課金が始まるまでは表示しない。 -->
+  <div class="setting-card" id="billing-card" style="display:none">
+    <h2>💳 ご利用プラン</h2>
+    <div id="billing-card-status" style="font-size:16px;line-height:1.8;color:#44403B;margin-bottom:12px"></div>
+    <button class="btn-save" id="billing-card-subscribe" style="display:none" onclick="openBillingOverlay(true)">月額プランに申し込む</button>
+    <button class="btn-reedit" id="billing-card-manage" style="display:none" onclick="openBillingPortal()">お支払い・解約の管理</button>
+    <div style="margin-top:12px;font-size:13px;line-height:1.8">
+      <a href="/legal/tokushoho" target="_blank" rel="noopener" style="color:#85807A">特定商取引法に基づく表記</a> ／
+      <a href="/legal/terms" target="_blank" rel="noopener" style="color:#85807A">利用規約</a> ／
+      <a href="/legal/privacy" target="_blank" rel="noopener" style="color:#85807A">プライバシーポリシー</a>
+    </div>
+  </div>
   <div class="setting-card" id="profile-summary-card" style="display:none">
     <h2>📋 現在の設定</h2>
     <div class="summary-row"><span class="lbl">お名前</span><span class="val" id="sum-name">-</span></div>
@@ -1336,6 +1348,40 @@
     <div style="margin-top:14px;font-size:14px;color:#85807A;line-height:1.7">
       パスワードが分からない場合は、リオールジムのスタッフまでお問い合わせください。
     </div>
+  </div>
+</div>
+
+<!-- 有料化（2026-11-01〜）：申し込み画面。特定商取引法の「最終確認画面」に必要な6項目
+     （内容・価格・支払時期・提供時期・申込期間・解約条件）をここに出す。
+     サーバーが課金を有効にしていない間（＝開始日前・Stripe未設定）は一切表示されない。 -->
+<div id="billing-overlay" style="display:none;position:fixed;inset:0;z-index:880;background:rgba(23,19,16,0.72);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px">
+  <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:24px 22px;width:100%;max-width:360px;box-shadow:0 24px 48px rgba(0,0,0,0.22)">
+   <div class="modal-scroll">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">PLAN</div>
+    <div id="billing-title" style="font-size:18px;font-weight:800;margin-bottom:12px">ABダイエット 月額プラン</div>
+    <div id="billing-lead" style="font-size:16px;line-height:1.8;color:#44403B;margin-bottom:14px"></div>
+    <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.8;color:#44403B">
+      <div style="font-weight:800;color:#B4460F;margin-bottom:4px">お申し込み内容のご確認</div>
+      <div>・<b>内容</b>：ABダイエット（食事の写真・文章のAI解析、記録、グラフ）</div>
+      <div>・<b>料金</b>：月額 <b>1,100円（税込）</b></div>
+      <div id="billing-pay-timing">・<b>お支払い</b>：お申し込み時に初回、以降は毎月同じ日に自動更新（クレジットカード）</div>
+      <div>・<b>ご利用開始</b>：お支払い後すぐ</div>
+      <div>・<b>お申し込み期間</b>：いつでも</div>
+      <div>・<b>解約</b>：設定からいつでもできます。解約後も支払済みの期間の終わりまで使えます（日割りの返金はありません）</div>
+    </div>
+    <div style="margin-top:12px;font-size:13px;color:#85807A;line-height:1.7">
+      <a href="/legal/tokushoho" target="_blank" rel="noopener" style="color:#85807A">特定商取引法に基づく表記</a>
+    </div>
+   </div>
+    <!-- 同意欄はスクロールの外（ボタンの真上）に置く。見えないとボタンが押せない理由が分からない -->
+    <label style="flex-shrink:0;display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:14px;line-height:1.6;color:#44403B;cursor:pointer">
+      <input type="checkbox" id="billing-agree" style="width:22px;height:22px;margin-top:1px;flex-shrink:0" onchange="_billingAgreeChanged()">
+      <span><a href="/legal/terms" target="_blank" rel="noopener" style="color:#EE5520;font-weight:700">利用規約</a>と<a href="/legal/privacy" target="_blank" rel="noopener" style="color:#EE5520;font-weight:700">プライバシーポリシー</a>（食事の写真をAI解析のため米国の事業者へ送信することを含む）に同意します</span>
+    </label>
+    <div id="billing-error" style="display:none;flex-shrink:0;margin-top:8px;font-size:14px;color:#DC2626;line-height:1.6"></div>
+    <button id="billing-start-btn" onclick="startBillingCheckout()" disabled
+            style="flex-shrink:0;width:100%;margin-top:12px;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer;opacity:0.45">申し込む（お支払いページへ）</button>
+    <button id="billing-later-btn" onclick="closeBillingOverlay()" style="display:none;flex-shrink:0;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">閉じる</button>
   </div>
 </div>
 
@@ -2816,6 +2862,172 @@ async function checkMemberGate() {
   } catch (e) {}
 }
 
+// ═══════════════════════════════════════════
+//  有料化（月額1,100円・Stripe）2026-11-01〜
+//  サーバーの /api/billing/status が state を返す：
+//    off（何もしない）／preorder（先行申し込み受付中）／subscribed／trial／required
+//  【重要】state が off の間は画面に何も出さない（開始前に会員へ告知が出ないように）。
+//  オーナーが開始前に自分の端末だけで確かめるときは、アプリのURLに ?billing_preview=1 を付けて開く。
+// ═══════════════════════════════════════════
+const BILLING_PREVIEW_KEY = 'ab-diet-billing-preview';
+let _billingState = null;
+
+function _billingPreview() {
+  try { return localStorage.getItem(BILLING_PREVIEW_KEY) === '1'; } catch (e) { return false; }
+}
+
+// サーバーは日本時間の日付（2026-11-13 / 2026-11-13T00:00:00+09:00）で返すので、文字列から読む。
+// new Date() で読むと端末の時差によって1日ずれることがある。
+function _fmtJpDate(iso) {
+  const mm = String(iso || '').match(/^\d{4}-(\d{2})-(\d{2})/);
+  return mm ? `${Number(mm[1])}月${Number(mm[2])}日` : '';
+}
+
+async function checkBilling() {
+  try {
+    const q = `user_id=${encodeURIComponent(USER_ID)}${_billingPreview() ? '&preview=1' : ''}`;
+    const r = await fetch(`/api/billing/status?${q}`);
+    if (!r.ok) return;
+    _billingState = await r.json();
+  } catch (e) { return; }
+  renderBillingCard();
+  if (_billingState && _billingState.required) openBillingOverlay(false);
+}
+
+function renderBillingCard() {
+  const card = document.getElementById('billing-card');
+  const st = _billingState;
+  if (!card) return;
+  if (!st || st.state === 'off') { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const status = document.getElementById('billing-card-status');
+  const sub = document.getElementById('billing-card-subscribe');
+  const manage = document.getElementById('billing-card-manage');
+  let html = '';
+  if (st.state === 'subscribed') {
+    html = '✅ <b>月額プラン（1,100円・税込）</b>をご利用中です。';
+    if (st.cancel_at_period_end && st.current_period_end) {
+      html += `<br>解約済みです。<b>${_fmtJpDate(st.current_period_end)}</b>までご利用いただけます。`;
+    } else if (st.current_period_end) {
+      html += `<br>次回の更新日：${_fmtJpDate(st.current_period_end)}`;
+    }
+  } else if (st.state === 'trial') {
+    html = `🎁 無料期間中です（<b>${_fmtJpDate(st.trial_ends)}</b>の前日まで）。<br>続けてご利用いただくには、月額プラン（1,100円・税込）へのお申し込みが必要です。`;
+  } else if (st.state === 'preorder') {
+    html = `${_fmtJpDate(st.start_date)}から、ABダイエットは<b>月額1,100円（税込）</b>になります。<br>いまお申し込みいただくと、初回のお支払いは${_fmtJpDate(st.start_date)}です。`;
+  } else {
+    html = 'ABダイエットは<b>月額1,100円（税込）</b>でご利用いただけます。';
+  }
+  status.innerHTML = html;
+  sub.style.display = (st.state === 'subscribed') ? 'none' : '';
+  manage.style.display = st.can_manage ? '' : 'none';
+}
+
+function openBillingOverlay(fromSettings) {
+  const st = _billingState || {};
+  const ov = document.getElementById('billing-overlay');
+  if (!ov) return;
+  const lead = document.getElementById('billing-lead');
+  if (st.state === 'preorder') {
+    lead.innerHTML = `${_fmtJpDate(st.start_date)}から月額プランになります。いまお申し込みいただくと、<b>初回のお支払いは${_fmtJpDate(st.start_date)}</b>です。`;
+    document.getElementById('billing-pay-timing').innerHTML =
+      `・<b>お支払い</b>：初回は${_fmtJpDate(st.start_date)}、以降は毎月同じ日に自動更新（クレジットカード）`;
+  } else if (st.required) {
+    lead.innerHTML = '続けて食事の解析をご利用いただくには、<b>月額プランへのお申し込み</b>が必要です。これまでの記録はそのまま残っています。';
+  } else {
+    lead.innerHTML = 'お申し込みいただくと、続けてすべての機能をご利用いただけます。';
+  }
+  // 申し込みが必要な人は閉じられない（解析が止まっているため）。設定から開いたときは閉じられる。
+  document.getElementById('billing-later-btn').style.display = (fromSettings || !st.required) ? '' : 'none';
+  document.getElementById('billing-agree').checked = false;
+  _billingAgreeChanged();
+  _billingError('');
+  ov.style.display = 'flex';
+}
+
+function closeBillingOverlay() {
+  const ov = document.getElementById('billing-overlay');
+  if (ov) ov.style.display = 'none';
+}
+
+function _billingAgreeChanged() {
+  const ok = document.getElementById('billing-agree').checked;
+  const btn = document.getElementById('billing-start-btn');
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '1' : '0.45';
+}
+
+function _billingError(msg) {
+  const el = document.getElementById('billing-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function startBillingCheckout() {
+  const btn = document.getElementById('billing-start-btn');
+  if (!document.getElementById('billing-agree').checked) return;
+  btn.disabled = true; btn.textContent = 'お支払いページを準備中…';
+  try {
+    const r = await fetch('/api/billing/checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, agree: true, preview: _billingPreview() }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.url) { location.href = d.url; return; }
+    _billingError(d.error || 'お支払いページを開けませんでした。');
+  } catch (e) {
+    _billingError('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
+  }
+  btn.disabled = false; btn.textContent = '申し込む（お支払いページへ）';
+}
+
+async function openBillingPortal() {
+  try {
+    const r = await fetch('/api/billing/portal', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, memberHeaders()),
+      body: JSON.stringify({ user_id: USER_ID }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.url) { location.href = d.url; return; }
+    alert(d.error || '管理画面を開けませんでした。');
+  } catch (e) {
+    alert('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
+  }
+}
+
+// サーバーが「申し込みが必要」を理由に断ったとき（402 + billing_required）。出したら true。
+function _handledBillingGate(data) {
+  if (!data || !data.billing_required) return false;
+  _billingState = Object.assign({}, _billingState || {}, { required: true, state: 'required', enabled: true });
+  openBillingOverlay(false);
+  return true;
+}
+
+// Stripe の支払いページから戻ってきたとき。支払いの反映（Stripeからの通知）は数秒遅れることがあるので、
+// 申し込み済みになるまで少しの間だけ確認し直す。
+async function handleBillingReturn() {
+  let params;
+  try { params = new URLSearchParams(location.search); } catch (e) { return; }
+  if (params.get('billing_preview') === '1') {
+    try { localStorage.setItem(BILLING_PREVIEW_KEY, '1'); } catch (e) {}
+  } else if (params.get('billing_preview') === '0') {
+    try { localStorage.removeItem(BILLING_PREVIEW_KEY); } catch (e) {}
+  }
+  const ret = params.get('billing');
+  if (params.has('billing') || params.has('billing_preview')) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  }
+  if (ret !== 'success') return;
+  for (let i = 0; i < 6; i++) {
+    await checkBilling();
+    if (_billingState && _billingState.state === 'subscribed') break;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  closeBillingOverlay();
+  alert('お申し込みありがとうございます。引き続き ABダイエットをご利用ください。');
+}
+
 const WEIGHT_GATE_MAX_AGE_DAYS = 7;
 
 function hasWeightForGate() {
@@ -3546,7 +3758,7 @@ async function submitTextEntry(mealId) {
     item.loading = false;
     if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== id);
-      if (!_handledMemberGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
+      if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
     } else {
       item.result = data;
       logAction('text');     // 「文章で記録」の利用を記録（集計用）
@@ -3985,7 +4197,7 @@ async function resumeTextItem(mealId, item) {
     item.loading = false;
     if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== item.id);
-      if (!_handledMemberGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
+      if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
     } else { item.result = data; }
   } catch(e) {
     _stopProgress(mealId, item.id);
@@ -4074,7 +4286,7 @@ async function reanalyzeItem(mealId, itemId) {
     item.loading = false;
     if (data.error) {
       renderStrip(mealId);
-      if (!_handledMemberGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
+      if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
       if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
     } else {
       item.result = data;
@@ -5992,6 +6204,7 @@ function _step(fn, label) {
     .then(backfillCharaLog)       // → 取り込み後、キャラカレンダーの抜けた過去日を復元
     .catch(() => {});
   checkMemberGate();              // リオールジム会員限定：未認証の端末なら合言葉の入力を出す
+  handleBillingReturn().then(checkBilling);   // 有料化：開始前（state=off）は何も表示しない
   checkFeedbackReplies();         // 修正希望・ご要望への運営からの返信（未読があればモーダル表示）
   _syncNameToServer()             // 端末にだけあるお名前をサーバーへ（先に送り、誤った「お名前のお願い」を防ぐ）
     .then(checkCoachMessages);    // コーチからの個別の応援メッセージ（未読があればモーダル表示）
@@ -6017,6 +6230,7 @@ document.addEventListener('visibilitychange', () => {
     checkFeedbackReplies();
     checkCoachMessages();
     checkMemberGate();
+    checkBilling();
   }
 });
 
