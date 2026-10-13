@@ -1,0 +1,86 @@
+{#- サービス紹介ページ（Stripeの審査用・オーナー指示 2026-10-13）。
+    何を・いくらで・どう解約できるかを、合言葉なしで誰でも見られるようにする。
+    会員のアプリからはリンクしない（有料化の告知にならないように）。 -#}
+{%- set name = info.seller_name or "（事業者名を管理画面で入力してください）" -%}
+{%- set price_str = "{:,}".format(price) -%}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ABダイエット｜写真で食事を記録するAI栄養解析サービス</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<style>
+  body { margin:0; background:#F6F4F1; color:#211D1A; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; line-height:1.85; }
+  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 60px; }
+  .hero { text-align:center; padding:12px 0 20px; }
+  .hero img { width:72px; height:72px; border-radius:18px; }
+  h1 { font-size:26px; margin:10px 0 4px; }
+  .lead { color:#5C564F; font-size:15px; margin:0; }
+  h2 { font-size:17px; margin:0 0 8px; }
+  .card { background:#fff; border-radius:16px; padding:20px; box-shadow:0 1px 2px rgba(33,29,26,.05); margin-bottom:16px; }
+  p, li { font-size:15px; }
+  ul { padding-left:1.4em; margin:0; }
+  .price { font-size:30px; font-weight:800; color:#EE5520; margin:2px 0 4px; }
+  .price small { font-size:15px; color:#211D1A; font-weight:700; }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  th, td { text-align:left; vertical-align:top; padding:10px 8px; border-bottom:1px solid #EBE7E2; }
+  th { width:34%; color:#5C564F; font-weight:700; }
+  .muted { color:#85807A; font-size:13px; }
+  footer { text-align:center; font-size:14px; margin-top:24px; }
+  footer a { color:#EE5520; text-decoration:none; font-weight:700; margin:0 8px; display:inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <img src="/static/icon-192.png" alt="ABダイエット">
+    <h1>ABダイエット</h1>
+    <p class="lead">食事の写真を撮るだけで、AIが栄養を解析する<br>ダイエット記録サービスです。</p>
+  </div>
+
+  <div class="card">
+    <h2>できること</h2>
+    <ul>
+      <li>食事の写真（または文章）から、AIが料理と量を推定し、Bカウント・タンパク質・野菜・果物の量を計算します。</li>
+      <li>解析結果は「量を増やす・減らす」ボタンや文章での訂正で、かんたんに直せます。</li>
+      <li>毎日の記録と体重をグラフで振り返れます。</li>
+      <li>スマートフォンのブラウザ（iPhone の Safari・Android の Chrome）で使えます。アプリのインストールは不要です。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>料金</h2>
+    <div class="price">月額 {{ price_str }}円 <small>（税込）</small></div>
+    <ul>
+      <li>お支払いはクレジットカード（決済代行：Stripe）。お申し込み時に初回の料金をお支払いいただき、以降は毎月同じ日に自動で更新されます。</li>
+      <li>はじめての方は、最初にご利用いただいた日から{{ trial_days }}日間、無料でお試しいただけます。クレジットカードの登録は不要で、無料期間が終わっても自動で料金が発生することはありません。</li>
+      {% if start %}<li>有料プランの提供開始日：{{ start.year }}年{{ start.month }}月{{ start.day }}日</li>{% endif %}
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>解約について</h2>
+    <p style="margin:0">アプリの「設定」→「ご利用プラン」→「お支払い・解約の管理」から、ご自身でいつでも解約できます。次回の更新日の前日までに解約すると、次回以降の料金は発生しません。解約後も、お支払い済みの期間の終わりまでご利用いただけます。お支払い済みの料金の返金・日割り計算は行っておりません。</p>
+  </div>
+
+  <div class="card">
+    <h2>運営者</h2>
+    <table>
+      <tr><th>販売事業者</th><td>{{ name }}</td></tr>
+      {% if info.address %}<tr><th>所在地</th><td>{{ info.address }}</td></tr>{% endif %}
+      {% if info.phone %}<tr><th>電話番号</th><td>{{ info.phone }}</td></tr>{% endif %}
+      <tr><th>お問い合わせ</th><td>{{ info.email or "（管理画面で入力してください）" }}</td></tr>
+    </table>
+    <p class="muted" style="margin:10px 0 0">AIによる推定は目安であり、医療行為・診断を目的とするものではありません。</p>
+  </div>
+
+  <footer>
+    <a href="/legal/tokushoho">特定商取引法に基づく表記</a>
+    <a href="/legal/terms">利用規約</a>
+    <a href="/legal/privacy">プライバシーポリシー</a>
+  </footer>
+</div>
+</body>
+</html>
