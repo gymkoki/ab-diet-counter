@@ -83,3 +83,19 @@ def test_notice_37_asks_to_record_everything():
     assert "記録した分しかBカウントが数えられない" in text
     assert "文章での入力" in text and "正確に" in text
     assert "1枚にまとめて" in text, "No.36（1枚にまとめて撮影）と食い違って読めてしまう"
+
+
+def test_notice_38_daily_total_matters():
+    """お知らせ No.38（オーナー指示 2026-10-13「全体へのお知らせ」）：
+    1食ではなく1日・1週間・1ヶ月の平均摂取量がポイントなので、食事写真をこまめにアップすると減量が決まりやすい。"""
+    html = _html()
+    m = re.search(r"最新アップデート No\.(\d+)", html)
+    assert m and int(m.group(1)) >= 38
+    if int(m.group(1)) != 38:
+        return   # 次のお知らせに入れ替わったら、この検査は役目を終える
+    body = html[m.start(): html.index("（奥松）", m.start())]
+    text = re.sub(r"<[^>]+>", "", body)
+    assert "全体へのお知らせ" in text
+    assert "1日のトータル量" in text
+    assert "1日単位、ひいては1週間、1ヶ月単位の平均摂取量" in text
+    assert "食事写真をこまめにアップする" in text and "減量が決まりやすい" in text
