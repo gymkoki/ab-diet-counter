@@ -265,7 +265,8 @@
       .vip-btn, .detail-link { padding: 7px 10px; }  /* タップしやすく */
       .apikey-save { width: 100%; }
     }
-  </style>
+    .legal-in { padding:8px 10px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; font-family:inherit; }
+</style>
 </head>
 <body>
 
@@ -508,6 +509,39 @@
       ※「全端末の認証を解除」は、パスワードが外部に広まってしまったときに使います。
       押すと<b>全会員がもう一度入力</b>することになるため、先にパスワードを変更してから実行してください。
     </div>
+  </div>
+
+  <!-- 有料化（2026-11-01〜・Stripe）の準備と運用 -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>💳 有料化（月額1,100円・Stripe）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      開始日から、申し込んでいない会員は食事の解析ができなくなります（記録は消えません）。
+      <b>Stripe の鍵・Webhook のどちらかが未設定の間・開始日より前・緊急停止中は、会員には何も表示されず、誰も止まりません。</b>
+      開始前に自分の端末で画面を確かめるときは、アプリを <code>/?billing_preview=1</code> で開きます（元に戻すときは <code>/?billing_preview=0</code>）。
+    </div>
+    <div id="billing-admin-now" style="font-size:13px;color:#374151;line-height:1.9;margin-bottom:10px"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin-bottom:12px">
+      <label><input type="checkbox" id="billing-preorder" onchange="saveBillingSwitch('preorder_open', this.checked)"> 開始日前の先行申し込みを受け付ける</label>
+      <label><input type="checkbox" id="billing-disabled" onchange="saveBillingSwitch('disabled', this.checked)"> 緊急停止（オンにすると誰も止めない）</label>
+    </div>
+    <details>
+      <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">特定商取引法の表記に載せる事業者情報</summary>
+      <div style="font-size:12px;color:#9CA3AF;margin:8px 0;line-height:1.6">
+        住所・電話番号を空欄にすると「ご請求があれば遅滞なく開示いたします」と表示されます。
+        表示の確認：<a href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</a> ／
+        <a href="/legal/terms" target="_blank">利用規約</a> ／ <a href="/legal/privacy" target="_blank">プライバシーポリシー</a>
+      </div>
+      <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;font-size:13px;max-width:520px">
+        <label>販売事業者名</label><input id="legal-seller_name" class="legal-in">
+        <label>運営統括責任者</label><input id="legal-manager_name" class="legal-in">
+        <label>所在地</label><input id="legal-address" class="legal-in">
+        <label>電話番号</label><input id="legal-phone" class="legal-in">
+        <label>メールアドレス</label><input id="legal-email" class="legal-in">
+      </div>
+      <button class="apikey-save" style="width:auto;padding:8px 18px;font-size:13px;margin-top:10px" onclick="saveLegalInfo()">保存</button>
+    </details>
+    <div id="billing-admin-status" style="font-size:13px;margin-top:8px"></div>
+    <div id="billing-admin-subs" style="margin-top:14px"></div>
   </div>
 
   <!-- クレジット残高の基準 -->
@@ -1825,6 +1859,77 @@
     }
   }
 
+  // 有料化（2026-11-01〜・Stripe）
+  async function loadBillingAdmin() {
+    const now = document.getElementById('billing-admin-now');
+    if (!now) return;
+    let d;
+    try { d = await (await fetch('/api/admin/billing')).json(); }
+    catch (e) { now.textContent = '読み込みに失敗しました'; return; }
+    const ok = v => v ? '<span style="color:#065F46;font-weight:800">✅</span>' : '<span style="color:#DC2626;font-weight:800">未設定</span>';
+    const keyLabel = { live: '✅ 本番', test: '🧪 テスト', set: '✅' }[d.stripe_key] || '<span style="color:#DC2626;font-weight:800">未設定</span>';
+    const state = d.disabled ? '<span style="color:#DC2626;font-weight:800">緊急停止中</span>'
+      : d.active ? '<span style="color:#065F46;font-weight:800">課金中</span>'
+      : `<span style="color:#B45309;font-weight:800">${escapeHtml(d.start_date)} から開始</span>`;
+    now.innerHTML = `状態：${state}　／　Stripeの鍵：${keyLabel}　／　Webhook：${ok(d.webhook_secret)}`
+      + `<br>料金：月額 ${d.price_jpy.toLocaleString()}円（税込）・はじめての方は${d.trial_days}日間無料`
+      + `　／　申し込み済み：<b>${d.paying}</b> 名`;
+    document.getElementById('billing-preorder').checked = !!d.preorder_open;
+    document.getElementById('billing-disabled').checked = !!d.disabled;
+    const info = d.legal_info || {};
+    ['seller_name', 'manager_name', 'address', 'phone', 'email'].forEach(k => {
+      const el = document.getElementById('legal-' + k);
+      if (el && document.activeElement !== el) el.value = info[k] || '';
+    });
+    const STATUS = { active: '利用中', trialing: '開始日待ち', past_due: '支払い再試行中', canceled: '解約', unpaid: '未払い', incomplete: '手続き中', incomplete_expired: '期限切れ' };
+    const rows = (d.subscribers || []).map(x => `
+      <tr style="border-bottom:1px solid #F3F4F6">
+        <td style="padding:6px 8px;font-weight:700">${escapeHtml(x.name)}</td>
+        <td style="padding:6px 8px">${escapeHtml(STATUS[x.status] || x.status || '—')}${x.cancel_at_period_end ? '（解約予約）' : ''}</td>
+        <td style="padding:6px 8px">${x.current_period_end ? escapeHtml(x.current_period_end.slice(0, 10)) : '—'}</td>
+        <td style="padding:6px 8px;color:#6B7280">${escapeHtml(x.email || '')}</td>
+      </tr>`).join('');
+    document.getElementById('billing-admin-subs').innerHTML = rows
+      ? `<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">
+            <th style="padding:6px 8px;text-align:left">会員</th><th style="padding:6px 8px;text-align:left">状態</th>
+            <th style="padding:6px 8px;text-align:left">次回更新日</th><th style="padding:6px 8px;text-align:left">メール</th>
+          </tr>${rows}</table></div>`
+      : '<div class="no-data" style="padding:10px 0">申し込みはまだありません</div>';
+  }
+
+  async function _postBillingSettings(body) {
+    const st = document.getElementById('billing-admin-status');
+    try {
+      const r = await fetch('/api/admin/billing/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error();
+      st.style.color = '#065F46'; st.textContent = '✅ 保存しました。';
+    } catch (e) {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 保存に失敗しました';
+    }
+    await loadBillingAdmin();
+  }
+
+  async function saveBillingSwitch(key, on) {
+    if (key === 'preorder_open' && on && !confirm('先行申し込みを受け付けます。\n会員のアプリの設定画面に「ご利用プラン」が表示されるようになります。よろしいですか？')) {
+      document.getElementById('billing-preorder').checked = false; return;
+    }
+    if (key === 'disabled' && on && !confirm('緊急停止します。申し込んでいない会員も解析できるようになります。よろしいですか？')) {
+      document.getElementById('billing-disabled').checked = false; return;
+    }
+    await _postBillingSettings({ [key]: on });
+  }
+
+  async function saveLegalInfo() {
+    const info = {};
+    ['seller_name', 'manager_name', 'address', 'phone', 'email'].forEach(k => {
+      info[k] = document.getElementById('legal-' + k).value.trim();
+    });
+    await _postBillingSettings({ legal_info: info });
+  }
+
   // 会員限定パスワード（2026-09-15〜）
   async function loadMemberGate() {
     const now = document.getElementById('member-gate-now');
@@ -2032,7 +2137,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

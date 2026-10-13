@@ -135,6 +135,28 @@
   文言は**責めない**こと（記録を増やしてほしいのに逆効果になる）。
 - `tests/test_record_frequency.py` が回帰を検知する。
 
+## 有料化（月額1,100円・Stripe・オーナー指示 2026-10-13／開始 2026-11-01）
+
+- 11/1（`BILLING_START`）から、申し込んでいない会員は**AIを使う4つの入口**（`/analyze`・`/reanalyze`・
+  `/analyze-text`・`/estimate-nutrition`）で止まる（`_billing_blocked()`・402 `billing_required`）。
+  会員限定ゲート（合言葉）の**後ろ**に置いている（合言葉は今のまま残す）。**AIを呼ぶ入口を新設したら、ここにも入れること。**
+- **既存の会員（開始日より前に記録がある人）に無料期間は無い**。初めて使う人は最初に使った日から3日間無料
+  （`BILLING_TRIAL_DAYS`）。**カード登録は求めない**＝無料期間が終わっても勝手に課金しない。
+- 使える状態は Stripe の subscription の status が active / trialing / past_due のとき（`BILLING_OK_STATUSES`）。
+  状況は `billing_accounts`（user_id ごと）に Stripe の通知（`/api/stripe/webhook`・署名必須）で反映する。
+- **何もしない（誰も止めない・会員に何も表示しない）条件**：`STRIPE_SECRET_KEY` か `STRIPE_WEBHOOK_SECRET` が無い／
+  開始日前／管理画面の緊急停止がオン／判定中にDBが壊れている。Webhook が無いと支払いが記録されず払った人まで
+  止まるため、鍵は**両方そろって初めて**有効になる。
+- 開始日前の先行申し込みは管理画面でオンにしたときだけ（`billing_preorder_open`）。先行申し込みの初回請求は開始日。
+- 申し込み画面（`#billing-overlay`）が特定商取引法の**最終確認画面**を兼ねる（内容・価格・支払時期・提供時期・
+  申込期間・解約条件の6項目）。利用規約・プライバシーポリシー（**写真を米国の Anthropic へ送ること**を含む）への
+  同意が無いと申し込めない（サーバーでも `agree` を確認）。Checkout のボタン上にも解約・返金の条件を出す。
+- 特商法・利用規約・プライバシーポリシーは `/legal/tokushoho|terms|privacy`（`templates/legal.html`）。
+  事業者情報は管理画面の「💳 有料化」から入力（settings の `legal_business_info`）。住所・電話は空欄なら
+  「ご請求があれば遅滞なく開示」と出る。
+- 開始前に画面を確かめるときはアプリを `/?billing_preview=1` で開く（その端末だけ。`/?billing_preview=0` で戻す）。
+- `tests/test_billing.py` が回帰を検知する。`tests/conftest.py` は既定で Stripe の鍵を外している。
+
 ## リオールジム会員限定（オーナー指示 2026-09-14／開始 2026-09-15）
 
 - AIの解析コストが高く持続できないため、**合言葉を入れた端末だけ**がアプリを使える。

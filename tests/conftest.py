@@ -61,6 +61,16 @@ def _member_gate_disabled_by_default(monkeypatch):
     monkeypatch.setattr(m, "MEMBER_GATE_START", "2099-01-01", raising=False)
 
 
+# ── 有料化（2026-11-01〜）────────────────────────────────────
+# 開始日を過ぎても解析系のテストが「申し込みが必要」で落ちないよう、
+# 既定では Stripe の鍵を外しておく（＝課金の判定は何もしない）。
+# 課金を試すテスト（tests/test_billing.py）だけが鍵と開始日を明示的に入れる。
+@pytest.fixture(autouse=True)
+def _billing_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_WEBHOOK_SECRET", raising=False)
+
+
 def unlock_device(uid, token="test-token"):
     """uid の端末を「合言葉を通過済み」にする。"""
     m.init_db()

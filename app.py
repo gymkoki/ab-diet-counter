@@ -807,6 +807,22 @@ def init_db():
             )
         """)
 
+        # 有料化（2026-11-01〜・Stripe）：会員(user_id)ごとの支払い状況。
+        # Stripe からの通知(webhook)で更新する。カード情報はStripeが持ち、ここには保存しない。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS billing_accounts (
+                user_id              TEXT PRIMARY KEY,
+                first_seen           TEXT,
+                customer_id          TEXT,
+                subscription_id      TEXT,
+                status               TEXT,
+                current_period_end   TEXT,
+                cancel_at_period_end INTEGER,
+                email                TEXT,
+                updated_at           TEXT
+            )
+        """)
+
         # 端末連携コード（デスクトップ⇔スマホで同じ記録を共有するための一時コード）
         cur.execute("""
             CREATE TABLE IF NOT EXISTS link_codes (
@@ -7898,6 +7914,480 @@ def get_daily_meals():
         return jsonify({"payload": None})
 
 
+# ══════════════════════════════════════════════════════════════
+#  有料化（月額1,100円・Stripe）  オーナー指示 2026-10-13
+#  ・11/1（BILLING_START）から、支払っていない会員は食事の解析ができなくなる。
+#  ・すでに使っている会員（11/1より前に記録がある人）に無料期間は無い。
+#  ・初めて使う人は、最初に使った日から3日間（BILLING_TRIAL_DAYS）は無料。
+#    カード登録は求めない（無料期間が終わっても勝手に課金しない。申し込んだ人だけ課金）。
+#  【最重要】Stripe の鍵（STRIPE_SECRET_KEY）が入っていない／開始日前／緊急停止中は
+#  「何もしない」に倒す。設定ミスで会員全員を締め出さないため（会員限定ゲートと同じ考え方）。
+#  判定中に DB や Stripe が落ちていても止めない（解析が止まるほうが事故として重い）。
+#  会員への告知や画面表示は、開始日（または先行受付をオンにした時）まで一切出ない。
+# ══════════════════════════════════════════════════════════════
+BILLING_START        = os.environ.get("BILLING_START", "2026-11-01")
+BILLING_PRICE_JPY    = 1100          # 税込
+BILLING_TRIAL_DAYS   = 3
+BILLING_PRODUCT_NAME = "ABダイエット 月額プラン"
+# 使ってよい状態：有効／（Stripeの）お試し中／支払い再試行中（カードが一時的に通らないだけ）
+BILLING_OK_STATUSES  = ("active", "trialing", "past_due")
+BILLING_PREORDER_KEY = "billing_preorder_open"   # 開始日前の「先行申し込み」を受け付けるか
+BILLING_DISABLED_KEY = "billing_disabled"        # 緊急停止（オンなら誰も止めない）
+LEGAL_INFO_KEY       = "legal_business_info"     # 特定商取引法の表記に載せる事業者情報
+
+BILLING_REQUIRED_MESSAGE = (
+    "ABダイエットは有料プラン（月額1,100円・税込）でのご利用になりました。"
+    "お申し込みいただくと、すぐに食事の解析をご利用いただけます。"
+)
+
+
+def _stripe_secret():
+    return (os.environ.get("STRIPE_SECRET_KEY") or "").strip()
+
+
+def _stripe_lib():
+    """Stripe のライブラリを鍵つきで返す（読み込みはここだけ・必要になったときだけ）。"""
+    import stripe
+    stripe.api_key = _stripe_secret()
+    return stripe
+
+
+def _billing_start_date():
+    try:
+        return datetime.date.fromisoformat(BILLING_START)
+    except (TypeError, ValueError):
+        app.logger.warning("BILLING_START が不正です: %r", BILLING_START)
+        return None
+
+
+def _setting_on(key):
+    try:
+        return (_get_setting(key, "") or "").strip() == "1"
+    except Exception:
+        return False
+
+
+def _billing_configured():
+    """Stripe の秘密鍵と Webhook の署名シークレットが両方そろっているか。
+    Webhook が無いと支払いが記録されず、払った会員まで止めてしまうので、片方だけなら「何もしない」。"""
+    return bool(_stripe_secret()) and bool((os.environ.get("STRIPE_WEBHOOK_SECRET") or "").strip())
+
+
+def _billing_active(today=None):
+    """課金が始まっていて、止める判定をしてよい状態か。"""
+    if not _billing_configured() or _setting_on(BILLING_DISABLED_KEY):
+        return False
+    start = _billing_start_date()
+    if start is None:
+        return False
+    today = today or datetime.datetime.now(JST).date()
+    return today >= start
+
+
+def _billing_preorder_open(today=None):
+    """開始日前の先行申し込みを受け付けているか（オーナーが管理画面でオンにしたときだけ）。"""
+    if not _billing_configured() or _setting_on(BILLING_DISABLED_KEY):
+        return False
+    start = _billing_start_date()
+    today = today or datetime.datetime.now(JST).date()
+    return bool(start and today < start and _setting_on(BILLING_PREORDER_KEY))
+
+
+def _billing_row(uid):
+    uid = (uid or "").strip()
+    if not uid:
+        return None
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT user_id, first_seen, customer_id, subscription_id, status, current_period_end, "
+            f"cancel_at_period_end, email, updated_at FROM billing_accounts WHERE user_id={PH}", (uid,))
+        r = cur.fetchone()
+    finally:
+        conn.close()
+    if not r:
+        return None
+    keys = ("user_id", "first_seen", "customer_id", "subscription_id", "status",
+            "current_period_end", "cancel_at_period_end", "email", "updated_at")
+    return dict(zip(keys, r))
+
+
+def _upsert_billing(uid, **fields):
+    """支払い状況を1人ぶん書き込む（無ければ作る）。None の項目は上書きしない。"""
+    uid = (uid or "").strip()
+    if not uid:
+        return
+    fields = {k: v for k, v in fields.items() if v is not None}
+    fields["updated_at"] = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT 1 FROM billing_accounts WHERE user_id={PH}", (uid,))
+            if cur.fetchone():
+                cols = ", ".join(f"{k}={PH}" for k in fields)
+                cur.execute(f"UPDATE billing_accounts SET {cols} WHERE user_id={PH}",
+                            tuple(fields.values()) + (uid,))
+            else:
+                cols = ["user_id"] + list(fields)
+                cur.execute(
+                    f"INSERT INTO billing_accounts ({', '.join(cols)}) VALUES ({', '.join([PH] * len(cols))})",
+                    (uid,) + tuple(fields.values()))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _first_activity_date(uid):
+    """その会員が最初にアプリを使った日（記録・解析のいちばん古い日）。無ければ None。"""
+    dates = []
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        for table in ("daily_b_count", "daily_weight", "daily_meals", "daily_nutrition"):
+            try:
+                cur.execute(f"SELECT MIN(date) FROM {table} WHERE user_id={PH}", (uid,))
+                v = cur.fetchone()
+                if v and v[0]:
+                    dates.append(str(v[0])[:10])
+            except Exception:
+                conn.rollback() if USE_PG else None
+        try:
+            cur.execute(f"SELECT MIN(created_at) FROM usage_log WHERE user_id={PH}", (uid,))
+            v = cur.fetchone()
+            if v and v[0]:
+                dates.append(str(v[0])[:10])
+        except Exception:
+            conn.rollback() if USE_PG else None
+    finally:
+        conn.close()
+    try:
+        return min(datetime.date.fromisoformat(d) for d in dates) if dates else None
+    except ValueError:
+        return None
+
+
+def _iso_from_epoch(ts):
+    try:
+        return datetime.datetime.fromtimestamp(int(ts), JST).isoformat() if ts else None
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def billing_state(uid, today=None, preview=False):
+    """画面と判定の両方が使う「この会員の支払い状況」。
+
+    state：
+      off        …… 課金はまだ始まっていない（何も表示しない・何も止めない）
+      preorder   …… 開始日前で、先行申し込みを受け付けている
+      subscribed …… 申し込み済み（使える）
+      trial      …… 初めての方の無料期間中（使える）
+      required   …… 申し込みが必要（解析を止める）
+    preview=True は、オーナーが開始前に自分の端末だけで画面を確かめるためのもの（判定には使わない）。"""
+    today = today or datetime.datetime.now(JST).date()
+    start = _billing_start_date()
+    active = _billing_active(today) or (preview and _billing_configured())
+    preorder = _billing_preorder_open(today)
+    base = {
+        "enabled": active, "preorder": preorder, "price_jpy": BILLING_PRICE_JPY,
+        "trial_days": BILLING_TRIAL_DAYS, "start_date": start.isoformat() if start else None,
+        "required": False, "state": "off", "trial_ends": None,
+        "current_period_end": None, "cancel_at_period_end": False, "can_manage": False,
+    }
+    if not (active or preorder):
+        return base
+
+    row = _billing_row(uid) or {}
+    if row.get("customer_id"):
+        base["can_manage"] = True
+    if row.get("status") in BILLING_OK_STATUSES:
+        base.update(state="subscribed", current_period_end=row.get("current_period_end"),
+                    cancel_at_period_end=bool(row.get("cancel_at_period_end")))
+        return base
+    if not active:
+        base["state"] = "preorder"
+        return base
+
+    # 無料期間：開始日より前に使っていた人（既存の会員）には無い
+    first = _first_activity_date(uid)
+    if first is None and row.get("first_seen"):
+        try:
+            first = datetime.date.fromisoformat(row["first_seen"][:10])
+        except ValueError:
+            first = None
+    if first is None:
+        first = today
+        if uid:
+            try:
+                _upsert_billing(uid, first_seen=today.isoformat())
+            except Exception as e:
+                app.logger.warning("billing first_seen save failed: %s", e)
+    if start and first >= start:
+        trial_end = first + datetime.timedelta(days=BILLING_TRIAL_DAYS)
+        if today < trial_end:
+            base.update(state="trial", trial_ends=trial_end.isoformat())
+            return base
+    base.update(state="required", required=True)
+    return base
+
+
+def _billing_blocked(uid):
+    """申し込みが必要な会員なら (JSONレスポンス, 402) を返す。問題なければ None。
+    判定できないとき（DB・設定の不具合）は止めない。"""
+    if not _billing_active():
+        return None
+    try:
+        st = billing_state(uid)
+    except Exception as e:
+        app.logger.warning("billing check failed (allowing): %s", e)
+        return None
+    if st.get("required"):
+        return jsonify({"error": BILLING_REQUIRED_MESSAGE, "billing_required": True}), 402
+    return None
+
+
+def _app_base_url():
+    return (os.environ.get("APP_BASE_URL") or request.host_url).rstrip("/")
+
+
+@app.route("/api/billing/status")
+def api_billing_status():
+    uid = (request.args.get("user_id") or "").strip()
+    preview = request.args.get("preview") == "1"
+    try:
+        return jsonify(billing_state(uid, preview=preview))
+    except Exception as e:
+        app.logger.warning("billing status failed: %s", e)
+        return jsonify({"enabled": False, "state": "off", "required": False})
+
+
+@app.route("/api/billing/checkout", methods=["POST"])
+def api_billing_checkout():
+    """Stripe の支払いページ（Checkout）を作って URL を返す。
+    利用規約・プライバシーポリシー（写真を海外のAI事業者へ送ることを含む）への同意が必須。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"error": "ユーザー情報が見つかりません。アプリを開き直してください。"}), 400
+    if not data.get("agree"):
+        return jsonify({"error": "利用規約とプライバシーポリシーへの同意が必要です。"}), 400
+    preview = bool(data.get("preview"))
+    if not (_billing_active() or _billing_preorder_open() or (preview and _billing_configured())):
+        return jsonify({"error": "現在はお申し込みを受け付けていません。"}), 403
+
+    row = _billing_row(uid) or {}
+    if row.get("status") in BILLING_OK_STATUSES:
+        return jsonify({"error": "すでにお申し込み済みです。"}), 409
+
+    base = _app_base_url()
+    sub_data = {"metadata": {"user_id": uid}}
+    start = _billing_start_date()
+    today = datetime.datetime.now(JST).date()
+    if start and today < start:
+        # 先行申し込み：初回の請求は開始日（11/1 0:00 JST）から
+        start_at = datetime.datetime.combine(start, datetime.time(0, 0), JST)
+        sub_data["trial_end"] = int(start_at.timestamp())
+    params = {
+        "mode": "subscription",
+        "line_items": [{
+            "quantity": 1,
+            "price_data": {
+                "currency": "jpy",
+                "unit_amount": BILLING_PRICE_JPY,
+                "recurring": {"interval": "month"},
+                "product_data": {"name": BILLING_PRODUCT_NAME},
+            },
+        }],
+        "client_reference_id": uid,
+        "metadata": {"user_id": uid},
+        "subscription_data": sub_data,
+        "locale": "ja",
+        "success_url": f"{base}/?billing=success",
+        "cancel_url": f"{base}/?billing=cancel",
+        # 申し込みボタンのすぐ上に、解約・返金の条件を出す（特定商取引法の最終確認画面の表示）
+        "custom_text": {"submit": {"message": (
+            "月額1,100円（税込）。毎月自動で更新されます。解約はアプリの設定からいつでもでき、"
+            "解約後も支払済みの期間の終わりまでご利用いただけます。日割りでの返金はありません。")}},
+    }
+    if row.get("customer_id"):
+        params["customer"] = row["customer_id"]
+    try:
+        session = _stripe_lib().checkout.Session.create(**params)
+    except Exception as e:
+        print(f"[BILLING][checkout] {type(e).__name__}: {e}")
+        return jsonify({"error": "お支払いページを開けませんでした。少し時間をおいてお試しください。"}), 502
+    return jsonify({"url": session.url})
+
+
+@app.route("/api/billing/portal", methods=["POST"])
+def api_billing_portal():
+    """解約・カード変更の画面（Stripe カスタマーポータル）の URL を返す。
+    他人の支払いを操作されないよう、会員限定ゲートが有効な間は端末の通行証も確認する。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    if _member_gate_active() and not _is_unlocked(uid, request.headers.get("X-Device-Token", "")):
+        return jsonify({"error": "この端末では操作できません。"}), 403
+    row = _billing_row(uid) or {}
+    if not row.get("customer_id"):
+        return jsonify({"error": "お申し込みの記録が見つかりません。"}), 404
+    try:
+        session = _stripe_lib().billing_portal.Session.create(
+            customer=row["customer_id"], return_url=f"{_app_base_url()}/?billing=portal", locale="ja")
+    except Exception as e:
+        print(f"[BILLING][portal] {type(e).__name__}: {e}")
+        return jsonify({"error": "管理画面を開けませんでした。少し時間をおいてお試しください。"}), 502
+    return jsonify({"url": session.url})
+
+
+def _sub_get(obj, key, default=None):
+    try:
+        return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+    except Exception:
+        return default
+
+
+def _apply_subscription(sub, uid=None):
+    """Stripe の subscription の内容を billing_accounts へ反映する。"""
+    meta = _sub_get(sub, "metadata") or {}
+    uid = uid or _sub_get(meta, "user_id")
+    sub_id = _sub_get(sub, "id")
+    customer = _sub_get(sub, "customer")
+    if not uid and sub_id:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT user_id FROM billing_accounts WHERE subscription_id={PH} OR customer_id={PH}",
+                        (sub_id, customer or ""))
+            r = cur.fetchone()
+            uid = r[0] if r else None
+        finally:
+            conn.close()
+    if not uid:
+        print(f"[BILLING][webhook] user_id が分からない subscription: {sub_id}")
+        return
+    period_end = _sub_get(sub, "current_period_end")
+    if not period_end:
+        # 新しいAPIでは期間の終わりが明細(items)側にある
+        items = _sub_get(_sub_get(sub, "items") or {}, "data") or []
+        if items:
+            period_end = _sub_get(items[0], "current_period_end")
+    _upsert_billing(uid, customer_id=customer, subscription_id=sub_id,
+                    status=_sub_get(sub, "status"),
+                    current_period_end=_iso_from_epoch(period_end) or "",
+                    cancel_at_period_end=1 if _sub_get(sub, "cancel_at_period_end") else 0)
+
+
+@app.route("/api/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    """Stripe からの通知（支払い完了・更新・解約など）を受け取る。署名で本物か確かめる。"""
+    secret = (os.environ.get("STRIPE_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        return jsonify({"error": "webhook secret not configured"}), 500
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature", "")
+    stripe = _stripe_lib()
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, secret)
+    except Exception as e:
+        print(f"[BILLING][webhook] 署名の確認に失敗: {type(e).__name__}")
+        return jsonify({"error": "invalid signature"}), 400
+
+    etype = _sub_get(event, "type")
+    obj = _sub_get(_sub_get(event, "data") or {}, "object") or {}
+    try:
+        if etype == "checkout.session.completed":
+            uid = _sub_get(obj, "client_reference_id") or _sub_get(_sub_get(obj, "metadata") or {}, "user_id")
+            details = _sub_get(obj, "customer_details") or {}
+            _upsert_billing(uid, customer_id=_sub_get(obj, "customer"),
+                            subscription_id=_sub_get(obj, "subscription"),
+                            email=_sub_get(details, "email"))
+            sub_id = _sub_get(obj, "subscription")
+            if sub_id:
+                _apply_subscription(stripe.Subscription.retrieve(sub_id), uid=uid)
+        elif etype in ("customer.subscription.created", "customer.subscription.updated",
+                       "customer.subscription.deleted"):
+            _apply_subscription(obj)
+    except Exception as e:
+        # 失敗を返すと Stripe が時間をおいて送り直してくれる
+        print(f"[BILLING][webhook] {etype} の処理に失敗: {type(e).__name__}: {e}")
+        return jsonify({"error": "processing failed"}), 500
+    return jsonify({"received": True})
+
+
+# ── 特定商取引法の表記・利用規約・プライバシーポリシー ─────────────
+LEGAL_INFO_FIELDS = ("seller_name", "manager_name", "address", "phone", "email")
+
+
+def _legal_info():
+    try:
+        raw = _get_setting(LEGAL_INFO_KEY, "")
+        info = json.loads(raw) if raw else {}
+    except Exception:
+        info = {}
+    return {k: str(info.get(k) or "").strip() for k in LEGAL_INFO_FIELDS}
+
+
+@app.route("/legal/<page>")
+def legal_page(page):
+    if page not in ("tokushoho", "terms", "privacy"):
+        return Response("Not Found", 404)
+    start = _billing_start_date()
+    today = datetime.datetime.now(JST).date()
+    return render_template("legal.html", page=page, info=_legal_info(),
+                           price=BILLING_PRICE_JPY, trial_days=BILLING_TRIAL_DAYS, start=start,
+                           # 「開始日より前に申し込んだら初回は開始日」の一文は、開始日の前日までだけ出す
+                           before_start=bool(start and today < start))
+
+
+@app.route("/api/admin/billing")
+@_admin_required
+def admin_billing():
+    """【管理者専用】有料化の準備状況と、申し込み済みの会員の一覧。"""
+    key = _stripe_secret()
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT b.user_id, p.display_name, b.status, b.current_period_end, "
+                    "b.cancel_at_period_end, b.email FROM billing_accounts b "
+                    "LEFT JOIN user_profile p ON p.user_id = b.user_id "
+                    "WHERE b.subscription_id IS NOT NULL ORDER BY b.updated_at DESC")
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    subs = [{"user_id": r[0], "name": r[1] or f"会員{r[0][:4]}", "status": r[2],
+             "current_period_end": r[3], "cancel_at_period_end": bool(r[4]), "email": r[5]} for r in rows]
+    return jsonify({
+        "start_date": BILLING_START,
+        "price_jpy": BILLING_PRICE_JPY,
+        "trial_days": BILLING_TRIAL_DAYS,
+        "stripe_key": ("live" if key.startswith("sk_live") else "test" if key.startswith("sk_test")
+                       else ("set" if key else "")),
+        "webhook_secret": bool((os.environ.get("STRIPE_WEBHOOK_SECRET") or "").strip()),
+        "active": _billing_active(),
+        "preorder_open": _setting_on(BILLING_PREORDER_KEY),
+        "disabled": _setting_on(BILLING_DISABLED_KEY),
+        "legal_info": _legal_info(),
+        "subscribers": subs,
+        "paying": sum(1 for x in subs if x["status"] in BILLING_OK_STATUSES),
+    })
+
+
+@app.route("/api/admin/billing/settings", methods=["POST"])
+@_admin_required
+def admin_billing_settings():
+    """先行受付のオン／オフ、緊急停止、特定商取引法の表記に載せる事業者情報を保存する。"""
+    data = request.get_json(silent=True) or {}
+    if "preorder_open" in data:
+        _set_setting(BILLING_PREORDER_KEY, "1" if data.get("preorder_open") else "0")
+    if "disabled" in data:
+        _set_setting(BILLING_DISABLED_KEY, "1" if data.get("disabled") else "0")
+    if isinstance(data.get("legal_info"), dict):
+        info = {k: str(data["legal_info"].get(k) or "").strip()[:200] for k in LEGAL_INFO_FIELDS}
+        _set_setting(LEGAL_INFO_KEY, json.dumps(info, ensure_ascii=False))
+    return jsonify({"ok": True})
+
+
 # ※ かつてここに /precheck（Haikuで「大盛り？油は？」を事前判定するエンドポイント）が
 #    あったが削除した（オーナー指示 2026-08）。Haikuでは大盛り判定の精度が出ず、
 #    事前チェック＋本解析で2回計算が走り、待ち時間もコストも二重になっていたため。
@@ -7910,6 +8400,10 @@ def analyze():
     gate = _member_gate_blocked(request.form.get("user_id", ""))
     if gate:
         return gate
+    # 有料化（2026-11-01〜）：申し込みが必要な会員はここで止める（AIを呼ぶ前に）
+    pay = _billing_blocked(request.form.get("user_id", ""))
+    if pay:
+        return pay
 
     client = get_client()
     if client is None:
@@ -8028,6 +8522,10 @@ def reanalyze():
     gate = _member_gate_blocked(request.form.get("user_id", ""))
     if gate:
         return gate
+    # 有料化（2026-11-01〜）：申し込みが必要な会員はここで止める（AIを呼ぶ前に）
+    pay = _billing_blocked(request.form.get("user_id", ""))
+    if pay:
+        return pay
 
     client = get_client()
     if client is None:
@@ -8199,6 +8697,10 @@ def analyze_text():
     gate = _member_gate_blocked(request.form.get("user_id", ""))
     if gate:
         return gate
+    # 有料化（2026-11-01〜）：申し込みが必要な会員はここで止める（AIを呼ぶ前に）
+    pay = _billing_blocked(request.form.get("user_id", ""))
+    if pay:
+        return pay
 
     client = get_client()
     if client is None:
@@ -8300,6 +8802,10 @@ def estimate_nutrition():
     gate = _member_gate_blocked(request.form.get("user_id", ""))
     if gate:
         return gate
+    # 有料化（2026-11-01〜）：申し込みが必要な会員はここで止める（AIを呼ぶ前に）
+    pay = _billing_blocked(request.form.get("user_id", ""))
+    if pay:
+        return pay
 
     client = get_client()
     if client is None:
