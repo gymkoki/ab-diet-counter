@@ -154,6 +154,9 @@
 - 特商法・利用規約・プライバシーポリシーは `/legal/tokushoho|terms|privacy`（`templates/legal.html`）。
   事業者情報は管理画面の「💳 有料化」から入力（settings の `legal_business_info`）。住所・電話は空欄なら
   「ご請求があれば遅滞なく開示」と出る。
+- サービス紹介ページ `/service`（`templates/service.html`）は Stripe の審査用（「Business website」に登録する）。
+  アプリ本体は合言葉の画面が先に出て審査の担当者に中身が見えないため、誰でも見られるページを別に置いた。
+  **会員のアプリ（index.html）からはリンクしない**（有料化の告知にならないように。テストが検知する）。
 - 開始前に画面を確かめるときはアプリを `/?billing_preview=1` で開く（その端末だけ。`/?billing_preview=0` で戻す）。
 - `tests/test_billing.py` が回帰を検知する。`tests/conftest.py` は既定で Stripe の鍵を外している。
 

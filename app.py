@@ -8340,6 +8340,17 @@ def legal_page(page):
                            before_start=bool(start and today < start))
 
 
+# サービス紹介ページ（Stripeの審査用・オーナー指示 2026-10-13）。
+# 審査では「Business website」に、何をいくらで売り、どう解約できるかが載っているかを見られる。
+# アプリ本体は合言葉の画面が最初に出て審査の担当者には中身が見えないため、誰でも見られるページを別に置く。
+# 会員のアプリからはリンクしない（有料化の告知にならないように）。
+@app.route("/service")
+def service_page():
+    start = _billing_start_date()
+    return render_template("service.html", info=_legal_info(), price=BILLING_PRICE_JPY,
+                           trial_days=BILLING_TRIAL_DAYS, start=start)
+
+
 @app.route("/api/admin/billing")
 @_admin_required
 def admin_billing():

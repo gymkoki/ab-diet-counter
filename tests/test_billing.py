@@ -362,3 +362,26 @@ def test_preorder_sentence_only_before_start(monkeypatch):
     monkeypatch.setattr(m, "BILLING_START", "2020-11-01")
     with m.app.test_client() as c:
         assert "より前にお申し込みの場合" not in c.get("/legal/tokushoho").get_data(as_text=True)
+
+
+# ── ⑩ サービス紹介ページ（Stripeの審査用） ───────────────────
+def test_service_page_is_public_and_shows_price_and_cancellation():
+    """審査の担当者が合言葉なしで、何を・いくらで・どう解約できるかを確かめられること。"""
+    _reset()
+    m._set_setting(m.LEGAL_INFO_KEY, json.dumps({"seller_name": "テスト事業者", "email": "info@example.com"}))
+    with m.app.test_client() as c:
+        r = c.get("/service")
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "月額 1,100円" in body and "（税込）" in body
+    assert "3日間、無料" in body and "解約" in body
+    assert "テスト事業者" in body and "info@example.com" in body
+    for href in ("/legal/tokushoho", "/legal/terms", "/legal/privacy"):
+        assert f'href="{href}"' in body
+    _reset()
+
+
+def test_member_app_does_not_link_service_page():
+    """会員のアプリからはリンクしない（有料化の告知にならないように）。"""
+    html = open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8").read()
+    assert "/service" not in html
