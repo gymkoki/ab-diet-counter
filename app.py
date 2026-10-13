@@ -6,6 +6,7 @@ import gzip
 import base64
 import json
 import time
+import math
 import random
 import secrets
 import datetime
@@ -230,6 +231,35 @@ def _sanitize_veg(foods):
     return foods
 
 
+# ── 寿司のシャリ（オーナー指示 2026-10-13：「寿司はお菓子同様、特別ルール適用」） ──
+# 1貫ずつではシャリが少なくB0でも、全部食べればご飯1〜2杯分になる。各寿司の項目に
+# シャリの重量（sushi_rice_g）を持たせ、1日の合計で特別ルールを当てる（_day_sushi_bonus）。
+# AIが sushi_rice_g を入れ忘れても、名前に「◯貫」があれば 1貫≒18g で補う。
+SUSHI_RICE_PER_PIECE_G = 18       # 握り・軍艦1貫のシャリ（15〜20g）
+SUSHI_RICE_KCAL_PER_G = 1.68      # 酢飯（白米＋すし酢）
+_SUSHI_NAME_RE = re.compile(r"握り|(?<!お)にぎり|軍艦|寿司|鮨|すし|ずし|巻き|手巻|いなり|稲荷|ちらし")
+_SUSHI_PIECES_RE = re.compile(r"(\d+(?:\.\d+)?)\s*貫")
+
+
+def _fill_sushi_rice(foods):
+    """寿司の項目に sushi_rice_g（シャリの重量g）を必ず持たせる。
+    AIの値があればそれを使い、無ければ「◯貫」から推定する。寿司でない項目は触らない。"""
+    import unicodedata
+    for f in foods:
+        if not isinstance(f, dict):
+            continue
+        v = f.get("sushi_rice_g")
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            f["sushi_rice_g"] = max(0, round(v))
+            continue
+        text = unicodedata.normalize("NFKC", f"{f.get('name') or ''} {f.get('amount') or ''}")
+        if not _SUSHI_NAME_RE.search(text):
+            continue
+        mm = _SUSHI_PIECES_RE.search(text)
+        if mm:
+            f["sushi_rice_g"] = round(float(mm.group(1)) * SUSHI_RICE_PER_PIECE_G)
+
+
 def recompute_totals(result):
     """total_* を必ず foods の合計に一致させる。
     AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
@@ -241,6 +271,7 @@ def recompute_totals(result):
     foods = result.get("foods")
     if isinstance(foods, list):
         _sanitize_veg(foods)
+        _fill_sushi_rice(foods)
         # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
         b_sum = sum(_num(f.get("b_count")) for f in foods)
         result["total_b_count"] = round(b_sum * 2) / 2
@@ -248,6 +279,7 @@ def recompute_totals(result):
         result["total_veg_g"] = round(sum(_num(f.get("veg_g")) for f in foods))
         result["total_fruit_g"] = round(sum(_num(f.get("fruit_g")) for f in foods))
         result["total_sweet_kcal"] = round(sum(_num(f.get("sweet_kcal")) for f in foods))
+        result["total_sushi_rice_g"] = round(sum(_num(f.get("sushi_rice_g")) for f in foods))
     return result
 
 
@@ -1882,6 +1914,7 @@ name・kcal_per_serving・amount・reason・b_count のすべてを「本体の�
 - foods配列は最大でも15項目程度に収め、reasonは簡潔に（計算式「量×密度=kcal→判定」は残すが、余計な説明は書かない）。
 - 出力が長くなりすぎないよう注意し、JSONは必ず最後まで完結させること（途中で切らない）。
 ※ 寿司の例：シャリはB食材（1貫のシャリ約15〜20g）。ネタ（まぐろ・サーモン等）と合わせて握り単位でまとめ、握り全体のkcalで判定する。
+  寿司の各項目には必ず sushi_rice_g（シャリの重量）を入れる。1貫ずつではB0でも、1日のシャリの合計でBを足す特別ルールに使う（下の「寿司のシャリ」の項を参照）。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 ■ タンパク質(g)の推定ルール【肉・魚の判別と量を正確に】
@@ -2012,6 +2045,16 @@ total_veg_g は 0〜10g 程度が正しい。
   1食ごとの判定（b_count）はこれまで通り実kcalで行い、変更しない。1回でB0.5以上が付いたものは累積には入らない（二重計上しない）。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+■ 寿司のシャリ(sushi_rice_g)の推定ルール【1日累積判定に使う】
+━━━━━━━━━━━━━━━━━━━━━━━
+寿司は1貫ずつ見るとシャリが少なくB0になりがちだが、全部食べればシャリの合計はご飯1〜2杯分になる。
+そのため、寿司の各項目には含まれるシャリ（酢飯）の推定重量(g)を sushi_rice_g に整数で入れる（寿司以外は必ず0）。
+- 握り・軍艦：1貫≒18g（小ぶり15g・大ぶり20〜25g）× 貫数。例：まぐろの握り ×3貫 → 54
+- 細巻き1本（6切れ）≒60g、太巻き1切れ≒30g、手巻き1本≒40g、いなり1個≒35g、ちらし・海鮮丼は器のご飯の量（並≒200g）
+- ※これは「1回ぶんはB0の寿司でも、その日のシャリの合計kcal（1g≒1.68kcal）でSTEP2を当てはめ、既に付けた寿司のBとの差を足す」特別ルールの集計に使う（集計と加算はアプリ側で行う）。
+  1項目ごとの判定（b_count）はこれまで通り実kcalで行い、変更しない（二重計上はアプリ側で差し引く）。
+
+━━━━━━━━━━━━━━━━━━━━━━━
 ■【最重要】量が不確かなときは「厳しめ（多め）」に見積もる — 過小評価の禁止
 ━━━━━━━━━━━━━━━━━━━━━━━
 このアプリはユーザーに追加質問をせず、この1回の解析だけでBカウントを確定する。
@@ -2066,6 +2109,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
+      "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
       "amount": "写真での量（例：たっぷり、1人前、少量など）",
       "b_count": 0,
       "reason": "A食材のため（1人前約○kcal、120kcal未満）Bカウント0"
@@ -2078,6 +2122,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
+      "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
       "amount": "写真での量と推定kcal（例：1人前・約250kcal）",
       "b_count": 1,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが200kcal超のためB1"
@@ -2090,6 +2135,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
+      "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
       "amount": "写真での量と推定kcal（例：約150kcal相当）",
       "b_count": 0.5,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが120〜200kcalのためB0.5"
@@ -2102,6 +2148,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "veg_g": この食材のうち野菜類の重量（g・整数。実際の摂取量ぶん。野菜・きのこ・海藻のみ。いも・豆・果物・穀物・肉魚等は0）,
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
+      "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
       "amount": "写真での量と推定kcal（例：少量・約70kcal）",
       "b_count": 0,
       "reason": "B食材だが実際の摂取量約○kcalが120kcal未満のためノーカウント"
@@ -7362,6 +7409,38 @@ def _day_sweet_bonus_b(sweet_kcal):
     return 0.0
 
 
+def _b_from_kcal(kcal):
+    """実kcal → Bカウント（ANALYSIS_PROMPT の STEP2 と同じしきい値）。
+    120未満=0／120〜200=0.5／200〜400=1／400超=2、以降200kcalごとに+0.5（600超=2.5、800超=3）。"""
+    if kcal < 120:
+        return 0.0
+    if kcal <= 200:
+        return 0.5
+    if kcal <= 400:
+        return 1.0
+    return 2.0 + 0.5 * max(0, math.ceil((kcal - 400) / 200) - 1)
+
+
+def _day_sushi_bonus(foods_iter):
+    """寿司のシャリの1日累積ルール（オーナー指示 2026-10-13）。
+    その日の寿司のシャリの合計kcalでSTEP2を当て、寿司の項目に既に付いているBとの差を足す
+    （1回で付いたBは差し引くので二重計上しない）。戻り値は (シャリ合計g, 追加B)。
+    アプリ側（index.html の daySushiBonus）と同じ計算にすること。"""
+    rice_g = 0.0
+    already = 0.0
+    for f in foods_iter:
+        if not isinstance(f, dict):
+            continue
+        g = f.get("sushi_rice_g")
+        if isinstance(g, (int, float)) and g > 0:
+            rice_g += float(g)
+            already += _num(f.get("b_count"))
+    if rice_g <= 0:
+        return 0.0, 0.0
+    bonus = _b_from_kcal(rice_g * SUSHI_RICE_KCAL_PER_G) - already
+    return rice_g, (round(bonus * 2) / 2 if bonus > 0 else 0.0)
+
+
 # ── 1回の食事に写っている「皿（小鉢）の数」を数える（オーナーの仮説の検証用 2026-10-03） ──
 # 仮説：「減量に苦戦している人は小鉢が6個ほど並んでいて、知らず知らずのうちにB食材が増えている」。
 # AIの解析結果は1皿を複数の行に分けることがある（揚げ物の「本体」と「吸収油」、豚汁の
@@ -7498,6 +7577,9 @@ def _summarize_day_meals(payload_str):
     sweet_kcal = _day_sweet_b0_kcal(day_foods)
     sweet_bonus = _day_sweet_bonus_b(sweet_kcal)
     b_total += sweet_bonus
+    # 寿司のシャリの1日累積ルール（オーナー指示 2026-10-13）
+    sushi_rice_g, sushi_bonus = _day_sushi_bonus(day_foods)
+    b_total += sushi_bonus
     return {"meal_count": count, "protein_g": round(protein, 1),
             "veg_g": round(veg, 1), "fruit_g": (None if fruit is None else round(fruit, 1)),
             "kcal": (round(kcal, 1) if kcal_known else None), "b_count": round(b_total, 2),
@@ -7505,7 +7587,8 @@ def _summarize_day_meals(payload_str):
             "dish_count": dish, "b_dish_count": b_dish,
             "small_b_count": small_b, "small_b_kcal": round(small_b_kcal, 1),
             # お菓子・スイーツ・ジュースの1日累積ルール（デイリーレポートで適用人数を出す）
-            "sweet_kcal": round(sweet_kcal, 1), "sweet_bonus": sweet_bonus}
+            "sweet_kcal": round(sweet_kcal, 1), "sweet_bonus": sweet_bonus,
+            "sushi_rice_g": round(sushi_rice_g, 1), "sushi_bonus": sushi_bonus}
 
 
 # 記録件数に数える操作（action_log）。写真・文章・コピーご飯・Bだけ追加（廃止前の分）。

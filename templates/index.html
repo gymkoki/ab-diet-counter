@@ -867,6 +867,11 @@
     <span style="font-size:14px">お菓子・スイーツ・ジュース 合計<span id="sweet-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal</span><br>
     <span style="font-size:13px;opacity:0.85">（<span id="sweet-bonus-rule">120〜200kcal → ＋0.5</span>）</span>
   </div>
+  <div id="sushi-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);line-height:1.5">
+    <span style="display:inline-block;background:#FFF;color:#E8622C;font-weight:800;border-radius:999px;padding:1px 12px">🍣 特別ルール適用！ ＋<span id="sushi-bonus-num">0.5</span>カウント</span><br>
+    <span style="font-size:14px">寿司のシャリ 合計<span id="sushi-bonus-rice" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>g（約<span id="sushi-bonus-kcal" style="font-variant-numeric:tabular-nums">0</span>kcal）</span><br>
+    <span style="font-size:13px;opacity:0.85">（1貫ずつはB0でも、全部のシャリで数えます）</span>
+  </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
     🥩 タンパク質 <span id="protein-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="protein-target-text" style="opacity:0.85"></span>
   </div>
@@ -1515,7 +1520,7 @@ function saveState() {
     // 過去日編集中：サーバーのその日へ保存（今日のローカルは触らない）
     scheduleMealSync(_editingDate, payload);
     const _editItems = MEALS.reduce((arr,m) => arr.concat(state[m.id].items.filter(i=>i.result)), []);
-    const foodTotal = _editItems.reduce((a,i)=>a+(i.result.total_b_count||0), 0) + daySweetBonusB(_editItems);
+    const foodTotal = _editItems.reduce((a,i)=>a+(i.result.total_b_count||0), 0) + daySpecialBonusB(_editItems);
     const net = Math.max(0, foodTotal - getExBCountForDate(_editingDate));
     submitDailyB(net, _editingDate);
     return;
@@ -1707,7 +1712,7 @@ async function backfillCharaLog() {
           });
         });
         if (count === 0) continue;
-        foodTotal += daySweetBonusB(allItems);   // お菓子・スイーツ・ジュースの1日累積ルール（+0.5／+1）を反映
+        foodTotal += daySpecialBonusB(allItems);   // 特別ルール（お菓子・スイーツ・ジュース／寿司のシャリの1日累積）を反映
         setCharaLogEntry(date, scoreFromTotals(foodTotal, protein, veg, getExBCountForDate(date), count).score);
         submitDailyB(blog[date], date);   // サーバーにも保存して他の端末のカレンダーにも出す
         changed = true;
@@ -1882,7 +1887,7 @@ function flushPreviousDayIfNeeded() {
     }
   });
   // お菓子の1日累積ルール：前日分にも +1 を反映
-  foodTotal += daySweetBonusB(allItems);
+  foodTotal += daySpecialBonusB(allItems);
 
   // 運動分を差し引いた純カウントを履歴へ保存
   if (foodTotal > 0) {
@@ -2021,6 +2026,9 @@ function updateDailyTotal() {
   const sweetKcal  = daySweetB0Kcal(allItems);
   const sweetBonus = daySweetBonusB(allItems);
   foodTotal += sweetBonus;
+  // 寿司のシャリの1日累積ルール（1貫ずつB0でも、シャリの合計で足す）
+  const sushi = daySushiBonus(allItems);
+  foodTotal += sushi.bonus;
   const exBc = getExBCountForDate(currentDate());
   const net  = Math.max(0, foodTotal - exBc);
   const el = document.getElementById('daily-total-count');
@@ -2055,6 +2063,18 @@ function updateDailyTotal() {
       sBar.style.display = '';
     } else {
       sBar.style.display = 'none';
+    }
+  }
+
+  const suBar = document.getElementById('sushi-bonus-bar');
+  if (suBar) {
+    if (sushi.bonus > 0) {
+      document.getElementById('sushi-bonus-num').textContent  = fmtCount(sushi.bonus);
+      document.getElementById('sushi-bonus-rice').textContent = Math.round(sushi.riceG);
+      document.getElementById('sushi-bonus-kcal').textContent = Math.round(sushi.riceG * SUSHI_RICE_KCAL_PER_G);
+      suBar.style.display = '';
+    } else {
+      suBar.style.display = 'none';
     }
   }
 
@@ -2218,7 +2238,7 @@ function calcCharaScore() {
       veg       += mealVeg(i.result);
     });
   });
-  foodTotal += daySweetBonusB(allItems);   // お菓子・スイーツ・ジュースの1日累積ルール（+0.5／+1）を反映
+  foodTotal += daySpecialBonusB(allItems);   // 特別ルール（お菓子・スイーツ・ジュース／寿司のシャリの1日累積）を反映
   const exBc = getExBCountForDate(currentDate());
   const s = scoreFromTotals(foodTotal, protein, veg, exBc, count);
   s.count = count;
@@ -2982,6 +3002,40 @@ function sweetBonusFromKcal(kcal) {
 }
 function daySweetBonusB(items) {
   return sweetBonusFromKcal(daySweetB0Kcal(items));
+}
+
+// ═══════════════════════════════════════════
+//  寿司のシャリの1日累積ルール（オーナー指示 2026-10-13：「寿司はお菓子同様、特別ルール適用」）
+//  1貫ずつではシャリが少なくB0でも、全部食べればご飯1〜2杯分になる。
+//  その日の寿司のシャリ（各食材の sushi_rice_g）の合計kcalでSTEP2を当て、
+//  寿司の項目に既に付いているBとの差を足す（二重計上しない）。
+//  ※サーバー側（app.py の _day_sushi_bonus / _b_from_kcal）と同じ計算にすること。
+// ═══════════════════════════════════════════
+const SUSHI_RICE_KCAL_PER_G = 1.68;
+
+// 実kcal → Bカウント（解析ルールのSTEP2と同じ。400超は200kcalごとに+0.5）
+function bFromKcal(kcal) {
+  if (kcal < 120) return 0;
+  if (kcal <= 200) return 0.5;
+  if (kcal <= 400) return 1;
+  return 2 + 0.5 * Math.max(0, Math.ceil((kcal - 400) / 200) - 1);
+}
+function daySushiBonus(items) {
+  let riceG = 0, already = 0;
+  (items || []).forEach(i => {
+    const foods = (i.result && Array.isArray(i.result.foods)) ? i.result.foods : [];
+    foods.forEach(f => {
+      const g = Number(f && f.sushi_rice_g) || 0;
+      if (g > 0) { riceG += g; already += Number(f.b_count) || 0; }
+    });
+  });
+  if (riceG <= 0) return { riceG: 0, bonus: 0 };
+  const diff = bFromKcal(riceG * SUSHI_RICE_KCAL_PER_G) - already;
+  return { riceG, bonus: diff > 0 ? Math.round(diff * 2) / 2 : 0 };
+}
+// その日の特別ルールの追加B（お菓子・スイーツ・ジュース＋寿司のシャリ）
+function daySpecialBonusB(items) {
+  return daySweetBonusB(items) + daySushiBonus(items).bonus;
 }
 
 // 1日のタンパク質目標(g)。体重×1.2〜1.6g/日の幅を持たせる（体重未設定ならnull）。
@@ -4108,6 +4162,7 @@ function setFoodQty(mealId, itemId, foodIndex, factor) {
       veg_g: food.veg_g,
       fruit_g: food.fruit_g,
       sweet_kcal: food.sweet_kcal,
+      sushi_rice_g: food.sushi_rice_g,
       amount: food.amount,
     };
   }
@@ -4123,6 +4178,7 @@ function setFoodQty(mealId, itemId, foodIndex, factor) {
   food.veg_g     = Math.round((Number(base.veg_g)     || 0) * next);
   if (base.fruit_g   !== undefined) food.fruit_g   = Math.round((Number(base.fruit_g)   || 0) * next);
   if (base.sweet_kcal !== undefined) food.sweet_kcal = Math.round((Number(base.sweet_kcal) || 0) * next);
+  if (base.sushi_rice_g !== undefined) food.sushi_rice_g = Math.round((Number(base.sushi_rice_g) || 0) * next);
   food.amount = next === 1 ? base.amount
                            : `${base.amount ? base.amount + ' ' : ''}×${next}`;
   food.qtyFactor = next === 1 ? undefined : next;
@@ -4142,6 +4198,7 @@ function recalcResultTotals(result) {
   result.total_veg_g     = Math.round(sum('veg_g'));
   result.total_fruit_g   = Math.round(sum('fruit_g'));
   result.total_sweet_kcal = Math.round(sum('sweet_kcal'));
+  result.total_sushi_rice_g = Math.round(sum('sushi_rice_g'));
   return result;
 }
 
