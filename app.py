@@ -823,6 +823,22 @@ def init_db():
             )
         """)
 
+        # 会員本人が履歴から「その日に何を食べたか」を見返すための食事アルバム（会員の声 2026-10-14）。
+        # daily_meals は5日で消えるため、小さなサムネ・料理名・Bだけを MEAL_ALBUM_RETAIN_DAYS 日残す。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS meal_album (
+                user_id    TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                item_id    TEXT NOT NULL,
+                slot       TEXT,
+                thumb      TEXT,
+                foods      TEXT,
+                b_count    REAL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, date, item_id)
+            )
+        """)
+
         # 端末連携コード（デスクトップ⇔スマホで同じ記録を共有するための一時コード）
         cur.execute("""
             CREATE TABLE IF NOT EXISTS link_codes (
@@ -3478,6 +3494,11 @@ def _rotation_order(pool, last_shown, today, group, today_pick=()):
 def _shrink_report_photo(src):
     """食事写真（data:image のbase64）をレポート用サムネに縮小する。
     縮小できないときは None を返す（載せない）。"""
+    return _shrink_data_url(src, REPORT_PHOTO_THUMB_PX, REPORT_PHOTO_THUMB_Q)
+
+
+def _shrink_data_url(src, px, quality):
+    """data:image のbase64を、長辺 px 以内の JPEG に縮小する。できないときは None。"""
     if Image is None:
         return None
     try:
@@ -3488,13 +3509,13 @@ def _shrink_report_photo(src):
         im = Image.open(io.BytesIO(raw))
         # JPEGは draft で読み込み時点から間引けるので、大きい写真でも速い
         try:
-            im.draft("RGB", (REPORT_PHOTO_THUMB_PX * 2, REPORT_PHOTO_THUMB_PX * 2))
+            im.draft("RGB", (px * 2, px * 2))
         except Exception:
             pass
         im = im.convert("RGB")
-        im.thumbnail((REPORT_PHOTO_THUMB_PX, REPORT_PHOTO_THUMB_PX))
+        im.thumbnail((px, px))
         buf = io.BytesIO()
-        im.save(buf, format="JPEG", quality=REPORT_PHOTO_THUMB_Q, optimize=True)
+        im.save(buf, format="JPEG", quality=quality, optimize=True)
         return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
     except Exception:
         return None
@@ -7841,7 +7862,145 @@ def post_daily_meals():
             conn.commit()
         finally:
             conn.close()
+    # 履歴から見返すための食事アルバムにも反映（失敗しても保存は成功扱い）
+    _save_meal_album(uid, date, payload_str)
     return jsonify({"ok": True})
+
+
+# ══════════════════════════════════════════════════════════════
+#  食事アルバム：会員本人が履歴から「その日に何を食べたか」を見返す（会員の声 2026-10-14）
+#  「履歴のグラフを見て、体重管理が上手くいっている時に何を食べていたのか確認したい」。
+#  明細(daily_meals)は5日で消えるので、記録1件ごとに小さなサムネ・料理名・Bだけを別に残す。
+#  サムネは小さく（長辺 MEAL_ALBUM_THUMB_PX）して、DBが膨らまないようにする。
+# ══════════════════════════════════════════════════════════════
+MEAL_ALBUM_RETAIN_DAYS = 60     # 履歴の体重グラフ（直近50日）を少し上回る期間
+MEAL_ALBUM_THUMB_PX = 200
+MEAL_ALBUM_THUMB_Q = 55
+
+
+def _sync_meal_album(cur, uid, date, payload):
+    """1日ぶんの食事payloadをアルバムへ反映する。
+    ・新しい写真だけ縮小する（既にサムネがある記録は料理名・Bだけ更新）
+    ・その日の記録から消えたもの（会員が削除した記録）はアルバムからも消す
+    ・MEAL_ALBUM_RETAIN_DAYS より古い分は消す"""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return
+    if not isinstance(payload, dict):
+        return
+    cur.execute(f"SELECT item_id, thumb IS NOT NULL FROM meal_album WHERE user_id={PH} AND date={PH}",
+                (uid, date))
+    has_thumb = {str(r[0]): bool(r[1]) for r in cur.fetchall()}
+    keep = set()
+    ts = datetime.datetime.now(JST).isoformat()
+    for key in MEAL_SECTION_KEYS:
+        sec = payload.get(key)
+        if not isinstance(sec, dict):
+            continue
+        for item in (sec.get("items") or []):
+            if not isinstance(item, dict) or item.get("id") is None:
+                continue
+            res = item.get("result")
+            if not isinstance(res, dict):
+                continue
+            iid = str(item["id"])
+            keep.add(iid)
+            names = "・".join(str(f.get("name")) for f in (res.get("foods") or [])
+                             if isinstance(f, dict) and f.get("name"))
+            if not names:
+                names = (item.get("text") or "").strip()
+            b = res.get("total_b_count")
+            b = float(b) if isinstance(b, (int, float)) else None
+            try:
+                slot = _guess_meal_slot(item, res, date, key)
+            except Exception:
+                slot = None
+            thumb = None
+            src = item.get("previewSrc")
+            if not has_thumb.get(iid) and isinstance(src, str) and src.startswith("data:image"):
+                thumb = _shrink_data_url(src, MEAL_ALBUM_THUMB_PX, MEAL_ALBUM_THUMB_Q)
+            if iid in has_thumb:
+                if thumb:
+                    cur.execute(f"UPDATE meal_album SET slot={PH}, foods={PH}, b_count={PH}, thumb={PH} "
+                                f"WHERE user_id={PH} AND date={PH} AND item_id={PH}",
+                                (slot, names[:300], b, thumb, uid, date, iid))
+                else:
+                    cur.execute(f"UPDATE meal_album SET slot={PH}, foods={PH}, b_count={PH} "
+                                f"WHERE user_id={PH} AND date={PH} AND item_id={PH}",
+                                (slot, names[:300], b, uid, date, iid))
+            else:
+                cur.execute(f"INSERT INTO meal_album (user_id, date, item_id, slot, thumb, foods, b_count, created_at) "
+                            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+                            (uid, date, iid, slot, thumb, names[:300], b, ts))
+    for iid in set(has_thumb) - keep:
+        cur.execute(f"DELETE FROM meal_album WHERE user_id={PH} AND date={PH} AND item_id={PH}",
+                    (uid, date, iid))
+    cutoff = (datetime.datetime.now(JST).date()
+              - datetime.timedelta(days=MEAL_ALBUM_RETAIN_DAYS)).isoformat()
+    cur.execute(f"DELETE FROM meal_album WHERE user_id={PH} AND date < {PH}", (uid, cutoff))
+
+
+def _save_meal_album(uid, date, payload):
+    """食事の保存とは別の接続で反映する（失敗しても食事の保存は止めない）。"""
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                _sync_meal_album(cur, uid, date, payload)
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        print(f"[meal-album] skipped: {type(e).__name__}: {e}")
+
+
+@app.route("/api/meal-album")
+def get_meal_album():
+    """【会員本人用】自分の食事アルバム（直近 MEAL_ALBUM_RETAIN_DAYS 日・日付ごと）。
+    まだアルバムに入っていない日の明細（daily_meals に残っている直近の日）があれば先に取り込む。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid:
+        return jsonify({"days": {}})
+    since = (datetime.datetime.now(JST).date()
+             - datetime.timedelta(days=MEAL_ALBUM_RETAIN_DAYS)).isoformat()
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT DISTINCT date FROM meal_album WHERE user_id={PH}", (uid,))
+            have = {r[0] for r in cur.fetchall()}
+            cur.execute(f"SELECT date, payload FROM daily_meals WHERE user_id={PH} AND date>={PH}",
+                        (uid, since))
+            missing = [(d, p) for d, p in cur.fetchall() if d not in have]
+        finally:
+            conn.close()
+        for d, p in missing:
+            _save_meal_album(uid, d, p)
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT date, item_id, slot, thumb, foods, b_count FROM meal_album "
+                        f"WHERE user_id={PH} AND date>={PH}", (uid, since))
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[meal-album] read failed: {type(e).__name__}: {e}")
+        return jsonify({"days": {}, "retain_days": MEAL_ALBUM_RETAIN_DAYS})
+
+    def order(r):
+        try:
+            return int(r[1])
+        except (TypeError, ValueError):
+            return 0
+    days = {}
+    for d, iid, slot, thumb, foods, b in sorted(rows, key=lambda r: (r[0], order(r))):
+        days.setdefault(d, []).append({"id": iid, "slot": slot, "thumb": thumb,
+                                       "foods": foods or "", "b_count": b})
+    return jsonify({"days": days, "retain_days": MEAL_ALBUM_RETAIN_DAYS})
 
 
 @app.route("/api/my-meal-counts")
