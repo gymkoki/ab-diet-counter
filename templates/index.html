@@ -643,7 +643,24 @@
     .diary-row input { flex:1; min-width:0; padding:11px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:16px; font-family:inherit; }
     .diary-row button { padding:11px 16px; border:none; border-radius:var(--radius-sm); background:var(--primary); color:#fff; font-size:16px; font-weight:800; cursor:pointer; white-space:nowrap; }
     .diary-note { font-size:15px; color:var(--primary-dark); font-weight:700; margin-top:6px; min-height:18px; }
-    #weight-overlay, #hist-edit-overlay, #copy-picker-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(23,19,16,0.5); backdrop-filter:blur(2px); align-items:center; justify-content:center; padding:24px; }
+    /* 食事アルバム（履歴から「その日に何を食べたか」を見返す） */
+    .history-row.has-album { border-bottom:none; padding-bottom:6px; }
+    .hist-thumbs { display:flex; gap:5px; padding:0 4px 12px; border-bottom:1px solid var(--border); overflow-x:auto; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    .month-acc .hist-thumbs { padding-left:12px; }
+    .hist-thumbs img, .hist-thumbs .ht-txt { width:46px; height:46px; flex-shrink:0; border-radius:8px; object-fit:cover; background:var(--surface-2, #F5F1EC); }
+    .hist-thumbs .ht-txt { display:flex; align-items:center; justify-content:center; font-size:20px; }
+    .hist-thumbs .ht-more { align-self:center; font-size:14px; font-weight:800; color:var(--text-muted); padding:0 4px; white-space:nowrap; }
+    .album-sub { font-size:15px; color:var(--text-muted); font-weight:700; margin:-4px 0 12px; text-align:left; }
+    .album-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left; }
+    .album-item { border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface); }
+    .album-item img, .album-item .ai-txt { display:block; width:100%; aspect-ratio:1/1; object-fit:cover; background:#F5F1EC; }
+    .album-item .ai-txt { display:flex; align-items:center; justify-content:center; font-size:30px; }
+    .album-item .ai-body { padding:6px 8px 8px; font-size:13px; line-height:1.5; }
+    .album-item .ai-slot { display:inline-block; font-size:12px; font-weight:800; color:#fff; background:var(--primary); border-radius:999px; padding:0 7px; margin-right:4px; }
+    .album-item .ai-b { font-weight:800; color:var(--b-color); white-space:nowrap; }
+    .album-empty { font-size:15px; color:var(--text-muted); line-height:1.8; padding:12px 4px; text-align:left; }
+    .chart-hint { font-size:14px; color:var(--text-muted); margin-top:4px; }
+    #weight-overlay, #hist-edit-overlay, #copy-picker-overlay, #meal-album-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(23,19,16,0.5); backdrop-filter:blur(2px); align-items:center; justify-content:center; padding:24px; }
     #weight-overlay.show, #hist-edit-overlay.show, #copy-picker-overlay.show { display:flex; }
     .hist-edit-btn { background:var(--surface); border:1px solid var(--primary-line); color:var(--primary-dark); border-radius:var(--radius-sm); padding:8px 14px; font-size:15px; font-weight:800; cursor:pointer; flex-shrink:0; margin-left:10px; white-space:nowrap; }
     .hist-edit-btn:active { border-color:var(--primary); color:var(--primary); background:var(--primary-soft); }
@@ -783,7 +800,7 @@
     .btn-reedit:active { background:var(--primary-soft); }
 
     /* ── lightbox ── */
-    #lightbox { display:none; position:fixed; inset:0; z-index:300; background:rgba(12,10,9,0.92); align-items:center; justify-content:center; cursor:zoom-out; }
+    #lightbox { display:none; position:fixed; inset:0; z-index:600; background:rgba(12,10,9,0.92); align-items:center; justify-content:center; cursor:zoom-out; }
     #lightbox.show { display:flex; }
     #lightbox img { max-width:96vw; max-height:92vh; object-fit:contain; border-radius:8px; cursor:default; }
     #lightbox-close { position:absolute; top:16px; right:16px; width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.14); color:white; border:none; font-size:19px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -958,6 +975,7 @@
         <span style="color:#FF6B35">🍽️ Bカウント（左）</span> ／ <span style="color:#10B981">🏃 運動（棒）</span> ／ <span style="color:#2563EB">⚖️ 体重（右）</span>
       </div>
       <div id="weight-chart"></div>
+      <div class="chart-hint">👆 グラフの日付をタップすると、その日に食べたものを見返せます</div>
     </div>
     <div id="history-list" style="margin-top:16px"></div>
   </div>
@@ -977,6 +995,16 @@
     <button class="btn-hist-meal-edit" id="hist-meal-edit-btn" style="display:none" onclick="enterPastEdit(_histEditDate)">✏️ この日の記録を編集（食事・運動・体重）</button>
     <div id="hist-meal-edit-note" style="display:none;font-size:14px;color:var(--text-muted);line-height:1.6;margin-top:8px;text-align:left"></div>
     <button class="weight-cancel" onclick="closeHistEdit()">閉じる</button>
+  </div>
+</div>
+
+<!-- 食事アルバム：その日に食べたもの（履歴のグラフ・一覧から開く） -->
+<div id="meal-album-overlay" onclick="closeMealAlbum()">
+  <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:380px;max-height:88vh;overflow-y:auto">
+    <h3 id="meal-album-title">📷 食事</h3>
+    <div class="album-sub" id="meal-album-sub"></div>
+    <div id="meal-album-list"></div>
+    <button class="weight-cancel" onclick="closeMealAlbum()">閉じる</button>
   </div>
 </div>
 
@@ -1557,6 +1585,8 @@ async function submitDailyMeals(date, payload) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: USER_ID, date, payload })
     });
+    // 食事アルバム（履歴で見返す写真）を次に履歴を開いたときに取り直す
+    try { _mealAlbumAt = 0; } catch(_) {}
   } catch(e) {}
 }
 
@@ -5597,7 +5627,7 @@ function _paintHistory(daily) {
       ? `<div class="history-diary">📝 ${esc(d.diary)}</div>`
       : '';
     return `
-      <div class="history-row">
+      <div class="history-row" data-hist-date="${d.date}">
         <div class="history-date">${fmtDate(d.date)}<span class="dow">(${dow(d.date)})</span></div>
         <div style="display:flex;align-items:center">
           <div style="text-align:right">${countHtml}${diaryHtml}</div>
@@ -5624,9 +5654,11 @@ function _paintHistory(daily) {
         ${rows}
       </details>`;
   }).join('');
+  _paintHistoryThumbs();
 }
 
 async function loadHistory() {
+  loadMealAlbum();   // 食事アルバム（写真）は別に読み込み、届いたら一覧にサムネを差し込む
   const listEl = document.getElementById('history-list');
   // 「日付を選んで記入」は今日までを選択可能にする
   const addDate = document.getElementById('hist-add-date');
@@ -5733,7 +5765,90 @@ function renderWeightChart(daily) {
   const axisL = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
   const axisR = `<line x1="${W-padR}" y1="${padT}" x2="${W-padR}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
   const axisX = `<line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#000" stroke-width="1"/>`;
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${midLine}${axisL}${axisR}${axisX}${bars}${bLine}${wLine}${bDots}${wDots}${leftLab}${rightLab}${xLab}</svg>`;
+  // 日付ごとのタップ領域（透明）：その日の食事アルバムを開く
+  const hit = pts.map((p, i) => {
+    const x0 = i === 0 ? padL : (X(i - 1) + X(i)) / 2;
+    const x1 = i === n - 1 ? W - padR : (X(i) + X(i + 1)) / 2;
+    return `<rect x="${x0.toFixed(1)}" y="0" width="${Math.max(1, x1 - x0).toFixed(1)}" height="${H}" fill="transparent" style="cursor:pointer" onclick="openMealAlbum('${p.date}')"/>`;
+  }).join('');
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${midLine}${axisL}${axisR}${axisX}${bars}${bLine}${wLine}${bDots}${wDots}${leftLab}${rightLab}${xLab}${hit}</svg>`;
+}
+
+// ═══════════════════════════════════════════
+//  食事アルバム（会員の声 2026-10-14）
+//  「履歴のグラフを見て、体重管理が上手くいっている時に何を食べていたのか確認したい」。
+//  サーバーに残した小さなサムネ・料理名・B（直近60日）を、履歴の一覧とグラフから見返せるようにする。
+// ═══════════════════════════════════════════
+let _mealAlbum = null, _mealAlbumAt = 0, _mealAlbumPromise = null;
+
+function loadMealAlbum(force) {
+  // 履歴を開くたびに取り直すと通信が重いので、5分以内なら使い回す
+  if (!force && _mealAlbum && Date.now() - _mealAlbumAt < 5 * 60 * 1000) {
+    _paintHistoryThumbs();
+    return Promise.resolve(_mealAlbum);
+  }
+  if (_mealAlbumPromise) return _mealAlbumPromise;
+  _mealAlbumPromise = fetch(`/api/meal-album?user_id=${encodeURIComponent(USER_ID)}`)
+    .then(r => r.json())
+    .then(d => { _mealAlbum = d || { days: {} }; _mealAlbumAt = Date.now(); _paintHistoryThumbs(); return _mealAlbum; })
+    .catch(() => _mealAlbum)
+    .finally(() => { _mealAlbumPromise = null; });
+  return _mealAlbumPromise;
+}
+
+function _paintHistoryThumbs() {
+  if (!_mealAlbum || !_mealAlbum.days) return;
+  document.querySelectorAll('#history-list .history-row[data-hist-date]').forEach(row => {
+    const date = row.getAttribute('data-hist-date');
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains('hist-thumbs')) next.remove();
+    const items = _mealAlbum.days[date] || [];
+    row.classList.toggle('has-album', items.length > 0);
+    if (!items.length) return;
+    const MAX = 6;
+    const strip = document.createElement('div');
+    strip.className = 'hist-thumbs';
+    strip.setAttribute('onclick', `openMealAlbum('${date}')`);
+    strip.innerHTML = items.slice(0, MAX).map(it => it.thumb
+        ? `<img src="${it.thumb}" alt="" loading="lazy">`
+        : `<div class="ht-txt">📝</div>`).join('')
+      + (items.length > MAX ? `<span class="ht-more">+${items.length - MAX}</span>` : '');
+    row.after(strip);
+  });
+}
+
+async function openMealAlbum(date) {
+  const fmt = s => { const d = new Date(s + 'T00:00:00'); return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAY_JA[d.getDay()]})`; };
+  const day = (_histDaily && _histDaily[date]) || {};
+  document.getElementById('meal-album-title').textContent = `📷 ${fmt(date)} に食べたもの`;
+  const sub = [];
+  if (day.b_count != null) sub.push(`B${fmtCount(day.b_count)}`);
+  if (day.weight != null) sub.push(`体重 ${day.weight}kg`);
+  document.getElementById('meal-album-sub').textContent = sub.join(' ／ ');
+  const list = document.getElementById('meal-album-list');
+  document.getElementById('meal-album-overlay').style.display = 'flex';
+  if (!_mealAlbum) {
+    list.innerHTML = '<div class="album-empty">読み込み中…</div>';
+    await loadMealAlbum();
+  }
+  const items = (_mealAlbum && _mealAlbum.days && _mealAlbum.days[date]) || [];
+  const keep = (_mealAlbum && _mealAlbum.retain_days) || 60;
+  if (!items.length) {
+    list.innerHTML = `<div class="album-empty">この日の食事の記録は残っていません。<br>食べたもの（写真・料理名）は直近${keep}日分まで見返せます。</div>`;
+    return;
+  }
+  list.innerHTML = `<div class="album-grid">${items.map(it => `
+    <div class="album-item">
+      ${it.thumb ? `<img src="${it.thumb}" alt="" onclick="openLightbox('${it.thumb}')">` : '<div class="ai-txt">📝</div>'}
+      <div class="ai-body">
+        ${it.slot ? `<span class="ai-slot">${esc(it.slot)}</span>` : ''}${esc(it.foods || '')}
+        ${it.b_count != null ? ` <span class="ai-b">B${fmtCount(it.b_count)}</span>` : ''}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+function closeMealAlbum() {
+  document.getElementById('meal-album-overlay').style.display = 'none';
 }
 
 // ── 履歴の編集（過去の日のBカウント・体重を修正）──
