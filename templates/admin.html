@@ -1602,7 +1602,7 @@
       // 朝・昼・夕・間食の比較（オーナー質問 2026-10-12「体感的に夕食の写真が上がっていない気がする」）
       const slot = (d.slot_results && d.slot_results.length) ? `
         <div style="font-size:14px;font-weight:800;color:#374151;margin:18px 0 6px">🍽 朝・昼・夕・間食の記録のしかた</div>
-        <div style="font-size:12px;color:#6B7280;margin-bottom:8px">1件でも記録した日のうち、その時間帯に記録があった日の割合。「間食」は同じ時間帯に2件目以降の記録があった日。差は％の差（ポイント）。</div>
+        <div style="font-size:12px;color:#6B7280;margin-bottom:8px">1件でも記録した日のうち、その時間帯に記録があった日の割合（写真・文章・コピーご飯のどれでも数える）。「間食」は同じ時間帯に2件目以降の記録があった日。差は％の差（ポイント）。</div>
         ${tableOf(toRows(d.slot_results))}${sentencesOf(d.slot_results)}` : '';
       const gname = { loss: '成功群', gain: '失敗群' };
       const mem = d.members.length ? `<details style="margin-top:12px">
