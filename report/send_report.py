@@ -746,6 +746,24 @@ def _photo_rate_line(rate) -> str:
             f'📷 食事の写真：{body}</div>')
 
 
+def _exercise_line(member) -> str:
+    """運動でBを相殺している会員に「運動でいくつ相殺したか」の1行を出す（オーナー指示 2026-10-15）。
+    見出しの「平均 ◯ B/日」は運動を差し引いた後の値なので、食事だけのBも並べて分かるようにする。
+    運動の記録が無い会員には出さない。"""
+    ex = member.get("ex_b_7d")
+    avg_b = member.get("avg_b_7d")
+    if not isinstance(ex, (int, float)) or ex <= 0:
+        return ""
+    if isinstance(avg_b, (int, float)):
+        body = (f'1日平均 <b style="color:#059669">−{ex:g} B</b> を相殺'
+                f'<span style="color:#9CA3AF">（食事だけなら {avg_b + ex:.1f} B/日 → '
+                f'運動を引いて {avg_b:.1f} B/日・直近7日）</span>')
+    else:
+        body = f'1日平均 <b style="color:#059669">−{ex:g} B</b> を相殺<span style="color:#9CA3AF">（直近7日）</span>'
+    return (f'\n      <div style="font-size:12px;color:#374151;line-height:1.7">'
+            f'🏃 運動：{body}</div>')
+
+
 def _intake_line(intake) -> str:
     """「直近7日（昨日まで）のタンパク質・野菜の1日平均」の1行（オーナー指示 2026-10-15）。
     記録が少ない日（1回だけの日）は平均に入れない。データが無ければ出さない。"""
@@ -809,6 +827,11 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         day_b = ph.get("day_b_count")
         # 写真の幅が狭いので「この日の合計」は日付の次の行に置く（途中で折り返さないように）
         day_lbl = f"<br>この日の合計 B{day_b:g}" if isinstance(day_b, (int, float)) else ""
+        # 運動でBを相殺した日は、その分と差し引き後のBも添える（オーナー指示 2026-10-15）
+        day_ex = ph.get("day_ex_b")
+        if day_lbl and isinstance(day_ex, (int, float)) and day_ex > 0:
+            day_lbl += (f'<br><span style="color:#059669">🏃運動 −{day_ex:g} → '
+                        f'B{max(0.0, day_b - day_ex):g}</span>')
         # 朝・昼・夕・間食（記録した時刻と中身からの推測。分からない写真には付けない）
         slot = ph.get("meal_slot")
         slot_lbl = f'<b class="ps">{slot}</b> ' if slot in MEAL_SLOT_LABELS else ""
@@ -836,7 +859,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         <span style="color:{color};margin-left:8px">30日 {change_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
-      </div>{_photo_rate_line(member.get("photo_rate"))}{_intake_line(member.get("intake"))}{progress_html}
+      </div>{_photo_rate_line(member.get("photo_rate"))}{_exercise_line(member)}{_intake_line(member.get("intake"))}{progress_html}
       <table cellpadding="0" cellspacing="0" border="0">{rows}</table>
     </div>"""
 

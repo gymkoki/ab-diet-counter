@@ -3365,6 +3365,18 @@ def _collect_cut_member_stats():
         )
         b7 = {r[0]: (round(float(r[1]), 1), int(r[2])) for r in cur.fetchall() if r[0] in cut}
 
+        # 同じ7日間（Bの記録がある日）に、運動で相殺したBの1日平均（オーナー指示 2026-10-15）。
+        # daily_b_count は「食事のB − 運動のB」なので、平均B＋この値が食事だけのBの目安になる。
+        cur.execute(
+            f"""SELECT b.user_id, SUM(COALESCE(e.ex_b_count, 0)), COUNT(*)
+               FROM daily_b_count b LEFT JOIN daily_exercise e
+                 ON e.user_id = b.user_id AND e.date = b.date
+               WHERE b.date>={PH} GROUP BY b.user_id""",
+            (d7_start,)
+        )
+        ex7 = {r[0]: round(float(r[1] or 0) / int(r[2]), 1) for r in cur.fetchall()
+               if r[0] in cut and r[2]}
+
         cur.execute("SELECT user_id, MAX(date) FROM daily_b_count GROUP BY user_id")
         last_by_uid = {r[0]: r[1] for r in cur.fetchall()}
 
@@ -3425,6 +3437,7 @@ def _collect_cut_member_stats():
             "latest_weight_kg": latest_w,
             "change_30d_kg": change,
             "avg_b_7d": avg_b,
+            "ex_b_7d": ex7.get(uid) or 0.0,
             "recorded_days_7d": rec_days,
             "days_since": days_since,
             "avg_meals_per_day_7d": avg_meals,
@@ -3597,9 +3610,17 @@ def _member_report_photos(cur, uid, per_member, since_date):
            WHERE user_id={PH} AND date>={PH} ORDER BY date DESC""",
         (uid, since_date),
     )
+    rows = cur.fetchall()
+    # その日に運動で相殺したB（写真の「この日の合計」に添える。オーナー指示 2026-10-15）
+    try:
+        cur.execute(f"SELECT date, ex_b_count FROM daily_exercise WHERE user_id={PH} AND date>={PH}",
+                    (uid, since_date))
+        ex_by_date = {d: float(v) for d, v in cur.fetchall() if isinstance(v, (int, float)) and v > 0}
+    except Exception:
+        ex_by_date = {}
     MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
     photos = []
-    for dt, payload_str in cur.fetchall():
+    for dt, payload_str in rows:
         try:
             payload = json.loads(payload_str)
         except Exception:
@@ -3639,6 +3660,7 @@ def _member_report_photos(cur, uid, per_member, since_date):
                 "veg_g": res.get("total_veg_g"),
                 "foods": "・".join(str(n) for n in foods[:4]),
                 "day_b_count": round(day_b, 1),
+                "day_ex_b": round(ex_by_date[dt], 1) if dt in ex_by_date else None,
                 "meal_slot": slot,          # 「朝」「昼」「夕」「間食」（推測。分からなければ None）
             })
             if len(photos) >= limit:
@@ -3848,6 +3870,8 @@ def admin_report_photos():
                     "user_id_short": mem["user_id_short"],
                     "change_30d_kg": mem["change_30d_kg"],
                     "avg_b_7d": mem.get("avg_b_7d"),
+                    # 運動で相殺したBの1日平均（avg_b_7d は相殺後の値。オーナー指示 2026-10-15）
+                    "ex_b_7d": mem.get("ex_b_7d") or 0.0,
                     "b_target": mem.get("b_target"),
                     "latest_weight_kg": mem.get("latest_weight_kg"),
                     "photos": photos,
