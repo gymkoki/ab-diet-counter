@@ -511,6 +511,24 @@
     </div>
   </div>
 
+  <!-- 3食こまめ記録ポイント／奥松の特別メッセージ（オーナー指示 2026-10-15） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🎁 3食こまめ記録ポイント・奥松の特別メッセージ</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
+      朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録できた日に1ポイント。
+      <b>10ポイントたまった会員だけ</b>が、下に登録した動画を見られます。
+      URLが未登録のあいだは、会員には「ただいま撮影準備中」と表示されます。
+      YouTube に<b>「限定公開」</b>でアップロードし、そのURL（https://youtu.be/… など）を貼ってください。
+    </div>
+    <div id="special-msg-now" style="font-size:13px;color:#374151;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="url" id="special-msg-url" placeholder="https://youtu.be/xxxxxxxxxxx"
+             style="flex:1;min-width:240px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:14px;font-family:inherit">
+      <button class="apikey-save" style="width:auto;padding:8px 18px;font-size:13px" onclick="saveSpecialMessage()">保存</button>
+    </div>
+    <div id="special-msg-status" style="font-size:13px;margin-top:8px"></div>
+  </div>
+
   <!-- 有料化（2026-11-01〜・Stripe）の準備と運用 -->
   <div class="card" style="margin-bottom:20px">
     <h2>💳 有料化（月額1,100円・Stripe）</h2>
@@ -1930,6 +1948,40 @@
     await _postBillingSettings({ legal_info: info });
   }
 
+  // 3食こまめ記録ポイント・奥松の特別メッセージ（2026-10-15〜）
+  async function loadSpecialMessage() {
+    const now = document.getElementById('special-msg-now');
+    if (!now) return;
+    try {
+      const d = await (await fetch('/api/admin/special-message')).json();
+      now.innerHTML = `動画：${d.url ? '<span style="color:#065F46;font-weight:800">登録済み</span>' : '<span style="color:#B45309;font-weight:800">未登録（会員には「撮影準備中」と表示）</span>'}`
+        + `　／　ポイントを1つ以上持っている会員：<b>${d.members_with_points}</b>人`
+        + `　／　${d.goal}ポイント達成：<b>${d.members_unlocked}</b>人`;
+      const inp = document.getElementById('special-msg-url');
+      if (inp && !inp.value) inp.value = d.url || '';
+    } catch (e) {
+      now.textContent = '読み込みに失敗しました';
+    }
+  }
+
+  async function saveSpecialMessage() {
+    const st = document.getElementById('special-msg-status');
+    const url = document.getElementById('special-msg-url').value.trim();
+    try {
+      const r = await fetch('/api/admin/special-message', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const d = await r.json();
+      if (!r.ok) { st.style.color = '#DC2626'; st.textContent = '⚠️ ' + (d.error || '保存に失敗しました'); return; }
+      st.style.color = '#065F46';
+      st.textContent = url ? '✅ 保存しました。10ポイント達成した会員が見られるようになります。' : '✅ URLを外しました（会員には「撮影準備中」と表示）。';
+      loadSpecialMessage();
+    } catch (e) {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 保存に失敗しました';
+    }
+  }
+
   // 会員限定パスワード（2026-09-15〜）
   async function loadMemberGate() {
     const now = document.getElementById('member-gate-now');
@@ -2137,7 +2189,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

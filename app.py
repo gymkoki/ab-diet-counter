@@ -797,6 +797,16 @@ def init_db():
                 value TEXT NOT NULL
             )
         """)
+        # 3食こまめ記録ポイント（オーナー指示 2026-10-15）：朝・昼・夜それぞれの時間帯に
+        # 記録できた日に1ポイント。1人1日1行（同じ日を何度送っても増えない）。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS meal_points (
+                user_id    TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, date)
+            )
+        """)
         # リオールジム会員限定化（2026-09-15〜）：合言葉を入れた端末を記録する。
         # 端末ごとに1行。token は端末が毎回の解析リクエストに付けてくる通行証。
         cur.execute("""
@@ -6813,6 +6823,116 @@ def _build_report_html(target_date: str) -> str:
   </div>
 </div>
 </body></html>"""
+
+
+# ══════════════════════════════════════════════════════════════
+#  3食こまめ記録ポイント（オーナー指示 2026-10-15）
+#  朝・昼・夜の3回とも、その時間帯のうちに記録できた日に1ポイント。
+#  10ポイントたまると「奥松の特別メッセージ」（動画）が見られる。
+#  判定（その日の3つの時間帯がそろったか）は端末側で行い、ここでは「その日に1ポイント」を記録する。
+#  動画のURLは管理画面から登録する（後日撮影・アップロードのため。未登録なら「近日公開」と出す）。
+# ══════════════════════════════════════════════════════════════
+MEAL_POINTS_GOAL = 10
+SPECIAL_MESSAGE_URL_KEY = "special-message-url"
+
+
+def _meal_points_of(uid):
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT date FROM meal_points WHERE user_id={PH} ORDER BY date", (uid,))
+        return [str(r[0])[:10] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _special_message_url():
+    try:
+        return (_get_setting(SPECIAL_MESSAGE_URL_KEY, "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _meal_points_payload(uid):
+    dates = _meal_points_of(uid)
+    unlocked = len(dates) >= MEAL_POINTS_GOAL
+    url = _special_message_url()
+    return {
+        "points": len(dates),
+        "goal": MEAL_POINTS_GOAL,
+        "dates": dates[-60:],
+        "unlocked": unlocked,
+        # 10ポイントに届いた人にだけURLを渡す（届いていない人には「準備中かどうか」だけ）
+        "message_ready": bool(url),
+        "message_url": url if unlocked else None,
+    }
+
+
+@app.route("/api/meal-points", methods=["GET", "POST"])
+def api_meal_points():
+    """GET：ポイントの合計など。POST {user_id, date}：その日の1ポイントを記録する。"""
+    if request.method == "GET":
+        uid = (request.args.get("user_id") or "").strip()
+    else:
+        body = request.get_json(silent=True) or {}
+        uid = (body.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    if request.method == "POST":
+        date = str(body.get("date") or "")[:10]
+        today = datetime.datetime.now(JST).date()
+        try:
+            d = datetime.date.fromisoformat(date)
+        except ValueError:
+            return jsonify({"error": "日付が正しくありません"}), 400
+        # その日のうちに（深夜0〜4時は前日の夜として）記録した分だけ。過去の日はさかのぼって付けない。
+        if d not in (today, today - datetime.timedelta(days=1)):
+            return jsonify({"error": "今日の分だけ記録できます"}), 400
+        try:
+            with _db_lock:
+                conn = _get_conn()
+                try:
+                    cur = conn.cursor()
+                    cur.execute(
+                        f"INSERT INTO meal_points (user_id, date, created_at) VALUES ({PH},{PH},{PH}) "
+                        f"ON CONFLICT DO NOTHING",
+                        (uid, date, datetime.datetime.now(JST).isoformat()))
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception as e:
+            app.logger.warning("meal_points insert failed: %s", e)
+            return jsonify({"error": "保存できませんでした"}), 500
+    try:
+        return jsonify(_meal_points_payload(uid))
+    except Exception as e:
+        app.logger.warning("meal_points read failed: %s", e)
+        return jsonify({"error": "読み込めませんでした"}), 500
+
+
+@app.route("/api/admin/special-message", methods=["GET", "POST"])
+@_admin_required
+def admin_special_message():
+    """【管理者専用】奥松の特別メッセージ（動画URL）の登録と、ポイントのたまり具合。"""
+    if request.method == "POST":
+        url = str((request.get_json(silent=True) or {}).get("url") or "").strip()
+        if url and not re.match(r"^https://[^\s\"'<>]+$", url):
+            return jsonify({"error": "https:// で始まるURLを入れてください"}), 400
+        _set_setting(SPECIAL_MESSAGE_URL_KEY, url)
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, COUNT(*) FROM meal_points GROUP BY user_id")
+        counts = [r[1] for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return jsonify({
+        "url": _special_message_url(),
+        "goal": MEAL_POINTS_GOAL,
+        "members_with_points": len(counts),
+        "members_unlocked": sum(1 for c in counts if c >= MEAL_POINTS_GOAL),
+        "points_total": sum(counts),
+    })
 
 
 def _get_setting(key: str, default: str = "") -> str:
