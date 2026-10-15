@@ -746,6 +746,26 @@ def _photo_rate_line(rate) -> str:
             f'📷 食事の写真：{body}</div>')
 
 
+def _intake_line(intake) -> str:
+    """「直近7日（昨日まで）のタンパク質・野菜の1日平均」の1行（オーナー指示 2026-10-15）。
+    記録が少ない日（1回だけの日）は平均に入れない。データが無ければ出さない。"""
+    if not isinstance(intake, dict):
+        return ""
+    days = intake.get("days") or 7
+    p, v = intake.get("protein_g"), intake.get("veg_g")
+    if isinstance(p, (int, float)) or isinstance(v, (int, float)):
+        p_s = f"{p:g}g" if isinstance(p, (int, float)) else "—"
+        v_s = f"{v:g}g" if isinstance(v, (int, float)) else "—"
+        body = (f'1日平均 タンパク質 <b>{p_s}</b>・野菜 <b>{v_s}</b>'
+                f'<span style="color:#9CA3AF">（直近{days}日・昨日までのうち、'
+                f'記録が{intake.get("min_meals", 2)}回以上の{intake.get("used_days", 0)}日）</span>')
+    else:
+        body = (f'<span style="color:#9CA3AF">直近{days}日に記録が'
+                f'{intake.get("min_meals", 2)}回以上の日がありません</span>')
+    return (f'\n      <div style="font-size:12px;color:#374151;line-height:1.7">'
+            f'🥗 食べた量：{body}</div>')
+
+
 # 写真に添える時間帯の表示（app.py の _guess_meal_slot が返す値）
 MEAL_SLOT_LABELS = ("朝", "昼", "夕", "間食")
 
@@ -816,7 +836,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         <span style="color:{color};margin-left:8px">30日 {change_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
-      </div>{_photo_rate_line(member.get("photo_rate"))}{progress_html}
+      </div>{_photo_rate_line(member.get("photo_rate"))}{_intake_line(member.get("intake"))}{progress_html}
       <table cellpadding="0" cellspacing="0" border="0">{rows}</table>
     </div>"""
 

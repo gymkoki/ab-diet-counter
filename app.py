@@ -3687,6 +3687,44 @@ def _member_photo_rate(cur, uid, days=PROGRESS_COMPARE_DAYS):
     }
 
 
+def _member_intake(cur, uid, days=PROGRESS_COMPARE_DAYS):
+    """直近 days 日（昨日まで）のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）。
+
+    ・元データは daily_nutrition（1日ぶんの栄養サマリー。明細が消えた日も残る）
+    ・今日は除く（レポートは朝8時に作るので、今日の分は朝食くらいしか入っていない）
+    ・記録が ACHIEVER_MIN_MEALS 回未満の日は除く（1回だけの日は「記録できた量」でしかなく、
+      平均が実際より小さく出る。「減量達成者の食事内容」と同じ考え方）
+    読めなければ None（レポートは止めない）。"""
+    today = datetime.datetime.now(JST).date()
+    first = (today - datetime.timedelta(days=days)).isoformat()
+    last = (today - datetime.timedelta(days=1)).isoformat()
+    try:
+        cur.execute(f"SELECT meal_count, protein_g, veg_g FROM daily_nutrition "
+                    f"WHERE user_id={PH} AND date>={PH} AND date<={PH}", (uid, first, last))
+        rows = cur.fetchall()
+    except Exception as e:
+        app.logger.warning("member intake skipped: %s", e)
+        try:
+            cur.connection.rollback()   # PostgreSQL：失敗したままだと同じ接続の後続の問い合わせが全部落ちる
+        except Exception:
+            pass
+        return None
+    used = [(p, v) for n, p, v in rows if (n or 0) >= ACHIEVER_MIN_MEALS]
+
+    def _avg(vals):
+        vals = [float(x) for x in vals if isinstance(x, (int, float))]
+        return round(sum(vals) / len(vals)) if vals else None
+
+    return {
+        "days": days,
+        "record_days": len(rows),
+        "used_days": len(used),
+        "min_meals": ACHIEVER_MIN_MEALS,
+        "protein_g": _avg(p for p, _ in used),
+        "veg_g": _avg(v for _, v in used),
+    }
+
+
 def _member_progress(cur, uid):
     """会員の「始めたとき → いま」を返す（デイリーレポートのピックアップ用）。
 
@@ -3807,6 +3845,8 @@ def admin_report_photos():
                     "progress": _member_progress(cur, mem["uid"]),
                     # 直近7日の写真の枚数（1日平均。オーナー指示 2026-10-10）
                     "photo_rate": _member_photo_rate(cur, mem["uid"]),
+                    # 直近7日のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）
+                    "intake": _member_intake(cur, mem["uid"]),
                 })
             return picked
 
