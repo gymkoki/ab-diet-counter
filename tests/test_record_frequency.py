@@ -170,55 +170,19 @@ def test_report_no_longer_has_thin_logger_table():
     assert "記録が足りない会員（" not in src
 
 
-# ── アプリ側（記録し忘れに気づける仕掛け） ──────────────────────
-def test_app_shows_remaining_meals():
-    """記録画面に「あと何食」を出していること。"""
+# ── アプリ側 ──────────────────────────────────────────────
+def test_today_record_card_stays_removed():
+    """記録画面の「今日の記録 ◯/3回」カードは削除した（オーナー指示 2026-10-15：
+    上の「記録できていない食事はありませんか？」と下の「3食こまめ記録ポイント」に
+    似た機能があるので要らない）。戻さないこと。"""
     with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
         html = f.read()
-    assert 'id="meal-progress"' in html
-    assert "function renderMealProgress" in html
-    assert "MEAL_TARGET_PER_DAY = 3" in html, "目標は朝・昼・晩の3回"
-    assert "renderMealProgress(allItems.length)" in html, \
-        "記録を足した／消したときに更新されないと数字が古いまま残る"
-
-
-def test_app_counts_in_kai_not_shoku():
-    """単位は「食」ではなく「回」（オーナー指示 2026-09-29）。"""
-    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
-        html = f.read()
-    assert '<span class="mp-count" id="mp-count">0/3回</span>' in html
-    body = html[html.index("function renderMealProgress"):]
-    body = body[:body.index("\nfunction updateDailyTotal")]
-    assert "${MEAL_TARGET_PER_DAY}回" in body
-    assert "あと${rest}回分" in body
-    assert "食`" not in body and "食。" not in body and "食分" not in body, \
-        "「食」が残っています（単位は「回」）"
-
-
-def test_app_first_step_message():
-    """記録ゼロのときの案内文（オーナー指定の文面）。"""
-    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
-        html = f.read()
-    assert "まだ記録がありません。写真を追加して、1回目の食事から始めましょう。" in html
-
-
-def test_app_progress_does_not_use_admin_api():
-    """会員アプリが管理画面のデータを触らないこと（一般と管理の分離）。"""
-    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
-        html = f.read()
-    body = html[html.index("function renderMealProgress"):]
-    body = body[:body.index("\nfunction updateDailyTotal")]
-    assert "/api/admin/" not in body
-
-
-def test_app_message_is_not_blaming():
-    """責める文言にしないこと（記録を増やしてほしいのに逆効果になる）。"""
-    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
-        html = f.read()
-    body = html[html.index("function renderMealProgress"):]
-    body = body[:body.index("\nfunction updateDailyTotal")]
-    for word in ("サボ", "怠け", "守れていません", "違反"):
-        assert word not in body, f"責める表現が入っています: {word}"
+    assert 'id="meal-progress"' not in html
+    assert "renderMealProgress" not in html
+    assert "まだ記録がありません。写真を追加して、1回目の食事から始めましょう。" not in html
+    # 似た機能の2つは残っていること
+    assert 'id="meal-points"' in html, "3食こまめ記録ポイントまで消えている"
+    assert "記録できていない食事はありませんか？" in html, "記録漏れの案内まで消えている"
 
 
 def test_index_js_has_no_syntax_error():
