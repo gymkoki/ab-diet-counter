@@ -167,3 +167,54 @@ def test_slot_comparison_reaches_report_and_dashboard(planted):
     assert 'rec.get("slot_results")' in src and "朝・昼・夕・間食の記録のしかた" in src
     html = open(os.path.join(os.path.dirname(m.__file__), "templates", "admin.html"), encoding="utf-8").read()
     assert "d.slot_results" in html and "朝・昼・夕・間食の記録のしかた" in html
+
+
+def test_copy_meals_count_in_meal_slot_rates():
+    """コピーご飯で記録した食事も、朝・昼・夕・間食の割合に数える（オーナー指示 2026-10-15）。
+    夕食はいつもコピーご飯で記録する人が「夕食を記録していない」ように見えないこと。"""
+    m.init_db()
+    today = datetime.datetime.now(m.JST).date()
+    conn = m._get_conn()
+    cur = conn.cursor()
+    for t in ("daily_weight", "action_log", "daily_nutrition", "user_profile"):
+        cur.execute(f"DELETE FROM {t}")
+    for uid, slope in (("copy-ok", -1.0), ("copy-ng", +1.0)):
+        for i in range(0, 40, 4):
+            d = (today - datetime.timedelta(days=i)).isoformat()
+            cur.execute(f"INSERT INTO daily_weight (user_id,date,weight,created_at) "
+                        f"VALUES ({m.PH},{m.PH},{m.PH},{m.PH})", (uid, d, 65 - slope * i / 30, d))
+        cur.execute(f"INSERT INTO user_profile (user_id, goal, updated_at) VALUES ({m.PH},'cut','x')", (uid,))
+        for i in range(1, 11):
+            d = (today - datetime.timedelta(days=i)).isoformat()
+            # 朝は写真、夕はコピーご飯、さらに夕にコピーご飯でもう1件（＝間食）
+            for hour, action in ((7, "photo"), (19, "copy"), (21, "copy")):
+                cur.execute(f"INSERT INTO action_log (user_id, action, created_at) "
+                            f"VALUES ({m.PH},{m.PH},{m.PH})", (uid, action, f"{d}T{hour:02d}:00:00+09:00"))
+    conn.commit()
+    conn.close()
+    try:
+        r = m._record_behavior_compare()
+        by = {mm["user_id_short"]: mm["means"] for mm in r["members"]}
+        for uid in ("copy-ok", "copy-ng"):
+            mm = by[uid[:8]]
+            assert mm["night_rate"] == 100.0, "コピーご飯で記録した夕食が数えられていない"
+            assert mm["snack_rate"] == 100.0, "コピーご飯の2件目が間食に数えられていない"
+            assert mm["records_per_day"] == 3.0
+            assert mm["photos_per_day"] == 1.0, "写真の枚数にはコピーご飯を混ぜない"
+    finally:
+        conn = m._get_conn()
+        cur = conn.cursor()
+        for t in ("daily_weight", "action_log", "daily_nutrition", "user_profile"):
+            cur.execute(f"DELETE FROM {t}")
+        conn.commit()
+        conn.close()
+
+
+def test_copy_is_a_record_action_and_is_logged():
+    """サーバーの集計対象に copy が入っていて、アプリもコピーご飯の追加時に copy を送っている。"""
+    assert "copy" in m._RECORD_ACTIONS and "copy" in m.ACTION_KINDS
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html = open(os.path.join(root, "templates", "index.html"), encoding="utf-8").read()
+    body = html[html.index("function addSelectedCopyMeals()"):]
+    body = body[:body.index("\n}\n")]
+    assert "logAction('copy')" in body
