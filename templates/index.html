@@ -697,6 +697,27 @@
     .meal-progress .mp-dot.on { background:#E8A33D; }
     .meal-progress.mp-done .mp-dot.on { background:#0E9F6E; }
     .meal-progress .mp-msg { font-size:16px; line-height:1.5; color:#7A5410; font-weight:600; }
+    /* 3食こまめ記録ポイント（オーナー指示 2026-10-15） */
+    .mpt { margin:10px 16px 0; padding:12px 14px; border-radius:var(--radius-md); background:#F4F1FF; border:1px solid #D9D0FB; }
+    .mpt .mpt-head { display:flex; align-items:center; justify-content:space-between; }
+    .mpt .mpt-title { font-size:17px; font-weight:800; color:#4C3A9E; }
+    .mpt .mpt-count { font-size:17px; font-weight:900; color:#4C3A9E; font-variant-numeric:tabular-nums; }
+    .mpt .mpt-count b { font-size:22px; }
+    .mpt .mpt-stars { display:flex; gap:4px; margin:10px 0 8px; }
+    .mpt .mpt-star { flex:1; height:12px; border-radius:6px; background:#E2DCF8; }
+    .mpt .mpt-star.on { background:#7C5CE0; }
+    .mpt .mpt-today { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+    .mpt .mpt-chip { font-size:15px; font-weight:700; padding:3px 10px; border-radius:999px; background:#fff; border:1px solid #D9D0FB; color:#8B83A8; }
+    .mpt .mpt-chip.on { background:#7C5CE0; border-color:#7C5CE0; color:#fff; }
+    .mpt .mpt-msg { font-size:15px; line-height:1.55; color:#4C3A9E; font-weight:600; }
+    .mpt .mpt-watch { display:none; width:100%; margin-top:10px; padding:12px; border:none; border-radius:var(--radius-md); background:#7C5CE0; color:#fff; font-size:17px; font-weight:800; cursor:pointer; }
+    .mpt.unlocked .mpt-watch { display:block; }
+    .mpt.flash { animation: mptFlash 1.2s ease; }
+    @keyframes mptFlash { 0%{transform:scale(1)} 30%{transform:scale(1.03); box-shadow:0 0 0 6px rgba(124,92,224,.25)} 100%{transform:scale(1)} }
+    #special-msg-overlay { display:none; position:fixed; inset:0; z-index:520; background:rgba(23,19,16,0.6); align-items:center; justify-content:center; padding:20px; }
+    #special-msg-overlay.show { display:flex; }
+    .sm-video { position:relative; width:100%; padding-top:56.25%; border-radius:var(--radius-md); overflow:hidden; background:#000; margin:10px 0; }
+    .sm-video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
     .meal-progress.mp-done .mp-msg { color:#0E7A50; }
     .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:var(--radius-md); border:none; background:#0E9F6E; color:white; font-size:17px; font-weight:700; cursor:pointer; }
     .weight-dialog { background:white; border-radius:20px; padding:26px 24px; width:100%; max-width:340px; text-align:center; box-shadow:0 24px 48px rgba(0,0,0,0.18); }
@@ -931,6 +952,18 @@
       <div class="mp-dots" id="mp-dots"></div>
       <div class="mp-msg" id="mp-msg"></div>
     </div>
+    <!-- 3食こまめ記録ポイント（オーナー指示 2026-10-15）：朝・昼・夜をその時間帯に記録できた日に1ポイント。
+         10ポイントで奥松の特別メッセージ（動画）が見られる。 -->
+    <div id="meal-points" class="mpt">
+      <div class="mpt-head">
+        <span class="mpt-title">🎁 3食こまめ記録ポイント</span>
+        <span class="mpt-count"><b id="mpt-count">0</b> / <span id="mpt-goal">10</span>pt</span>
+      </div>
+      <div class="mpt-stars" id="mpt-stars"></div>
+      <div class="mpt-today" id="mpt-today"></div>
+      <div class="mpt-msg" id="mpt-msg"></div>
+      <button class="mpt-watch" onclick="openSpecialMessage()">🎬 奥松の特別メッセージを見る</button>
+    </div>
     <div id="panel-food" class="meal-panel active"></div>
   </div>
   <div id="sub-weight" style="display:none">
@@ -1005,6 +1038,15 @@
     <div class="album-sub" id="meal-album-sub"></div>
     <div id="meal-album-list"></div>
     <button class="weight-cancel" onclick="closeMealAlbum()">閉じる</button>
+  </div>
+</div>
+
+<!-- 奥松の特別メッセージ（3食こまめ記録ポイントが10たまった人だけ） -->
+<div id="special-msg-overlay" onclick="closeSpecialMessage()">
+  <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:440px">
+    <h3>🎬 奥松の特別メッセージ</h3>
+    <div id="special-msg-body"></div>
+    <button class="weight-cancel" onclick="closeSpecialMessage()">閉じる</button>
   </div>
 </div>
 
@@ -2084,6 +2126,161 @@ function renderMealProgress(count) {
   }
 }
 
+// ═══════════════════════════════════════════
+//  3食こまめ記録ポイント（オーナー指示 2026-10-15）
+//  朝・昼・夜の3つの時間帯それぞれで、その時間帯のうちに記録できた日に1ポイント。
+//  ・時間帯は「記録した時刻」で決める（記録のIDは追加した時刻＝Date.now()×100＋連番）
+//  ・その日のうちに記録したものだけ数える（過去の日に後から足した記録・別の日の記録は数えない）
+//  ・ポイントはサーバーにも保存する（機種変更・アプリの入れ直しで消えないように）
+//  ・一度もらったポイントは、あとで記録を消しても減らさない
+// ═══════════════════════════════════════════
+const MEAL_POINTS_KEY = 'ab-diet-meal-points-v1';
+// 時間帯の区切り（分）：朝 4:00〜10:30／昼 10:30〜16:00／夜 16:00〜24:00
+const MEAL_POINT_SLOTS = [
+  { key: 'morning', label: '朝', from: 4 * 60,       to: 10 * 60 + 30 },
+  { key: 'noon',    label: '昼', from: 10 * 60 + 30, to: 16 * 60 },
+  { key: 'night',   label: '夜', from: 16 * 60,      to: 24 * 60 },
+];
+let _mealPointsFetched = false;
+let _mealPointsSending = false;
+
+function getMealPoints() {
+  const def = { points: 0, goal: 10, dates: [], unlocked: false, message_ready: false, message_url: null };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem(MEAL_POINTS_KEY)) || {}); }
+  catch { return def; }
+}
+function saveMealPoints(mp) {
+  try { localStorage.setItem(MEAL_POINTS_KEY, JSON.stringify(mp)); } catch {}
+}
+
+// 記録1件が、どの日のどの時間帯に記録されたか（JST）。分からなければ null。
+function itemRecordedSlot(item) {
+  const ms = Math.floor(Number(item && item.id) / 100);
+  if (!isFinite(ms) || ms < 1.5e12) return null;           // 古い形式のIDなど
+  const jst = new Date(ms + 9 * 3600 * 1000);
+  const date = jst.toISOString().slice(0, 10);
+  const minutes = jst.getUTCHours() * 60 + jst.getUTCMinutes();
+  const slot = MEAL_POINT_SLOTS.find(sl => minutes >= sl.from && minutes < sl.to);
+  return slot ? { date, slot: slot.key } : null;
+}
+
+// 今日、記録できた時間帯の集合
+function todayMealPointSlots() {
+  const today = getTodayJST();
+  const got = new Set();
+  if (currentDate() !== today) return got;                  // 過去の日を開いているときは判定しない
+  MEALS.forEach(m => (state[m.id].items || []).forEach(i => {
+    if (!i.result) return;
+    const r = itemRecordedSlot(i);
+    if (r && r.date === today) got.add(r.slot);
+  }));
+  return got;
+}
+
+async function fetchMealPoints() {
+  try {
+    const res = await fetch(`/api/meal-points?user_id=${encodeURIComponent(USER_ID)}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    const mp = getMealPoints();
+    // 送信がまだ届いていない日（電波が悪かった等）は端末側の記録も残す
+    const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
+    saveMealPoints(Object.assign(mp, d, { dates, points: Math.max(d.points || 0, dates.length) }));
+    renderMealPoints();
+  } catch {}
+}
+
+async function sendMealPoint(date) {
+  if (_mealPointsSending) return;
+  _mealPointsSending = true;
+  try {
+    const res = await fetch('/api/meal-points', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID, date }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const mp = getMealPoints();
+      const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
+      saveMealPoints(Object.assign(mp, d, { dates, points: Math.max(d.points || 0, dates.length) }));
+    }
+  } catch {} finally {
+    _mealPointsSending = false;
+    renderMealPoints();
+  }
+}
+
+function renderMealPoints() {
+  const box = document.getElementById('meal-points');
+  if (!box) return;
+  if (!_mealPointsFetched) { _mealPointsFetched = true; fetchMealPoints(); }
+
+  const today = getTodayJST();
+  // 過去の日を開いているときは出さない（ポイントは「今日、その時間帯に記録できたか」だけで決まる）
+  box.style.display = currentDate() === today ? '' : 'none';
+  const mp = getMealPoints();
+  const got = todayMealPointSlots();
+  // 今日3つそろったら、その場で1ポイント（端末にすぐ反映し、サーバーへも送る）
+  if (got.size === MEAL_POINT_SLOTS.length && !(mp.dates || []).includes(today)) {
+    mp.dates = [...(mp.dates || []), today].sort();
+    mp.points = Math.max((mp.points || 0) + 1, mp.dates.length);
+    if (mp.points >= (mp.goal || 10)) mp.unlocked = true;
+    saveMealPoints(mp);
+    box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+    sendMealPoint(today);
+  }
+
+  const goal = mp.goal || 10;
+  const pts = mp.points || 0;
+  const earnedToday = (mp.dates || []).includes(today);
+  box.classList.toggle('unlocked', pts >= goal);
+  document.getElementById('mpt-count').textContent = pts;
+  document.getElementById('mpt-goal').textContent = goal;
+  let stars = '';
+  for (let i = 0; i < goal; i++) stars += `<div class="mpt-star${i < Math.min(pts, goal) ? ' on' : ''}"></div>`;
+  document.getElementById('mpt-stars').innerHTML = stars;
+  document.getElementById('mpt-today').innerHTML = MEAL_POINT_SLOTS.map(sl =>
+    `<span class="mpt-chip${got.has(sl.key) || earnedToday ? ' on' : ''}">${sl.label}${got.has(sl.key) || earnedToday ? ' ✓' : ''}</span>`).join('');
+  const msg = document.getElementById('mpt-msg');
+  if (pts >= goal) {
+    msg.textContent = earnedToday
+      ? `🎉 今日も1ポイント獲得！${goal}ポイント達成おめでとうございます。奥松の特別メッセージが見られます。`
+      : `🎉 ${goal}ポイント達成！奥松の特別メッセージが見られます。これからも3食こまめに記録しましょう。`;
+  } else if (earnedToday) {
+    msg.textContent = `🎉 今日の1ポイント獲得！あと${goal - pts}ポイントで、奥松の特別メッセージが見られます。`;
+  } else {
+    msg.textContent = `朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録すると1日1ポイント。${goal}ポイントたまると、奥松の特別メッセージが見られます！`;
+  }
+}
+
+// YouTube の各種URL（watch?v= / youtu.be / shorts / embed / live）から動画IDを取り出す
+function youtubeIdFrom(url) {
+  const m = String(url || '').match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function openSpecialMessage() {
+  const mp = getMealPoints();
+  const body = document.getElementById('special-msg-body');
+  const url = mp.message_url;
+  const yt = youtubeIdFrom(url);
+  if (yt) {
+    body.innerHTML = `<div class="sm-video"><iframe src="https://www.youtube-nocookie.com/embed/${yt}?rel=0&playsinline=1"
+      title="奥松の特別メッセージ" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`;
+  } else if (url && /^https:\/\//.test(url)) {
+    body.innerHTML = `<a class="btn-copy-add" style="text-decoration:none;text-align:center" href="${esc(url)}" target="_blank" rel="noopener">▶ 動画を開く</a>`;
+  } else {
+    body.innerHTML = `<p style="font-size:17px;line-height:1.7;margin:10px 0">${mp.points || 0}ポイント達成おめでとうございます！🎉<br>
+      奥松の特別メッセージは<b>ただいま撮影準備中</b>です。公開されたら、ここから見られるようになります。お楽しみに！</p>`;
+  }
+  document.getElementById('special-msg-overlay').classList.add('show');
+  fetchMealPoints();   // 動画が後から公開された場合に備えて最新を取りに行く
+}
+function closeSpecialMessage() {
+  document.getElementById('special-msg-overlay').classList.remove('show');
+  document.getElementById('special-msg-body').innerHTML = '';   // 再生を止める
+}
+
 function updateDailyTotal() {
   let foodTotal = 0;
   let proteinTotal = 0;
@@ -2116,6 +2313,7 @@ function updateDailyTotal() {
   { const cs = calcCharaScore(); if (cs.count > 0) setCharaLogEntry(currentDate(), cs.score); }
   // 「あと何食」を出す（記録し忘れに本人が気づけるように）
   renderMealProgress(allItems.length);
+  renderMealPoints();      // 3食こまめ記録ポイント
   const bar   = document.getElementById('ex-deduct-bar');
   const numEl = document.getElementById('ex-deduct-num');
   if (bar && numEl) {

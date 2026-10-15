@@ -301,6 +301,18 @@
 - 案内文（`charaAdvice`）は回数をしきい値から作る。数字を直書きしないこと。
 - `tests/test_chara_min_meals.py` が回帰を検知する（2回の日は29点以下・3回なら通常の採点）。
 
+## 3食こまめ記録ポイント・奥松の特別メッセージ（オーナー指示 2026-10-15）
+
+- 朝（4:00〜10:30）・昼（10:30〜16:00）・夜（16:00〜24:00）の3回とも、**その時間帯のうちに**記録できた日に1ポイント
+  （1日1ポイントまで）。時間帯は**記録した時刻**（記録IDの Date.now()×100）で決める。過去の日に後から足した記録や、
+  別の日の記録では付かない（`itemRecordedSlot()` / `todayMealPointSlots()`）。深夜0〜4時の記録は数えない。
+- 記録画面の「今日の記録」の下にカード（`#meal-points` / `renderMealPoints()`）。一度もらったポイントは記録を消しても減らさない。
+- サーバー：`meal_points`（user_id, date の1日1行）・`/api/meal-points`（POSTは今日と昨日の日付だけ受け付ける）。
+- **10ポイント（`MEAL_POINTS_GOAL`）で「奥松の特別メッセージ」**。動画URLは管理画面「🎁 3食こまめ記録ポイント」から登録する
+  （settings の `special-message-url`）。URLは10ポイント達成者にだけ返す。未登録なら「ただいま撮影準備中」と出す。
+  YouTube（限定公開）のURLなら youtube-nocookie の埋め込みで再生、それ以外の https URL はリンクで開く。
+- `tests/test_meal_points.py` が回帰を検知する。
+
 ## デプロイ構成
 
 - ホスティング：Render（`render.yaml`）。`main` ブランチを自動デプロイ。
