@@ -1332,22 +1332,27 @@
   <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
    <div class="modal-scroll">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.38</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.39</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:12px;padding:12px 14px;margin-bottom:14px">
-        <b style="color:#B4460F">📢 全体へのお知らせ</b>
+        <b style="color:#B4460F">📸 減量に成功している人は、1日に何枚写真をアップしている？</b>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📅</span>
-        <span>ダイエットの場合、<b>1日のトータル量</b>が大事になります。1食だけだと何とも分からないところもあり、結局<b>1日単位、ひいては1週間、1ヶ月単位の平均摂取量</b>がポイントになります。</span>
+        <span style="font-size:20px;flex-shrink:0">📊</span>
+        <span>減量を目標にしている会員のうち、<b>直近60日で体重が減っている方</b>の記録を調べました。</span>
+      </div>
+      <!-- 数字は本番の実データからサーバーが集計した値を差し込む（/api/notice-stats・fillNoticePhotoStats） -->
+      <div id="notice-photo-result" style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">🏆</span>
+        <span id="notice-photo-text">集計結果を読み込んでいます…</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">📸</span>
-        <span>そのため、<b>食事写真をこまめにアップする</b>場合は、より減量が決まりやすいです。</span>
+        <span style="font-size:20px;flex-shrink:0">💡</span>
+        <span>コツは<b>食べるたびに記録すること</b>。間食や飲み物も、そのつど写真で残しましょう（1回の食事はこれまでどおり<b>1枚にまとめて</b>撮影をお願いします）。1日のトータル量が見えるほど、減量が決まりやすくなります。</span>
       </div>
       <div style="border-top:1px dashed #E7DED6;margin-top:18px;padding-top:14px;font-size:15px;color:#6B625B">
-        <b>📝 前回のお知らせ（No.37）</b><br>
-        ABダイエットのアプリは<b>記録した分しかBカウントが数えられない</b>仕組みです。写真を撮り忘れたときは文章での入力でも大丈夫なので、間食や飲み物も含めて<b>食べた分をできるだけ正確に</b>記録してください。1回の食事はこれまでどおり<b>1枚にまとめて</b>撮影をお願いします。
+        <b>📝 前回のお知らせ（No.38）</b><br>
+        ダイエットは<b>1日・1週間・1ヶ月単位のトータル量</b>が大事です。食事写真をこまめにアップするほど、減量が決まりやすくなります。
         <div style="margin-top:10px"><b>📝 お願い（No.34）</b><br>
         お名前を<b>ニックネーム</b>か<b>苗字</b>に変えていただけると、アプリの改善にとても助かります。まだの方は下のボタンから変更できます。</div>
       </div>
@@ -6313,11 +6318,35 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v40';
+const NOTICE_KEY = 'ab-diet-notice-v41';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
   // ※コツはここでは出さない。写真の解析が終わったときに出す（オーナー指示 2026-08）。
+}
+
+// お知らせNo.39：減量に成功している会員の「1日平均の写真の枚数」を差し込む。
+// 数字は本番の実データからサーバーが集計し、最初の集計値で固定している（/api/notice-stats）。
+// 読めなかったときや人数が少ないときは、数字を出さずにその旨だけ伝える（お知らせ自体は出す）。
+function _fmtPhotos(v) { return (Math.round(Number(v) * 10) / 10).toFixed(1); }
+async function fillNoticePhotoStats() {
+  const el = document.getElementById('notice-photo-text');
+  if (!el) return;
+  const fallback = 'まだ集計できる人数が少ないため、数字は改めてお知らせします。';
+  try {
+    const r = await fetch('/api/notice-stats');
+    const d = r.ok ? await r.json() : {};
+    if (!d || !d.ok || d.success_mean == null) { el.textContent = fallback; return; }
+    const ok = Number(d.success_mean);
+    let html = `減量に成功している方は、食事の写真を<b>1日平均 ${_fmtPhotos(ok)}枚</b>アップしていました。`;
+    if (d.fail_mean != null && Number(d.fail_mean) < ok) {
+      const ng = Number(d.fail_mean);
+      html += `体重がまだ減っていない方（1日平均 ${_fmtPhotos(ng)}枚）より<b>${_fmtPhotos(ok - ng)}枚多い</b>結果でした。`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = fallback;
+  }
 }
 
 // お知らせNo.34〜No.36「お名前を変更する」：設定タブのお名前欄を開き、すぐ入力できる状態にする。
@@ -6455,6 +6484,7 @@ function _step(fn, label) {
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
     if (ov) ov.style.display = 'flex';
+    fillNoticePhotoStats();       // お知らせNo.39の数字（実データの集計）を差し込む
   }
   // ※コツはアプリ起動時には出さない（オーナー指示 2026-08）。
   //   写真の栄養解析が終わったタイミングで analyzeItem から呼び出す。

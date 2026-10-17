@@ -1654,7 +1654,14 @@
             <td style="padding:6px;text-align:right">${_daFmt(mm.means.snack_rate, 0)}</td>
           </tr>`).join('')}
         </table></div></details>` : '';
-      wrap.innerHTML = head + table + sentences + slot + mem;
+      // お知らせNo.39で会員に伝えた数字（最初に集計した値で固定）
+      const ns = d.notice_photo_stats;
+      const notice = ns ? `<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#7C2D12;line-height:1.7">
+          📢 <b>お知らせNo.39で会員に伝えた数字</b>：${ns.ok
+            ? `減量に成功している方の写真は<b>1日平均 ${_daFmt(ns.success_mean, 1)}枚</b>（${ns.success_n}人）／まだ減っていない方は${ns.fail_mean == null ? '—' : _daFmt(ns.fail_mean, 1) + '枚'}（${ns.fail_n}人）。${escapeHtml(ns.computed_on || '')} 時点の集計で固定。`
+            : 'まだ人数が少なく数字を出していません（会員には「改めてお知らせします」と表示）。'}
+        </div>` : '';
+      wrap.innerHTML = notice + head + table + sentences + slot + mem;
     } catch (e) {
       wrap.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
     }

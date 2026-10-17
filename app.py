@@ -6220,7 +6220,61 @@ def admin_record_analysis():
     except Exception as e:
         app.logger.error("record analysis failed: %s", e)
         return jsonify({"error": "集計に失敗しました。時間をおいてお試しください。"}), 500
+    # お知らせ No.39 で会員に伝えた数字（オーナーが確認できるように）
+    try:
+        data["notice_photo_stats"] = _notice_photo_stats()
+    except Exception:
+        data["notice_photo_stats"] = None
     return jsonify(data)
+
+
+# ── お知らせ No.39「減量に成功している人は1日に何枚写真をアップしているか」（オーナー指示 2026-10-17）──
+# 数字は本番の実データから、デイリーレポート④の「記録のしかたの違い」と同じ計算
+# （目標＝減量の会員／直近60日の体重の傾きがマイナス＝成功群、0以上＝失敗群／写真で記録した回数 ÷ 記録した日数／
+#  会員1人＝1票）で出す。**最初に集計した値を settings に固定**し、どの会員にも同じ数字を見せる
+# （お知らせは端末ごとに開く日が違うので、毎回計算し直すと人によって数字が変わってしまう）。
+# 返すのはグループの平均と人数だけで、会員を特定できる情報は返さない（会員アプリから呼ぶため）。
+NOTICE_PHOTO_STATS_KEY = "notice-39-photo-stats"
+NOTICE_PHOTO_MIN_N = 3      # 成功群がこの人数未満なら数字を出さない（少なすぎて目安にならない）
+
+
+def _notice_photo_stats():
+    try:
+        raw = _get_setting(NOTICE_PHOTO_STATS_KEY)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    r = _record_behavior_compare(goal="cut")
+    res = next((x for x in r["results"] if x["key"] == "photos_per_day"), None)
+    if not res:
+        return {"ok": False}
+    ok_mean, ng_mean = res["loss"]["mean"], res["gain"]["mean"]
+    stats = {
+        "ok": bool(ok_mean is not None and res["loss"]["n"] >= NOTICE_PHOTO_MIN_N),
+        "success_mean": round(ok_mean, 1) if ok_mean is not None else None,
+        "success_n": res["loss"]["n"],
+        "fail_mean": round(ng_mean, 1) if ng_mean is not None else None,
+        "fail_n": res["gain"]["n"],
+        "weight_days": r.get("weight_days"),
+        "computed_on": datetime.datetime.now(JST).date().isoformat(),
+    }
+    if stats["ok"]:
+        try:
+            _set_setting(NOTICE_PHOTO_STATS_KEY, json.dumps(stats, ensure_ascii=False))
+        except Exception:
+            pass
+    return stats
+
+
+@app.route("/api/notice-stats")
+def notice_stats():
+    """お知らせに差し込む集計（グループの平均と人数だけ）。失敗してもお知らせ自体は出る。"""
+    try:
+        return jsonify(_notice_photo_stats())
+    except Exception as e:
+        app.logger.warning("notice stats failed: %s", e)
+        return jsonify({"ok": False})
 
 
 @app.route("/api/admin/dish-analysis")
