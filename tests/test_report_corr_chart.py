@@ -1,7 +1,9 @@
-# デイリーレポートの「減量希望者：平均Bカウント × 体重の変化」グラフの回帰テスト。
+# デイリーレポートの「減量希望者：平均Bカウント × 体重の変化」まわりの回帰テスト。
 # オーナー指示 2026-08：
 #   ・縦軸を「体重の変化」、横軸を「平均Bカウント」にする（横軸が日付では意味が読めない）
 #   ・その下の「運動によるBカウント消費 集団平均」の棒グラフは不要なので削除する
+# オーナー指示 2026-10-17：この散布図（chart_cut_corr）も「いらないので消して」で削除した。
+#   サーバーの cut_corr（1人1点のデータ）は残っているので、そのデータの検査は残す。
 
 import datetime
 import json
@@ -20,17 +22,6 @@ REPORT = os.path.join(ROOT, "report", "send_report.py")
 def _report_src():
     with open(REPORT, encoding="utf-8") as f:
         return f.read()
-
-
-def _load_send_report():
-    """レポート本体を読み込む。グラフ描画用のライブラリ（matplotlib / requests）は
-    アプリ本体には不要で、GitHub Actionsのテストにも入れていない。
-    入っていない環境では、この描画テストだけを飛ばす（他のテストは文面で担保する）。"""
-    pytest.importorskip("requests", reason="レポート送信用の依存（テスト環境には未導入）")
-    pytest.importorskip("matplotlib", reason="グラフ描画用の依存（テスト環境には未導入）")
-    sys.path.insert(0, os.path.join(ROOT, "report"))
-    import send_report
-    return send_report
 
 
 @pytest.fixture
@@ -110,23 +101,15 @@ def test_report_data_needs_admin(client):
     assert client.get("/api/admin/report-data").status_code == 404
 
 
-# ── レポート：グラフの軸と、運動グラフの削除 ───────────────────────
-def test_chart_axes_are_bcount_and_weight_change():
-    """横軸＝平均Bカウント、縦軸＝体重の変化になっていること。"""
+# ── レポート：散布図と運動グラフの削除 ───────────────────────────
+def test_cut_corr_chart_is_removed():
+    """オーナー指示 2026-10-17：「減量希望者：平均Bカウント × 体重の変化」の散布図は載せない。
+    関数・本文・添付のどれにも残っていないこと（復活させないこと）。"""
     src = _report_src()
-    assert 'ax.set_xlabel("平均Bカウント' in src, "横軸が平均Bカウントになっていない"
-    assert 'ax.set_ylabel("体重の変化' in src, "縦軸が体重の変化になっていない"
-    # 日付を横軸にした古い形（twinx の2軸折れ線）に戻っていないこと
-    fn = src[src.index("def chart_cut_corr"):src.index("def chart_nutrition")]
-    assert "twinx" not in fn, "横軸が日付の2軸グラフに戻っている"
-    assert "ax.scatter" in fn, "散布図になっていない"
-
-
-def test_chart_shows_correlation_and_trend_line():
-    """傾向線と相関係数を出し、Bを抑えた人ほど減っているかを読み取れること。"""
-    fn = _report_src()
-    assert "傾向線" in fn
-    assert "相関 r" in fn
+    assert "def chart_cut_corr(" not in src, "散布図の関数が復活しています"
+    assert "cid:chart_cut_corr" not in src, "散布図が本文に復活しています"
+    assert '"chart_cut_corr"' not in src, "散布図を生成しています"
+    assert "「平均Bカウント」と「体重の変化」の相関" not in src
 
 
 def test_exercise_bar_chart_is_removed():
@@ -135,28 +118,6 @@ def test_exercise_bar_chart_is_removed():
     assert "def chart_exercise" not in src, "運動グラフの関数が残っている"
     assert "chart_exercise" not in src, "運動グラフの参照が残っている"
     assert "運動によるBカウント消費 集団平均" not in src
-
-
-def test_chart_renders_without_error():
-    """実際にPNGを生成できること（データあり・なしの両方）。"""
-    R = _load_send_report()
-    members = [{"avg_b": 2.0 + i * 0.4, "change_kg": 0.3 * i - 1.0, "days": 10}
-               for i in range(6)]
-    png = R.chart_cut_corr({"cut_corr": {"users": 8, "min_days": 3, "members": members},
-                            "dates": []})
-    assert png[:4] == b"\x89PNG"
-    empty = R.chart_cut_corr({"cut_corr": {"users": 0, "min_days": 3, "members": []},
-                              "dates": []})
-    assert empty[:4] == b"\x89PNG"
-
-
-def test_chart_handles_single_member():
-    """1人しかいなくても（傾向線が引けなくても）エラーにならないこと。"""
-    R = _load_send_report()
-    png = R.chart_cut_corr({"cut_corr": {"users": 1, "min_days": 3,
-                                         "members": [{"avg_b": 3.0, "change_kg": -1.0, "days": 5}]},
-                            "dates": []})
-    assert png[:4] == b"\x89PNG"
 
 
 # ── 痩せていない人の朝・昼・晩の記録状況（オーナー指示 2026-08） ──────────

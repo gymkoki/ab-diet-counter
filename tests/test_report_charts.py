@@ -64,8 +64,8 @@ def test_removed_charts_stay_removed():
 def test_kept_charts_are_still_there():
     """残すことになっているグラフまで消えていないこと。"""
     src = _src()
-    for name in ("chart_usage", "chart_weight_loss",
-                 "chart_cut_corr", "chart_nutrition", "chart_goal_compare"):
+    # ※ chart_cut_corr（平均B × 体重の変化の散布図）はオーナー指示 2026-10-17 で削除した
+    for name in ("chart_usage", "chart_weight_loss", "chart_nutrition", "chart_goal_compare"):
         assert f"def {name}(" in src, f"{name} が消えています"
         assert f"cid:{name}" in src, f"{name} が本文から消えています"
 

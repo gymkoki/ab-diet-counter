@@ -276,84 +276,9 @@ def _axes_note(ax, msg: str):
         sp.set_visible(False)
 
 
-def chart_cut_corr(data: dict) -> bytes:
-    """減量希望者：横軸＝平均Bカウント、縦軸＝体重の変化 の散布図（1人1点）。
-
-    以前は「日ごとの集団平均B」と「集団平均の減量幅」を2本の折れ線で並べていたが、
-    横軸が日付だったため“BとBの結果の関係”が読み取れなかった（オーナー指摘 2026-08）。
-    会員1人を1点にすると「Bを抑えている人ほど減っているか」が一目で分かる。
-    縦軸はマイナスが減量（下にあるほど痩せている）。"""
-    cc      = data.get("cut_corr") or {}
-    members = cc.get("members") or []
-    users   = cc.get("users", 0)
-    min_days = cc.get("min_days", 3)
-
-    fig, ax = plt.subplots(figsize=(10, 4.6))
-    title = "減量希望者：平均Bカウント × 体重の変化"
-
-    if not members:
-        ax.set_title(title, fontsize=15, fontweight="bold", pad=8)
-        _axes_note(ax, f"データを収集中です。\nBカウントの記録が{min_days}日以上あり、体重を2回以上記録した\n減量希望の会員が対象です。")
-        fig.tight_layout()
-        return fig_to_png(fig)
-
-    xs = [m["avg_b"] for m in members]
-    ys = [m["change_kg"] for m in members]
-
-    # 減った人と増えた人で色を分ける（0kgちょうどは「維持」として増加側の色にしない）
-    lost = [(x, y) for x, y in zip(xs, ys) if y < 0]
-    gain = [(x, y) for x, y in zip(xs, ys) if y >= 0]
-    if lost:
-        ax.scatter(*zip(*lost), s=90, color=C_GREEN, alpha=0.75, zorder=3,
-                   edgecolors="white", linewidths=1.2, label=f"減量できている（{len(lost)}名）")
-    if gain:
-        ax.scatter(*zip(*gain), s=90, color=C_PRIMARY, alpha=0.75, zorder=3,
-                   edgecolors="white", linewidths=1.2, label=f"減っていない（{len(gain)}名）")
-
-    # 傾向線と相関係数（3人以上いて、Bカウントにばらつきがあるときだけ）
-    note = ""
-    if len(members) >= 3 and len(set(xs)) > 1:
-        n = len(xs)
-        mx, my = sum(xs) / n, sum(ys) / n
-        sxx = sum((x - mx) ** 2 for x in xs)
-        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-        syy = sum((y - my) ** 2 for y in ys)
-        slope = sxy / sxx
-        intercept = my - slope * mx
-        x0, x1 = min(xs), max(xs)
-        ax.plot([x0, x1], [slope * x0 + intercept, slope * x1 + intercept],
-                color=C_GRAY, linewidth=2, linestyle="--", zorder=2,
-                label="傾向線")
-        if syy > 0:
-            r = sxy / ((sxx ** 0.5) * (syy ** 0.5))
-            # 正の相関＝Bが多いほど体重が増える方向。ABダイエットの狙いどおりの並び。
-            if r >= 0.3:
-                verdict = "Bが多い人ほど減っていない傾向"
-            elif r <= -0.3:
-                verdict = "Bが多い人ほど減っている（想定と逆）"
-            else:
-                verdict = "はっきりした関係は見られない"
-            note = f"相関 r = {r:+.2f}（{verdict}）"
-
-    ax.axhline(0, color=C_GRAY, linewidth=1.2, zorder=1)
-
-    ax.set_xlabel("平均Bカウント / 日（直近30日）", fontsize=13)
-    ax.set_ylabel("体重の変化 (kg)　※マイナス＝減量", fontsize=13)
-    ax.set_xlim(left=0)
-    # タイトルは短く保ち、内訳と相関はその下の1行にまとめる（重ならないよう pad を確保）
-    ax.set_title(title + "（1人1点・直近30日）", fontsize=15, fontweight="bold", pad=30)
-    detail = f"{len(members)}名（減量希望{users}名中・Bの記録が{min_days}日以上ある人）"
-    if note:
-        detail += f"　｜　{note}"
-    ax.text(0.5, 1.015, detail, transform=ax.transAxes, ha="center", va="bottom",
-            fontsize=12, color=C_GRAY)
-    ax.tick_params(axis="both", labelsize=13)
-    ax.legend(loc="best", fontsize=12)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(alpha=0.25, zorder=0)
-    fig.tight_layout()
-    return fig_to_png(fig)
+# ※「減量希望者：平均Bカウント × 体重の変化」の散布図（chart_cut_corr）は、
+#   オーナー指示 2026-10-17「これはいらないので消して」で削除した。復活させないこと。
+#   サーバーの cut_corr（members・b_avg_trend など）は残っているが、メールでは使わない。
 
 
 # ※「体重が2kg以上ふえた人／へった人の朝昼晩の記録状況」と「記録が足りない会員」の表
@@ -1304,10 +1229,6 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
         </div>
       </div>
       <img class="chart" src="cid:chart_weight_loss" alt="Weight Loss Progress" style="margin-top:12px">
-      <div style="font-size:12px;font-weight:700;color:#6B7280;margin:14px 0 4px">
-        減量希望者の「平均Bカウント」と「体重の変化」の相関（Bを抑えている人ほど減っているか・1人1点）
-      </div>
-      <img class="chart" src="cid:chart_cut_corr" alt="Cut Users B-Count vs Weight Change">
     </div>
 
     <!-- ③ 栄養素の平均摂取量 -->
@@ -1418,7 +1339,6 @@ def main():
     charts = {
         "chart_usage":    chart_usage(data, credit),
         "chart_weight_loss": chart_weight_loss(data),
-        "chart_cut_corr":  chart_cut_corr(data),
         "chart_nutrition": chart_nutrition(data),
         "chart_goal_compare": chart_goal_compare(data),
     }
