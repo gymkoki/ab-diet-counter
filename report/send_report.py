@@ -995,6 +995,49 @@ def _sweet_rule_section(sr) -> str:
     </div>"""
 
 
+def _mame_points_section(mp, recorders=None) -> str:
+    """🎁 まめポイント（3食こまめ記録ポイント）を昨日何人が獲得したか（オーナー指示 2026-10-17）。
+    朝・昼・夜の3回とも、その時間帯のうちに記録できた人が1日1ポイント。人数だけで名前は出さない。"""
+    if not mp:
+        return ""
+    earned = mp.get("earned", 0)
+    rate = f"記録した{recorders}人中・{round(earned / recorders * 100)}%" if recorders else "&nbsp;"
+    rows = "".join(
+        f"<tr style='border-bottom:1px solid #F3F4F6'><td style='padding:5px 6px'>{t['date'][5:].replace('-', '/')}</td>"
+        f"<td style='padding:5px 6px;text-align:center;font-weight:800;color:#7C5CE0'>{t['earned']}人</td></tr>"
+        for t in mp.get("trend") or [])
+    table = f"""
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280">
+          <th style="padding:5px 6px;text-align:left">日付</th><th style="padding:5px 6px">獲得した人</th>
+        </tr>{rows}
+      </table>""" if rows else ""
+    return f"""
+    <div class="section">
+      <h2>🎁 まめポイント（3食こまめ記録）（{mp.get('date', '')}）</h2>
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-lbl">昨日まめポイントを獲得した人</div>
+          <div class="kpi-val" style="font-size:24px;color:#7C5CE0">{earned}人</div>
+          <div class="kpi-sub">{rate}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">{mp.get('goal', 10)}ポイント達成（累計）</div>
+          <div class="kpi-val" style="font-size:22px">{mp.get('unlocked', 0)}人</div>
+          <div class="kpi-sub">奥松の特別メッセージが見られる人</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-lbl">1ポイント以上持っている人</div>
+          <div class="kpi-val" style="font-size:22px">{mp.get('holders', 0)}人</div>
+          <div class="kpi-sub">累計</div>
+        </div>
+      </div>{table}
+      <div style="font-size:11px;color:#9CA3AF;margin-top:6px;line-height:1.6">
+        ※ 朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録できた人が1日1ポイント。
+      </div>
+    </div>"""
+
+
 def build_html(data: dict, credit=None, photo_section="") -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
@@ -1222,6 +1265,9 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
 
     <!-- 🍬 お菓子・スイーツ・ジュースの特別ルールの適用人数（オーナー依頼 2026-10-07） -->
     {_sweet_rule_section(data.get("sweet_rule"))}
+
+    <!-- 🎁 まめポイント（3食こまめ記録）を昨日何人が獲得したか（オーナー指示 2026-10-17） -->
+    {_mame_points_section(data.get("mame_points"), meal.get("users"))}
 
     <!-- ① 日別推移グラフ（利用状況とAPI費用を1枚に統合。オーナー指示 2026-09-30） -->
     <div class="section">
