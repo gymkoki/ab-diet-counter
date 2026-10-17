@@ -2858,6 +2858,7 @@ def admin_report_data():
         "cut_success_compare":  _cut_success_compare(),
         "cut_corr":             cut_corr,
         "sweet_rule":           _sweet_rule_stats(target_date),
+        "mame_points":          _mame_points_stats(target_date),
     })
 
 
@@ -6889,6 +6890,39 @@ def _meal_points_payload(uid):
         # 10ポイントに届いた人にだけURLを渡す（届いていない人には「準備中かどうか」だけ）
         "message_ready": bool(url),
         "message_url": url if unlocked else None,
+    }
+
+
+def _mame_points_stats(target_date, days=7):
+    """デイリーレポート用：まめポイント（3食こまめ記録ポイント）を昨日何人が獲得したか
+    （オーナー指示 2026-10-17）。直近 days 日の推移と、累計の達成者数も返す。人数だけで名前は出さない。
+    読めなくてもレポートは止めない（None を返す）。"""
+    try:
+        end = datetime.date.fromisoformat(target_date)
+        start = (end - datetime.timedelta(days=days - 1)).isoformat()
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT date, COUNT(*) FROM meal_points WHERE date>={PH} AND date<={PH} GROUP BY date",
+                        (start, target_date))
+            by_day = {str(r[0])[:10]: r[1] for r in cur.fetchall()}
+            cur.execute("SELECT user_id, COUNT(*) FROM meal_points GROUP BY user_id")
+            counts = [r[1] for r in cur.fetchall()]
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.warning("mame points stats skipped: %s", e)
+        return None
+    trend = [{"date": (end - datetime.timedelta(days=i)).isoformat(),
+              "earned": by_day.get((end - datetime.timedelta(days=i)).isoformat(), 0)}
+             for i in range(days - 1, -1, -1)]
+    return {
+        "date": target_date,
+        "earned": by_day.get(target_date, 0),
+        "trend": trend,
+        "goal": MEAL_POINTS_GOAL,
+        "holders": len(counts),
+        "unlocked": sum(1 for c in counts if c >= MEAL_POINTS_GOAL),
     }
 
 

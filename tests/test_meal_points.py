@@ -138,3 +138,38 @@ def test_card_is_on_record_screen():
     html = open(INDEX, encoding="utf-8").read()
     assert 'id="meal-points"' in html and "奥松の特別メッセージ" in html
     assert "renderMealPoints();" in re.search(r"function updateDailyTotal\(\) \{.*?\n\}", html, re.S).group(0)
+
+
+# ── デイリーレポート：昨日まめポイントを獲得した人数（オーナー指示 2026-10-17） ──
+def test_report_stats_count_yesterday(client):
+    conn = m._get_conn()
+    cur = conn.cursor()
+    rows = [("a", "2026-10-16"), ("b", "2026-10-16"), ("c", "2026-10-15"), ("a", "2026-10-15")]
+    for uid, d in rows:
+        cur.execute(f"INSERT INTO meal_points (user_id,date,created_at) VALUES ({m.PH},{m.PH},'x')", (uid, d))
+    conn.commit()
+    conn.close()
+    _seed("z", 10)
+    st = m._mame_points_stats("2026-10-16")
+    assert st["earned"] == 2
+    assert st["trend"][-1] == {"date": "2026-10-16", "earned": 2}
+    assert st["trend"][-2] == {"date": "2026-10-15", "earned": 2}
+    assert len(st["trend"]) == 7
+    assert st["unlocked"] == 1 and st["holders"] == 4
+
+
+def test_report_data_includes_mame_points(client):
+    d = client.get("/api/admin/report-data", headers=ADMIN).get_json()
+    assert "mame_points" in d and "earned" in d["mame_points"]
+
+
+def test_report_shows_mame_points_section():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
+    sr = pytest.importorskip("send_report")
+    html = sr._mame_points_section({"date": "2026-10-16", "earned": 3, "goal": 10, "unlocked": 1, "holders": 5,
+                                    "trend": [{"date": "2026-10-16", "earned": 3}]}, recorders=12)
+    assert "まめポイント" in html and "3人" in html and "記録した12人中・25%" in html
+    assert sr._mame_points_section(None) == ""
+    src = open(sr.__file__, encoding="utf-8").read()
+    assert '_mame_points_section(data.get("mame_points")' in src
