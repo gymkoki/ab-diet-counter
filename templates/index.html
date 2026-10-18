@@ -685,7 +685,7 @@
     /* 今日の記録の進みぐあい（朝・昼・晩の3回がそろったか）。
        1日1〜2回しか上がらない原因は「食べたのに記録し忘れている」ことなので、
        記録画面を開いた瞬間に「あと何食」が見える場所を作る。 */
-    /* 3食こまめ記録ポイント（オーナー指示 2026-10-15） */
+    /* こまめ記録ポイント（オーナー指示 2026-10-15。2026-10-18 に「3食」を外した） */
     .mpt { margin:10px 16px 0; padding:12px 14px; border-radius:var(--radius-md); background:#F4F1FF; border:1px solid #D9D0FB; }
     .mpt .mpt-head { display:flex; align-items:center; justify-content:space-between; }
     .mpt .mpt-title { font-size:17px; font-weight:800; color:#4C3A9E; }
@@ -928,17 +928,17 @@
     <button class="ur-close" onclick="closeUnderRecNotice()" aria-label="閉じる">✕</button>
   </div>
   <div id="sub-food">
-    <!-- 3食こまめ記録ポイント（オーナー指示 2026-10-15）：朝・昼・夜をその時間帯に記録できた日に1ポイント。
-         10ポイントで奥松の特別メッセージ（動画）が見られる。 -->
+    <!-- こまめ記録ポイント（オーナー指示 2026-10-15）：朝・昼・夜をその時間帯に記録できた日に1ポイント。
+         10ポイントでリオールジムからの特別メッセージ（動画）が見られる。 -->
     <div id="meal-points" class="mpt">
       <div class="mpt-head">
-        <span class="mpt-title">🎁 3食こまめ記録ポイント</span>
+        <span class="mpt-title">🎁 こまめ記録ポイント</span>
         <span class="mpt-count"><b id="mpt-count">0</b> / <span id="mpt-goal">10</span>pt</span>
       </div>
       <div class="mpt-stars" id="mpt-stars"></div>
       <div class="mpt-today" id="mpt-today"></div>
       <div class="mpt-msg" id="mpt-msg"></div>
-      <button class="mpt-watch" onclick="openSpecialMessage()">🎬 奥松の特別メッセージを見る</button>
+      <button class="mpt-watch" onclick="openSpecialMessage()">🎬 リオールジムからの特別メッセージを見る</button>
     </div>
     <div id="panel-food" class="meal-panel active"></div>
   </div>
@@ -1017,10 +1017,10 @@
   </div>
 </div>
 
-<!-- 奥松の特別メッセージ（3食こまめ記録ポイントが10たまった人だけ） -->
+<!-- リオールジムからの特別メッセージ（こまめ記録ポイントが10たまった人だけ） -->
 <div id="special-msg-overlay" onclick="closeSpecialMessage()">
   <div class="weight-dialog" onclick="event.stopPropagation()" style="max-width:440px">
-    <h3>🎬 奥松の特別メッセージ</h3>
+    <h3>🎬 リオールジムからの特別メッセージ</h3>
     <div id="special-msg-body"></div>
     <button class="weight-cancel" onclick="closeSpecialMessage()">閉じる</button>
   </div>
@@ -2062,7 +2062,7 @@ let _initHadRenderError = false;
 //  今日のBカウント合計
 // ═══════════════════════════════════════════
 // ═══════════════════════════════════════════
-//  3食こまめ記録ポイント（オーナー指示 2026-10-15）
+//  こまめ記録ポイント（オーナー指示 2026-10-15。旧称「3食こまめ記録ポイント」）
 //  朝・昼・夜の3つの時間帯それぞれで、その時間帯のうちに記録できた日に1ポイント。
 //  ・時間帯は「記録した時刻」で決める（記録のIDは追加した時刻＝Date.now()×100＋連番）
 //  ・その日のうちに記録したものだけ数える（過去の日に後から足した記録・別の日の記録は数えない）
@@ -2179,12 +2179,12 @@ function renderMealPoints() {
   const msg = document.getElementById('mpt-msg');
   if (pts >= goal) {
     msg.textContent = earnedToday
-      ? `🎉 今日も1ポイント獲得！${goal}ポイント達成おめでとうございます。奥松の特別メッセージが見られます。`
-      : `🎉 ${goal}ポイント達成！奥松の特別メッセージが見られます。これからも3食こまめに記録しましょう。`;
+      ? `🎉 今日も1ポイント獲得！${goal}ポイント達成おめでとうございます。リオールジムから特別メッセージが見られます。`
+      : `🎉 ${goal}ポイント達成！リオールジムから特別メッセージが見られます。これからもこまめに記録しましょう。`;
   } else if (earnedToday) {
-    msg.textContent = `🎉 今日の1ポイント獲得！あと${goal - pts}ポイントで、奥松の特別メッセージが見られます。`;
+    msg.textContent = `🎉 今日の1ポイント獲得！あと${goal - pts}ポイントで、リオールジムから特別メッセージが見られます。`;
   } else {
-    msg.textContent = `朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録すると1日1ポイント。${goal}ポイントたまると、奥松の特別メッセージが見られます！`;
+    msg.textContent = `朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録すると1日1ポイント。${goal}ポイント貯まると、リオールジムから特別メッセージが見られます！`;
   }
 }
 
@@ -2201,12 +2201,12 @@ function openSpecialMessage() {
   const yt = youtubeIdFrom(url);
   if (yt) {
     body.innerHTML = `<div class="sm-video"><iframe src="https://www.youtube-nocookie.com/embed/${yt}?rel=0&playsinline=1"
-      title="奥松の特別メッセージ" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`;
+      title="リオールジムからの特別メッセージ" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`;
   } else if (url && /^https:\/\//.test(url)) {
     body.innerHTML = `<a class="btn-copy-add" style="text-decoration:none;text-align:center" href="${esc(url)}" target="_blank" rel="noopener">▶ 動画を開く</a>`;
   } else {
     body.innerHTML = `<p style="font-size:17px;line-height:1.7;margin:10px 0">${mp.points || 0}ポイント達成おめでとうございます！🎉<br>
-      奥松の特別メッセージは<b>ただいま撮影準備中</b>です。公開されたら、ここから見られるようになります。お楽しみに！</p>`;
+      リオールジムからの特別メッセージは<b>ただいま撮影準備中</b>です。公開されたら、ここから見られるようになります。お楽しみに！</p>`;
   }
   document.getElementById('special-msg-overlay').classList.add('show');
   fetchMealPoints();   // 動画が後から公開された場合に備えて最新を取りに行く
@@ -2246,7 +2246,7 @@ function updateDailyTotal() {
   if (foodTotal > 0) setBCountLogEntry(currentDate(), net);
   // キャラカレンダー用：その時点の進捗スコアも保存（1日の最後の値がその日のキャラになる）
   { const cs = calcCharaScore(); if (cs.count > 0) setCharaLogEntry(currentDate(), cs.score); }
-  renderMealPoints();      // 3食こまめ記録ポイント
+  renderMealPoints();      // こまめ記録ポイント
   const bar   = document.getElementById('ex-deduct-bar');
   const numEl = document.getElementById('ex-deduct-num');
   if (bar && numEl) {
