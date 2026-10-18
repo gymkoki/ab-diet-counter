@@ -1,15 +1,15 @@
-# デイリーレポートの「日別 利用状況とAPI費用」グラフの回帰テスト（オーナー指示 2026-09-30）。
+# デイリーレポートの「日別 利用状況とAPI費用」グラフまわりの回帰テスト。
 #
-# 経緯：「日別 利用推移」と「API 日別コスト」の似たグラフが毎回2枚出ていた。
-#   1枚に統一し、次の5項目を必ず載せる：
-#     デイリー利用者数／食事解析の回数／APIの費用／食事記録の件数／記録した人数
+# 経緯：
+#   ・2026-09-30 「日別 利用推移」と「API 日別コスト」の似たグラフ2枚を1枚（chart_usage）に統合した。
+#   ・2026-10-18 その1枚もオーナー指示で削除した（「重複しているデータがあるので全部消して」）。
+#     利用者数・解析回数・記録件数は「1. 利用統計」の数字、APIの費用は最上部のコストのカードに出ている。
 #
 # 守りたい不変条件：
-#   ①日別のグラフは1枚だけ（費用だけの別グラフを復活させない）
-#   ②その1枚に5項目がすべて載っている
-#   ③費用は、実額（Cost API）があれば実額、無ければ推定を使う
-#   ④記録件数・記録した人数の30日推移は、KPIと同じ数え方。明細が消えた過去日は
-#     daily_nutrition → action_log の順で補う（最新日はKPIの数字と一致する）
+#   ①日別の推移グラフ（chart_usage・chart_credit）をレポートに戻さない
+#   ④（サーバー）記録件数・記録した人数の30日推移は、KPIと同じ数え方。明細が消えた過去日は
+#     daily_nutrition → action_log の順で補う（最新日はKPIの数字と一致する）。
+#     レポートのグラフは消したが、データはサーバーに残してある。
 
 import datetime
 import json
@@ -20,95 +20,19 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, "report"))
 import app as m  # noqa: E402
 
-matplotlib = pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
-import send_report  # noqa: E402
 
-DATES = [f"2026-09-{d:02d}" for d in range(1, 31)]
-
-
-def _data(**kw):
-    d = {
-        "dates": DATES,
-        "daily_analyses_trend":  [100 + i for i in range(30)],
-        "daily_users_trend":     [30 + i % 5 for i in range(30)],
-        "daily_records_trend":   [110 + i for i in range(30)],
-        "daily_recorders_trend": [32 + i % 5 for i in range(30)],
-        "cost_per_analysis": 4.0,
-    }
-    d.update(kw)
-    return d
-
-
-def _capture_fig(monkeypatch):
-    """chart_usage が描いた図をそのまま受け取る（凡例の中身を確かめるため）。"""
-    box = {}
-
-    def fake(fig):
-        box["fig"] = fig
-        return b"\x89PNG"
-    monkeypatch.setattr(send_report, "fig_to_png", fake)
-    return box
-
-
-# ── ② 5項目が載っている ────────────────────────────────────────
-def test_usage_chart_has_all_five_items(monkeypatch):
-    box = _capture_fig(monkeypatch)
-    send_report.chart_usage(_data())
-    fig = box["fig"]
-    labels = [t.get_text() for ax in fig.axes if ax.get_legend()
-              for t in ax.get_legend().get_texts()]
-    for need in ("デイリー利用者数", "食事解析の回数", "APIの費用", "食事記録の件数", "記録した人数"):
-        assert any(need in lbl for lbl in labels), f"「{need}」がグラフに載っていない"
-    title = fig.axes[0].get_title()
-    assert "API費用" in title and "30日合計" in title
-
-
-def test_usage_chart_renders_png():
-    assert send_report.chart_usage(_data())[:4] == b"\x89PNG"
-
-
-def test_usage_chart_tolerates_missing_record_series():
-    """サーバーが古い（新しい項目を返さない）ときも落ちない。"""
-    data = _data()
-    del data["daily_records_trend"], data["daily_recorders_trend"]
-    assert send_report.chart_usage(data)[:4] == b"\x89PNG"
-
-
-# ── ③ 費用の出どころ ────────────────────────────────────────────
-def test_cost_uses_real_cost_when_available():
-    credit = {"status": "ok", "estimated": False, "usd_jpy": 150.0,
-              "daily": {"2026-09-01": 2.0, "2026-09-02": 3.0}}
-    yen, kind = send_report._daily_cost_yen(_data(), credit)
-    assert kind == "実額"
-    assert yen[0] == 300 and yen[1] == 450 and yen[2] == 0
-
-
-def test_cost_marks_estimate():
-    credit = {"status": "estimated", "estimated": True, "usd_jpy": 155.0,
-              "daily": {"2026-09-01": 400 / 155.0}}
-    yen, kind = send_report._daily_cost_yen(_data(), credit)
-    assert kind == "推定" and yen[0] == 400
-
-
-def test_cost_falls_back_to_analysis_count():
-    """クレジット情報が取れないときは「解析回数×1回あたりの概算」で描く。"""
-    yen, kind = send_report._daily_cost_yen(_data(), {"status": "error"})
-    assert kind == "推定"
-    assert yen[0] == 400 and yen[-1] == round(129 * 4)
-
-
-# ── ① 日別グラフは1枚だけ ──────────────────────────────────────
-def test_only_one_daily_chart_in_report():
+# ── ① 日別の推移グラフはレポートに載せない ─────────────────────────
+def test_daily_usage_chart_stays_removed():
     with open(os.path.join(ROOT, "report", "send_report.py"), encoding="utf-8") as f:
         src = f.read()
-    assert "def chart_credit(" not in src, "費用だけの日別グラフが復活している（統合済み）"
-    assert "cid:chart_credit" not in src
-    assert 'charts["chart_credit"]' not in src
-    assert "chart_usage(data, credit)" in src, "統合グラフに費用（credit）を渡していない"
-    assert "日別 利用状況とAPI費用" in src
+    for name in ("chart_usage", "chart_credit"):
+        assert f"def {name}(" not in src, f"{name} の関数が復活している（オーナー指示で削除）"
+        assert f"cid:{name}" not in src, f"{name} がメール本文に復活している"
+        assert f'"{name}":' not in src, f"{name} が添付画像に復活している"
+    assert "<h2>📈 日別 利用状況とAPI費用" not in src, "見出しが残っている"
+    assert "def _daily_cost_yen(" not in src, "グラフ専用だった日別費用の計算が残っている"
 
 
 # ── ④ 記録件数・記録した人数の30日推移 ──────────────────────────

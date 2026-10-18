@@ -120,103 +120,9 @@ def fig_to_png(fig) -> bytes:
     return buf.getvalue()
 
 
-def _daily_cost_yen(data: dict, credit=None):
-    """日別のAPI費用（円）と、その出どころ（"実額" / "推定"）を返す。
-
-    クレジット情報に日別の金額があればそれを使う（Admin APIキーがあれば Cost API の実額、
-    無ければアプリの解析回数からの推定）。取れなければ「解析回数 × 1回あたりの概算」で出す。
-    ※Cost API の日付は UTC 区切りのため、JST の日付と最大9時間ずれる。"""
-    dates = data["dates"]
-    if credit and credit.get("status") in ("ok", "estimated") and credit.get("daily"):
-        rate = credit.get("usd_jpy") or 155.0
-        daily = credit["daily"]
-        yen = [round(float(daily.get(d) or 0) * rate) for d in dates]
-        return yen, ("推定" if credit.get("estimated") else "実額")
-    per = data.get("cost_per_analysis") or 4
-    return [round(a * per) for a in data["daily_analyses_trend"]], "推定"
-
-
-def chart_usage(data: dict, credit=None) -> bytes:
-    """日別の利用状況とAPI費用を1枚にまとめたグラフ（直近30日）。
-
-    オーナー指示 2026-09-30：以前は「日別 利用推移」と「API 日別コスト」の似たグラフが
-    2枚出ていたため1枚に統一した。必ず次の5項目を載せる：
-      デイリー利用者数／食事解析の回数／APIの費用／食事記録の件数／記録した人数
-    単位が3種類（回・件／人／円）あるので、棒＝回・件（左軸）、線＝人（右軸）、
-    赤い線＝円（いちばん右の軸）に分けて描く。"""
-    dates     = data["dates"]
-    n         = len(dates)
-    analyses  = data["daily_analyses_trend"]
-    users     = data["daily_users_trend"]
-    records   = data.get("daily_records_trend") or [0] * n
-    recorders = data.get("daily_recorders_trend") or [0] * n
-    cost_yen, cost_kind = _daily_cost_yen(data, credit)
-
-    x = np.arange(n)
-    tick_idx = [i for i in x if i % 5 == 0]
-    tick_lbl = [dates[i][5:] for i in tick_idx]
-
-    fig, ax1 = plt.subplots(figsize=(10, 4.8))
-    ax2 = ax1.twinx()                 # 人数
-    ax3 = ax1.twinx()                 # 円
-    ax3.spines["right"].set_position(("axes", 1.10))
-
-    w = 0.4
-    b1 = ax1.bar(x - w / 2, analyses, width=w, color=C_INDIGO + "CC", zorder=2)
-    b2 = ax1.bar(x + w / 2, records,  width=w, color=C_GREEN + "B3",  zorder=2)
-    l1, = ax2.plot(x, users, color=C_PRIMARY, marker="o", markersize=4, linewidth=2.2, zorder=3)
-    l2, = ax2.plot(x, recorders, color=C_AMBER, marker="s", markersize=3.5, linewidth=2.0,
-                   linestyle="--", zorder=3)
-    l3, = ax3.plot(x, cost_yen, color=C_COST, marker="D", markersize=3, linewidth=1.8, zorder=4)
-
-    ax1.set_xticks(tick_idx)
-    ax1.set_xticklabels(tick_lbl, fontsize=12)
-    ax1.set_ylabel("回・件（棒）", fontsize=12, color=C_INDIGO)
-    ax2.set_ylabel("人（上の線）", fontsize=12, color=C_PRIMARY)
-    ax3.set_ylabel("円（赤い線）", fontsize=12, color=C_COST)
-    for ax, col in ((ax1, C_INDIGO), (ax2, C_PRIMARY), (ax3, C_COST)):
-        ax.tick_params(axis="y", colors=col, labelsize=11)
-
-    # 5本が重なって読めなくならないよう、上下の帯に分けて描く：
-    #   下の帯（〜55%）＝棒（回・件）と赤い線（円）。推定のときは費用＝回数×単価なので、
-    #                    赤い線が解析回数の棒の頭をなぞる形になり、関係が一目で分かる。
-    #   上の帯（60〜95%）＝人数の2本の線。
-    def _band(ax, vals, lo, hi, zero_based):
-        vmax = max(vals or [0]) or 1
-        if zero_based:
-            top = vmax / hi
-            ax.set_ylim(0, top)
-            ticks = [t for t in ax.get_yticks() if 0 <= t <= vmax * 1.05]
-        else:
-            vmin = min(vals or [0])
-            span = max(vmax - vmin, 1) / (hi - lo)
-            bottom = vmin - lo * span
-            ax.set_ylim(bottom, bottom + span)
-            step = 5 if vmax - vmin <= 30 else 10
-            first = int(np.ceil(vmin / step) * step)
-            ticks = list(range(first, int(vmax) + 1, step)) or [round(vmin)]
-        ax.set_yticks(ticks)
-
-    _band(ax1, list(analyses) + list(records), 0, 0.55, zero_based=True)
-    _band(ax3, cost_yen, 0, 0.55, zero_based=True)
-    _band(ax2, list(users) + list(recorders), 0.60, 0.95, zero_based=False)
-
-    total = sum(cost_yen)
-    how = "1回¥{:g}で計算".format(data.get("cost_per_analysis") or 4) if cost_kind == "推定" \
-        else "Anthropic Cost API"
-    ax1.set_title(f"日別 利用状況とAPI費用（直近30日） — API費用 30日合計 ¥{total:,}（{cost_kind}・{how}）",
-                  fontsize=13.5, fontweight="bold", pad=8)
-
-    ax1.legend([b1, b2, l1, l2, l3],
-               ["食事解析の回数", "食事記録の件数", "デイリー利用者数", "記録した人数", "APIの費用（円）"],
-               loc="upper center", bbox_to_anchor=(0.5, -0.10), ncol=5, fontsize=10.5,
-               frameon=False, handlelength=1.6, columnspacing=1.2)
-
-    for ax in (ax1, ax2, ax3):
-        ax.spines["top"].set_visible(False)
-    ax1.grid(axis="y", alpha=0.25, zorder=0)
-    fig.tight_layout()
-    return fig_to_png(fig)
+# ※「📈 日別 利用状況とAPI費用（直近30日）」のグラフ（chart_usage）はオーナー指示 2026-10-18 で削除した
+#   （「重複しているデータがあるので全部消して」）。利用者数・解析回数・記録件数は上の数字のカード、
+#   APIの費用は最上部のコストのカードに出ている。関数ごと消してあるので戻さないこと。
 
 
 def chart_weight_loss(data: dict) -> str:
@@ -406,10 +312,10 @@ def chart_goal_compare(data: dict) -> bytes:
 
 
 # ── メール HTML 本文 ────────────────────────────────────────────
-# 画像は cid:chart_usage / cid:chart_weight_loss などで参照する
+# 画像は cid:chart_weight_loss などで参照する
 # （send_email() が main() で生成した charts dict のキーと同名の Content-ID を付けて添付する）。
-# ※API費用の日別グラフ（chart_credit）は、オーナー指示 2026-09-30 で chart_usage に統合した。
-#   似たグラフが2枚並んでいたため。費用の推移は chart_usage の赤い線で見る。
+# ※API費用の日別グラフ（chart_credit）と、それを統合した「日別 利用状況とAPI費用」（chart_usage）は
+#   どちらもオーナー指示で削除した（2026-09-30／2026-10-18）。
 
 
 def _credit_section(credit: dict, est_cost_jpy: int) -> str:
@@ -473,7 +379,7 @@ def _credit_section(credit: dict, est_cost_jpy: int) -> str:
         </div>
       </div>"""
 
-    # 日別の費用グラフはここには出さない（「📈 日別 利用状況とAPI費用」の1枚に統合済み）
+    # 日別の費用グラフは出さない（オーナー指示 2026-10-18 で日別グラフごと削除）
     return f"""
     <div class="section">{cards}
     </div>"""
@@ -1199,12 +1105,6 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
     <!-- 🎁 まめポイント（こまめ記録）を昨日何人が獲得したか（オーナー指示 2026-10-17） -->
     {_mame_points_section(data.get("mame_points"), meal.get("users"))}
 
-    <!-- ① 日別推移グラフ（利用状況とAPI費用を1枚に統合。オーナー指示 2026-09-30） -->
-    <div class="section">
-      <h2>📈 日別 利用状況とAPI費用（直近30日）</h2>
-      <img class="chart" src="cid:chart_usage" alt="Usage and API Cost Trend">
-    </div>
-
     <!-- ② 体重・Bカウント・運動 推移 -->
     <div class="section">
       <h2>⚖️ 2. 体重 &amp; Bカウント &amp; 運動 推移</h2>
@@ -1330,7 +1230,7 @@ def main():
     print(f"  report_date={data['report_date']}, daily_users={data['daily_users']}, "
           f"daily_analyses={data['daily_analyses']}")
 
-    # API費用は日別グラフ（chart_usage）にも描くので、グラフより先に取得する
+    # API費用（最上部のコストのカード）
     print("Fetching Claude API credit / cost...")
     try:
         credit = build_credit_info(estimate=fetch_credit_estimate())
@@ -1342,7 +1242,6 @@ def main():
 
     print("Generating charts...")
     charts = {
-        "chart_usage":    chart_usage(data, credit),
         "chart_weight_loss": chart_weight_loss(data),
         "chart_nutrition": chart_nutrition(data),
         "chart_goal_compare": chart_goal_compare(data),
