@@ -105,8 +105,8 @@ def test_report_card_shows_intake():
     assert sr._intake_line(None) == "", "古いサーバー（intake なし）でも落ちない"
 
     member = {"name": "やさい子", "change_30d_kg": -2.5, "photos": [{"src": PHOTO, "date": "2026-10-14"}],
-              "photo_rate": {"days": 7, "record_days": 5, "photos": 12, "photos_per_day": 2.4},
+              "record_rate": {"days": 7, "record_days": 5, "records": 18, "records_per_day": 3.6},
               "intake": intake}
     html = sr._photo_card(member, "t", {}, True)
-    # 「📷 食事の写真」の行のすぐ下に出す
-    assert html.index("📷 食事の写真：") < html.index("🥗 食べた量：")
+    # 「📝 食事の記録」の行の下に出す（2026-10-18 に「📷 食事の写真」から言い換えた）
+    assert html.index("📝 食事の記録：") < html.index("🥗 食べた量：")

@@ -654,21 +654,26 @@ def _progress_block(progress, cid: str, charts: dict, good: bool) -> str:
       {img}"""
 
 
-def _photo_rate_line(rate) -> str:
-    """「直近7日に食事の写真を1日平均何枚上げているか」の1行（オーナー指示 2026-10-10）。
-    割る日数は記録した日（何も記録していない日は0枚として数えない）。データが無ければ出さない。"""
+def _record_rate_line(rate) -> str:
+    """「直近7日に食事を1日平均何回記録しているか」の1行（オーナー指示 2026-10-18）。
+    写真の枚数ではなく、写真・文章・コピーご飯（間食も含む）すべての記録の回数で数える。
+    割る日数は記録した日（何も記録していない日は0回として数えない）。データが無ければ出さない。"""
     if not isinstance(rate, dict):
         return ""
     days = rate.get("days") or 7
-    ppd = rate.get("photos_per_day")
-    if isinstance(ppd, (int, float)):
-        body = (f'<b>1日平均 {ppd:.1f}枚</b>'
+    rpd = rate.get("records_per_day")
+    if isinstance(rpd, (int, float)):
+        kinds = rate.get("by_kind") or {}
+        labels = (("photo", "写真"), ("text", "文章"), ("copy", "コピーご飯"), ("manual_b", "B手入力"))
+        parts = [f"{lbl}{kinds.get(k)}" for k, lbl in labels if kinds.get(k)]
+        breakdown = f'：{"・".join(parts)}' if parts else ""
+        body = (f'<b>1日平均 {rpd:.1f}回</b>'
                 f'<span style="color:#9CA3AF">（直近{days}日のうち記録した{rate.get("record_days", 0)}日・'
-                f'計{rate.get("photos", 0)}枚）</span>')
+                f'計{rate.get("records", 0)}回{breakdown}）</span>')
     else:
         body = f'<span style="color:#9CA3AF">直近{days}日の記録なし</span>'
     return (f'\n      <div style="font-size:12px;color:#374151;line-height:1.7">'
-            f'📷 食事の写真：{body}</div>')
+            f'📝 食事の記録：{body}</div>')
 
 
 def _exercise_line(member) -> str:
@@ -784,7 +789,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         <span style="color:{color};margin-left:8px">30日 {change_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
-      </div>{_photo_rate_line(member.get("photo_rate"))}{_exercise_line(member)}{_intake_line(member.get("intake"))}{progress_html}
+      </div>{_record_rate_line(member.get("record_rate"))}{_exercise_line(member)}{_intake_line(member.get("intake"))}{progress_html}
       <table cellpadding="0" cellspacing="0" border="0">{rows}</table>
     </div>"""
 
