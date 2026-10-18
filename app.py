@@ -3675,12 +3675,14 @@ PROGRESS_MAX_POINTS = 400
 PROGRESS_COMPARE_DAYS = 7
 
 
-def _member_photo_rate(cur, uid, days=PROGRESS_COMPARE_DAYS):
-    """直近 days 日に食事の写真を1日平均何枚上げているか（オーナー指示 2026-10-10）。
+def _member_record_rate(cur, uid, days=PROGRESS_COMPARE_DAYS):
+    """直近 days 日に、食事を1日平均何回記録しているか（オーナー指示 2026-10-18）。
 
-    数え方は「記録のしかたの違い」（_record_behavior_compare の photos_per_day）と同じ：
-    ・写真の枚数＝「写真で記録」の操作の回数（解析が終わった写真1枚ごとに1件）
-    ・割る日数＝期間内に1件でも記録した日（写真・文章・コピー・B手入力のどれか）
+    以前は「写真の枚数」（2026-10-10）だったが、オーナー指示で「食事記録の回数」に変えた：
+    「大事なのはこまめに報告すること。間食・コピーご飯・文章での入力も含めて、写真の枚数ではなく
+    食事記録の回数（1日平均何回）にして」。
+    ・記録の回数＝action_log の記録操作（写真・文章・コピーご飯・B手入力）の件数。間食もそれぞれ1回
+    ・割る日数＝期間内に1件でも記録した日（記録していない日を0回として数えない）
     ・深夜0〜3時は前日の晩
     action_log が読めなければ None（レポートは止めない）。"""
     today = datetime.datetime.now(JST).date()
@@ -3692,13 +3694,14 @@ def _member_photo_rate(cur, uid, days=PROGRESS_COMPARE_DAYS):
                     f"AND created_at>={PH} AND action IN ({ph})", (uid, since, *_RECORD_ACTIONS))
         rows = cur.fetchall()
     except Exception as e:
-        app.logger.warning("member photo rate skipped: %s", e)
+        app.logger.warning("member record rate skipped: %s", e)
         try:
             cur.connection.rollback()   # PostgreSQL：失敗したままだと同じ接続の後続の問い合わせが全部落ちる
         except Exception:
             pass
         return None
     per_day = {}
+    by_kind = {}
     for action, ts in rows:
         ts = str(ts)
         try:
@@ -3710,13 +3713,16 @@ def _member_photo_rate(cur, uid, days=PROGRESS_COMPARE_DAYS):
             d -= datetime.timedelta(days=1)
         if d < first:
             continue
-        per_day[d] = per_day.get(d, 0) + (1 if action == "photo" else 0)
-    photos = sum(per_day.values())
+        per_day[d] = per_day.get(d, 0) + 1
+        by_kind[action] = by_kind.get(action, 0) + 1
+    records = sum(per_day.values())
     return {
         "days": days,
         "record_days": len(per_day),
-        "photos": photos,
-        "photos_per_day": round(photos / len(per_day), 1) if per_day else None,
+        "records": records,
+        "records_per_day": round(records / len(per_day), 1) if per_day else None,
+        # 内訳（写真・文章・コピーご飯・B手入力の回数）。レポートで「全部含めている」ことが分かるように
+        "by_kind": {k: by_kind.get(k, 0) for k in _RECORD_ACTIONS},
     }
 
 
@@ -3879,7 +3885,7 @@ def admin_report_photos():
                     # 開始時 → いま の推移（オーナー指示 2026-09-30）
                     "progress": _member_progress(cur, mem["uid"]),
                     # 直近7日の写真の枚数（1日平均。オーナー指示 2026-10-10）
-                    "photo_rate": _member_photo_rate(cur, mem["uid"]),
+                    "record_rate": _member_record_rate(cur, mem["uid"]),
                     # 直近7日のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）
                     "intake": _member_intake(cur, mem["uid"]),
                 })
