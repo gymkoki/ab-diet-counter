@@ -273,8 +273,8 @@ def test_credit_section_renders():
     assert "クレジット残高" not in html
     assert "¥13,350" not in html      # 残高 $89 × 150 は出さない
     assert "約89日" not in html
-    # 日別の費用グラフはここには出さない（オーナー指示 2026-09-30：
-    # 「日別 利用状況とAPI費用」の1枚に統合した。tests/test_report_usage_chart.py で確認）
+    # 日別の費用グラフは出さない（2026-09-30 に統合 → 2026-10-18 に日別グラフごと削除。
+    # tests/test_report_usage_chart.py で確認）
     assert "cid:chart_credit" not in html
     assert "<img" not in html
 
@@ -285,12 +285,6 @@ def test_credit_section_renders():
     assert "取得できず" not in html_ng and "残高" not in html_ng
     assert "cid:chart_credit" not in html_ng
 
-    # 費用の推移は統合グラフで描ける（クレジット情報の日別金額を使う）
-    data = {"dates": [f"2026-08-{d:02d}" for d in range(1, 12)],
-            "daily_analyses_trend": [10] * 11, "daily_users_trend": [5] * 11,
-            "daily_records_trend": [12] * 11, "daily_recorders_trend": [6] * 11,
-            "cost_per_analysis": 4.0}
-    assert send_report.chart_usage(data, ok)[:4] == b"\x89PNG"
 
 
 def test_credit_section_shows_auto_reload_and_limit():
