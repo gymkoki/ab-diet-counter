@@ -181,7 +181,7 @@ def test_today_record_card_stays_removed():
     assert "renderMealProgress" not in html
     assert "まだ記録がありません。写真を追加して、1回目の食事から始めましょう。" not in html
     # 似た機能の2つは残っていること
-    assert 'id="meal-points"' in html, "3食こまめ記録ポイントまで消えている"
+    assert 'id="meal-points"' in html, "こまめ記録ポイントまで消えている"
     assert "記録できていない食事はありませんか？" in html, "記録漏れの案内まで消えている"
 
 

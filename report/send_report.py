@@ -926,7 +926,7 @@ def _sweet_rule_section(sr) -> str:
 
 
 def _mame_points_section(mp, recorders=None) -> str:
-    """🎁 まめポイント（3食こまめ記録ポイント）を昨日何人が獲得したか（オーナー指示 2026-10-17）。
+    """🎁 まめポイント（こまめ記録ポイント）を昨日何人が獲得したか（オーナー指示 2026-10-17）。
     朝・昼・夜の3回とも、その時間帯のうちに記録できた人が1日1ポイント。人数だけで名前は出さない。"""
     if not mp:
         return ""
@@ -944,7 +944,7 @@ def _mame_points_section(mp, recorders=None) -> str:
       </table>""" if rows else ""
     return f"""
     <div class="section">
-      <h2>🎁 まめポイント（3食こまめ記録）（{mp.get('date', '')}）</h2>
+      <h2>🎁 まめポイント（こまめ記録）（{mp.get('date', '')}）</h2>
       <div class="kpi-row">
         <div class="kpi">
           <div class="kpi-lbl">昨日まめポイントを獲得した人</div>
@@ -954,7 +954,7 @@ def _mame_points_section(mp, recorders=None) -> str:
         <div class="kpi">
           <div class="kpi-lbl">{mp.get('goal', 10)}ポイント達成（累計）</div>
           <div class="kpi-val" style="font-size:22px">{mp.get('unlocked', 0)}人</div>
-          <div class="kpi-sub">奥松の特別メッセージが見られる人</div>
+          <div class="kpi-sub">特別メッセージが見られる人</div>
         </div>
         <div class="kpi">
           <div class="kpi-lbl">1ポイント以上持っている人</div>
@@ -1196,7 +1196,7 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
     <!-- 🍬 お菓子・スイーツ・ジュースの特別ルールの適用人数（オーナー依頼 2026-10-07） -->
     {_sweet_rule_section(data.get("sweet_rule"))}
 
-    <!-- 🎁 まめポイント（3食こまめ記録）を昨日何人が獲得したか（オーナー指示 2026-10-17） -->
+    <!-- 🎁 まめポイント（こまめ記録）を昨日何人が獲得したか（オーナー指示 2026-10-17） -->
     {_mame_points_section(data.get("mame_points"), meal.get("users"))}
 
     <!-- ① 日別推移グラフ（利用状況とAPI費用を1枚に統合。オーナー指示 2026-09-30） -->

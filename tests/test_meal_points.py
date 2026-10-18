@@ -1,7 +1,7 @@
-"""3食こまめ記録ポイント（オーナー指示 2026-10-15）の回帰テスト。
+"""こまめ記録ポイント（オーナー指示 2026-10-15。旧称「3食こまめ記録ポイント」）の回帰テスト。
 
 ・朝・昼・夜の3回とも、その時間帯のうちに記録できた日に1ポイント（1日1ポイントまで）
-・10ポイントたまると「奥松の特別メッセージ」（動画URL）が見られる
+・10ポイント貯まると「リオールジムからの特別メッセージ」（動画URL）が見られる
 ・動画URLは管理画面から後日登録する（未登録なら「準備中」）
 """
 import datetime
@@ -136,7 +136,7 @@ def test_only_today_records_count():
 
 def test_card_is_on_record_screen():
     html = open(INDEX, encoding="utf-8").read()
-    assert 'id="meal-points"' in html and "奥松の特別メッセージ" in html
+    assert 'id="meal-points"' in html and "リオールジムからの特別メッセージ" in html
     assert "renderMealPoints();" in re.search(r"function updateDailyTotal\(\) \{.*?\n\}", html, re.S).group(0)
 
 
@@ -173,3 +173,14 @@ def test_report_shows_mame_points_section():
     assert sr._mame_points_section(None) == ""
     src = open(sr.__file__, encoding="utf-8").read()
     assert '_mame_points_section(data.get("mame_points")' in src
+
+
+def test_card_wording():
+    """オーナー指示 2026-10-18：名前は「こまめ記録ポイント」（「3食」を付けない）、
+    10ポイントの案内は「リオールジムから特別メッセージが見られます」（「奥松の」にしない）。"""
+    html = open(INDEX, encoding="utf-8").read()
+    assert '<span class="mpt-title">🎁 こまめ記録ポイント</span>' in html
+    assert "ポイント貯まると、リオールジムから特別メッセージが見られます！" in html
+    shown = re.sub(r"<!--.*?-->|/\*.*?\*/|//[^\n]*", "", html, flags=re.S)
+    assert "3食こまめ記録ポイント" not in shown, "画面に「3食こまめ記録ポイント」が残っている"
+    assert "奥松の特別メッセージ" not in shown, "画面に「奥松の特別メッセージ」が残っている"
