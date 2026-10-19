@@ -110,7 +110,7 @@
     .rec-card.rec-primary:active .rec-sub { color:rgba(255,255,255,0.92); }
     /* 2列ぶんの幅を使うカード（Bだけ追加） */
     .rec-card.rec-wide { grid-column:1 / -1; min-height:96px; }
-    .rec-card { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:120px; padding:16px 10px; cursor:pointer; border:1.5px dashed #D8D2CB; border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-sm); font-family:inherit; font-size:18px; font-weight:700; color:var(--text); text-align:center; line-height:1.35; transition:border-color 0.2s, background 0.2s, color 0.2s; }
+    .rec-card { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:120px; padding:16px 10px; cursor:pointer; border:1.5px solid #E4DDD5; border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-sm); font-family:inherit; font-size:18px; font-weight:700; color:var(--text); text-align:center; line-height:1.35; transition:border-color 0.2s, background 0.2s, color 0.2s; }
     .rec-card:hover { border-color:var(--primary); background:var(--primary-soft); }
     .rec-card:active { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }
     .rec-ic { font-size:26px; line-height:1; }
@@ -686,18 +686,22 @@
        1日1〜2回しか上がらない原因は「食べたのに記録し忘れている」ことなので、
        記録画面を開いた瞬間に「あと何食」が見える場所を作る。 */
     /* こまめ記録ポイント（オーナー指示 2026-10-15。2026-10-18 に「3食」を外した） */
-    .mpt { margin:10px 16px 0; padding:12px 14px; border-radius:var(--radius-md); background:#F4F1FF; border:1px solid #D9D0FB; }
-    .mpt .mpt-head { display:flex; align-items:center; justify-content:space-between; }
-    .mpt .mpt-title { font-size:17px; font-weight:800; color:#4C3A9E; }
-    .mpt .mpt-count { font-size:17px; font-weight:900; color:#4C3A9E; font-variant-numeric:tabular-nums; }
-    .mpt .mpt-count b { font-size:22px; }
-    .mpt .mpt-stars { display:flex; gap:4px; margin:10px 0 8px; }
-    .mpt .mpt-star { flex:1; height:12px; border-radius:6px; background:#E2DCF8; }
-    .mpt .mpt-star.on { background:#7C5CE0; }
-    .mpt .mpt-today { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
-    .mpt .mpt-chip { font-size:15px; font-weight:700; padding:3px 10px; border-radius:999px; background:#fff; border:1px solid #D9D0FB; color:#8B83A8; }
+    /* 2026-10-19 オーナー指示：「写真を追加」の下に置き、1〜2行に縮める。ルールの説明は「？」で開く */
+    .mpt { margin:12px 0 0; padding:10px 12px; border-radius:var(--radius-md); background:#F4F1FF; border:1px solid #D9D0FB; }
+    .mpt .mpt-head { display:flex; align-items:center; gap:8px; }
+    .mpt .mpt-title { font-size:16px; font-weight:800; color:#4C3A9E; flex:1; min-width:0; }
+    .mpt .mpt-count { font-size:15px; font-weight:800; color:#4C3A9E; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .mpt .mpt-count b { font-size:20px; }
+    .mpt .mpt-help { flex-shrink:0; width:28px; height:28px; border-radius:50%; border:1px solid #CFC4F7; background:#fff; color:#6B55C9; font-size:15px; font-weight:800; line-height:1; cursor:pointer; padding:0; }
+    .mpt .mpt-help[aria-expanded="true"] { background:#7C5CE0; border-color:#7C5CE0; color:#fff; }
+    .mpt .mpt-row { display:flex; align-items:center; gap:6px; margin-top:6px; flex-wrap:wrap; }
+    .mpt .mpt-label { font-size:14px; font-weight:700; color:#6B6390; }
+    .mpt .mpt-today { display:flex; gap:5px; }
+    .mpt .mpt-chip { font-size:14px; font-weight:700; padding:2px 9px; border-radius:999px; background:#fff; border:1px solid #D9D0FB; color:#8B83A8; }
     .mpt .mpt-chip.on { background:#7C5CE0; border-color:#7C5CE0; color:#fff; }
-    .mpt .mpt-msg { font-size:15px; line-height:1.55; color:#4C3A9E; font-weight:600; }
+    .mpt .mpt-status { margin-left:auto; font-size:14px; font-weight:700; color:#6B55C9; }
+    .mpt .mpt-msg { display:none; white-space:pre-line; margin-top:8px; padding-top:8px; border-top:1px dashed #D9D0FB; font-size:15px; line-height:1.6; color:#4C3A9E; font-weight:600; }
+    .mpt.help-open .mpt-msg { display:block; }
     .mpt .mpt-watch { display:none; width:100%; margin-top:10px; padding:12px; border:none; border-radius:var(--radius-md); background:#7C5CE0; color:#fff; font-size:17px; font-weight:800; cursor:pointer; }
     .mpt.unlocked .mpt-watch { display:block; }
     .mpt.flash { animation: mptFlash 1.2s ease; }
@@ -930,13 +934,18 @@
   <div id="sub-food">
     <!-- こまめ記録ポイント（オーナー指示 2026-10-15）：朝・昼・夜をその時間帯に記録できた日に1ポイント。
          10ポイントでリオールジムからの特別メッセージ（動画）が見られる。 -->
+    <!-- 表示する場所は「写真を追加」などのボタンの下（buildPanel で #mpt-slot-food へ移す。2026-10-19） -->
     <div id="meal-points" class="mpt">
       <div class="mpt-head">
         <span class="mpt-title">🎁 こまめ記録ポイント</span>
         <span class="mpt-count"><b id="mpt-count">0</b> / <span id="mpt-goal">10</span>pt</span>
+        <button class="mpt-help" id="mpt-help" onclick="toggleMealPointsHelp()" aria-expanded="false" aria-controls="mpt-msg" aria-label="こまめ記録ポイントの説明">？</button>
       </div>
-      <div class="mpt-stars" id="mpt-stars"></div>
-      <div class="mpt-today" id="mpt-today"></div>
+      <div class="mpt-row">
+        <span class="mpt-label">今日</span>
+        <span class="mpt-today" id="mpt-today"></span>
+        <span class="mpt-status" id="mpt-status"></span>
+      </div>
       <div class="mpt-msg" id="mpt-msg"></div>
       <button class="mpt-watch" onclick="openSpecialMessage()">🎬 リオールジムからの特別メッセージを見る</button>
     </div>
@@ -2015,6 +2024,9 @@ function switchMeal(mealId) { activeMeal = 'food'; }
 // ═══════════════════════════════════════════
 function buildPanel(m) {
   const panel = document.getElementById(`panel-${m.id}`);
+  // 作り直す前に、ポイントのカードをパネルの外へ戻しておく（innerHTML で消えないように）
+  const mptBox = document.getElementById('meal-points');
+  if (mptBox && panel.contains(mptBox)) panel.parentNode.insertBefore(mptBox, panel);
   panel.innerHTML = `
     <div class="container">
       <div id="strip-${m.id}" class="meal-strip"></div>
@@ -2033,6 +2045,8 @@ function buildPanel(m) {
           <span class="rec-ic">🍚</span>コピーご飯を追加
         </button>
       </div>
+      <!-- こまめ記録ポイントは「写真を追加」などの下に置く（オーナー指示 2026-10-19） -->
+      <div id="mpt-slot-${m.id}"></div>
       <div class="text-entry-form" id="textform-${m.id}" style="display:none">
         <textarea id="textinput-${m.id}" class="text-entry-textarea" placeholder="例：食パン1枚、ゆで卵1個、サラダ、ブラックコーヒー"></textarea>
         <button class="btn-text-submit" onclick="submitTextEntry('${m.id}')">この内容で計算する</button>
@@ -2041,6 +2055,8 @@ function buildPanel(m) {
       <div class="meal-result" id="res-${m.id}" style="margin-top:8px"></div>
     </div>
   `;
+  const mptSlot = document.getElementById(`mpt-slot-${m.id}`);
+  if (mptBox && mptSlot) mptSlot.appendChild(mptBox);
   const addEl = document.getElementById(`add-${m.id}`);
   addEl.addEventListener('dragover',  e => { e.preventDefault(); addEl.style.borderColor = 'var(--primary)'; });
   addEl.addEventListener('dragleave', () => { addEl.style.borderColor = ''; });
@@ -2076,6 +2092,8 @@ const MEAL_POINT_SLOTS = [
   { key: 'noon',    label: '昼', from: 10 * 60 + 30, to: 16 * 60 },
   { key: 'night',   label: '夜', from: 16 * 60,      to: 24 * 60 },
 ];
+// 「？」で開く説明のルール部分
+const MEAL_POINTS_RULE = '朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録すると1日1ポイント。';
 let _mealPointsFetched = false;
 let _mealPointsSending = false;
 
@@ -2171,21 +2189,36 @@ function renderMealPoints() {
   box.classList.toggle('unlocked', pts >= goal);
   document.getElementById('mpt-count').textContent = pts;
   document.getElementById('mpt-goal').textContent = goal;
-  let stars = '';
-  for (let i = 0; i < goal; i++) stars += `<div class="mpt-star${i < Math.min(pts, goal) ? ' on' : ''}"></div>`;
-  document.getElementById('mpt-stars').innerHTML = stars;
-  document.getElementById('mpt-today').innerHTML = MEAL_POINT_SLOTS.map(sl =>
-    `<span class="mpt-chip${got.has(sl.key) || earnedToday ? ' on' : ''}">${sl.label}${got.has(sl.key) || earnedToday ? ' ✓' : ''}</span>`).join('');
+  document.getElementById('mpt-today').innerHTML = MEAL_POINT_SLOTS.map(sl => {
+    const on = got.has(sl.key) || earnedToday;
+    // 未記録は「朝」だけ（「朝—」は「朝一」と読めてしまうため）
+    return `<span class="mpt-chip${on ? ' on' : ''}">${sl.label}${on ? '✓' : ''}</span>`;
+  }).join('');
+  // 2行目の右端：今日の状況をひとことで（詳しいルールは「？」の中）
+  const left = MEAL_POINT_SLOTS.length - got.size;
+  document.getElementById('mpt-status').textContent =
+    earnedToday ? '🎉 今日の1pt獲得' : `あと${left}回で1pt`;
   const msg = document.getElementById('mpt-msg');
   if (pts >= goal) {
-    msg.textContent = earnedToday
+    msg.textContent = (earnedToday
       ? `🎉 今日も1ポイント獲得！${goal}ポイント達成おめでとうございます。リオールジムから特別メッセージが見られます。`
-      : `🎉 ${goal}ポイント達成！リオールジムから特別メッセージが見られます。これからもこまめに記録しましょう。`;
+      : `🎉 ${goal}ポイント達成！リオールジムから特別メッセージが見られます。これからもこまめに記録しましょう。`)
+      + `\n${MEAL_POINTS_RULE}`;
   } else if (earnedToday) {
-    msg.textContent = `🎉 今日の1ポイント獲得！あと${goal - pts}ポイントで、リオールジムから特別メッセージが見られます。`;
+    msg.textContent = `🎉 今日の1ポイント獲得！あと${goal - pts}ポイントで、リオールジムから特別メッセージが見られます。\n${MEAL_POINTS_RULE}`;
   } else {
-    msg.textContent = `朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録すると1日1ポイント。${goal}ポイント貯まると、リオールジムから特別メッセージが見られます！`;
+    msg.textContent = `${MEAL_POINTS_RULE}${goal}ポイント貯まると、リオールジムから特別メッセージが見られます！`;
   }
+}
+
+// 「？」で、こまめ記録ポイントのルール説明を開く／閉じる
+function toggleMealPointsHelp() {
+  const box = document.getElementById('meal-points');
+  const btn = document.getElementById('mpt-help');
+  if (!box || !btn) return;
+  const open = !box.classList.contains('help-open');
+  box.classList.toggle('help-open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
 // YouTube の各種URL（watch?v= / youtu.be / shorts / embed / live）から動画IDを取り出す
