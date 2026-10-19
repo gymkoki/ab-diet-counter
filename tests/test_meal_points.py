@@ -184,3 +184,24 @@ def test_card_wording():
     shown = re.sub(r"<!--.*?-->|/\*.*?\*/|//[^\n]*", "", html, flags=re.S)
     assert "3食こまめ記録ポイント" not in shown, "画面に「3食こまめ記録ポイント」が残っている"
     assert "奥松の特別メッセージ" not in shown, "画面に「奥松の特別メッセージ」が残っている"
+
+
+def test_card_is_compact_and_below_record_buttons():
+    """オーナー指示 2026-10-19：
+    ・「写真を追加」をいちばん上に置き、ポイントのカードはその下（ボタンの下の置き場所へ移す）
+    ・カードは1〜2行（見出し＋今日の朝・昼・夜）。ルールの説明は「？」を押したときだけ出す
+    ・「文章で手動入力」「コピーご飯を追加」は点線の枠にしない"""
+    html = open(INDEX, encoding="utf-8").read()
+    build = re.search(r"function buildPanel\(m\) \{.*?\n\}", html, re.S).group(0)
+    assert build.index('class="rec-grid"') < build.index('id="mpt-slot-${m.id}"'), "ポイントが写真ボタンより上にある"
+    assert "mptSlot.appendChild(mptBox)" in build
+    # 作り直しで消えないよう、innerHTML の前にカードを外へ戻している
+    assert build.index("panel.contains(mptBox)") < build.index("panel.innerHTML")
+    # 説明は既定で隠し、「？」で開く
+    assert re.search(r"\.mpt \.mpt-msg \{ display:none;", html)
+    assert ".mpt.help-open .mpt-msg { display:block; }" in html
+    assert 'id="mpt-help"' in html and "function toggleMealPointsHelp()" in html
+    assert 'id="mpt-stars"' not in html, "10個の目盛りの行が残っている（2行に縮める）"
+    # 点線の枠をやめた
+    rec_card = re.search(r"\n    \.rec-card \{[^}]*\}", html).group(0)
+    assert "dashed" not in rec_card
