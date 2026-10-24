@@ -43,7 +43,8 @@ on:
 jobs:
   send-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 収益改善の提案（AIが考えるのに最大3分ほど）を足したので余裕を持たせる（2026-10-24）
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4

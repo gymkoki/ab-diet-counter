@@ -423,6 +423,71 @@ def fetch_report_photos():
     return None
 
 
+def fetch_revenue_proposals():
+    """今日の「収益改善の提案」（1〜3件）を取得する（オーナー指示 2026-10-24）。
+    サーバーが1日1回だけAIで作ってキャッシュする。失敗してもレポート本体は送る（欄だけ省略）。"""
+    # 再試行はしない：レポート全体の持ち時間（GitHub Actions の上限）を食いつぶさないため。
+    # 失敗した日は欄が出ないだけで、次の朝にまた作られる。
+    try:
+        r = requests.get(
+            f"{APP_URL}/api/admin/revenue-proposals",
+            auth=(ADMIN_USER, ADMIN_PASS),
+            timeout=200,  # AIが考えてから返すので時間がかかる
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"revenue-proposals skipped: {type(e).__name__}")
+        return None
+
+
+def _esc(text) -> str:
+    return (str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def _revenue_section(rev) -> str:
+    """レポートのいちばん下：「💰 収益を伸ばすために今日やること」（1〜3件）。
+    提案ごとに、このチャット（Claude Code）にそのまま貼れる依頼文を付ける。
+    最後に全部まとめた依頼文も置く（長押し→コピー→貼り付けの1回で済むように）。"""
+    if not isinstance(rev, dict):
+        return ""
+    props = [p for p in (rev.get("proposals") or []) if isinstance(p, dict) and p.get("prompt")][:3]
+    if not props:
+        return ""
+    copy_box = ("font-family:Menlo,Consolas,monospace;font-size:12px;line-height:1.6;color:#111827;"
+                "background:#F3F4F6;border:1px dashed #9CA3AF;border-radius:6px;padding:8px 10px;"
+                "white-space:pre-wrap;word-break:break-all;-webkit-user-select:all;user-select:all")
+    cards = []
+    for i, p in enumerate(props, 1):
+        kind = p.get("kind") if p.get("kind") in ("アプリ", "運営") else "アプリ"
+        kind_color = "#2563EB" if kind == "アプリ" else "#059669"
+        effect = (f'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:4px">'
+                  f'💴 見込み：{_esc(p.get("effect"))}</div>') if p.get("effect") else ""
+        cards.append(f"""
+      <div style="border:1px solid #E5E7EB;border-left:4px solid #F59E0B;border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#fff">
+        <div style="font-size:14px;font-weight:800;color:#111827">{i}. {_esc(p.get("title"))}
+          <span style="font-size:11px;font-weight:700;color:#fff;background:{kind_color};border-radius:8px;padding:1px 7px;margin-left:6px">{_esc(kind)}</span></div>
+        <div style="font-size:12px;color:#374151;line-height:1.7;margin-top:4px">{_esc(p.get("why"))}</div>{effect}
+        <div style="font-size:11px;color:#6B7280;margin:8px 0 3px">📋 Claude Code への依頼文（長押しでコピー）</div>
+        <div style="{copy_box}">{_esc(p.get("prompt"))}</div>
+      </div>""")
+    date = rev.get("date", "")
+    all_text = f"{date} のデイリーレポートの「収益を伸ばすために今日やること」から、次を進めてください。\n" + "\n".join(
+        f"{i}. {p.get('title')}：{p.get('prompt')}" for i, p in enumerate(props, 1))
+    return f"""
+    <!-- 💰 収益を伸ばすために今日やること（オーナー指示 2026-10-24） -->
+    <div class="section">
+      <h2>💰 収益を伸ばすために今日やること（{len(props)}つ）</h2>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:10px">
+        有料会員の数・利用状況・AIの費用の数字から、AIが毎朝1〜3つ提案します。気になったものの依頼文を
+        Claude Code のチャットに貼り付けると、そのまま作業が始まります。
+      </div>{''.join(cards)}
+      <div style="font-size:11px;color:#6B7280;margin:4px 0 3px">📋 全部まとめて頼むとき（長押しでコピー）</div>
+      <div style="{copy_box}">{_esc(all_text)}</div>
+    </div>"""
+
+
 def _decode_photo(data_uri: str, max_side: int = 320):
     """data:image のbase64をJPEGバイト列に戻し、メール用に縮小する。
     サーバー側でサムネ化済みだが、古い形式のデータが混ざっても大きくなりすぎない
@@ -981,7 +1046,7 @@ def _mame_points_section(mp, recorders=None) -> str:
     </div>"""
 
 
-def build_html(data: dict, credit=None, photo_section="") -> str:
+def build_html(data: dict, credit=None, photo_section="", revenue=None) -> str:
     rdate = data["report_date"]
     meal  = data["meal_summary"]
     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
@@ -1290,6 +1355,7 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
 
     <!-- 「5. システム・運用状況」（時間帯別の解析分布・推定コスト）はオーナー指示
          （2026-10-01）でレポートから外した。昨日の推定コストは最上部のクレジット状況に出ている。 -->
+{_revenue_section(revenue)}
 
   </div>
   <div class="footer">
@@ -1408,10 +1474,14 @@ def main():
     else:
         print("  photos: skipped")
 
+    print("Fetching revenue proposals...")
+    revenue = fetch_revenue_proposals()
+    print(f"  revenue proposals: {len((revenue or {}).get('proposals') or [])}件")
+
     print("Building HTML email...")
     rdate   = data["report_date"]
     subject = f"[ABダイエット] デイリーレポート {rdate}"
-    html    = build_html(data, credit, photo_html)
+    html    = build_html(data, credit, photo_html, revenue)
 
     # ① GitHub の Secrets の Gmail で送る → ② だめならサーバー経由で送る（2026-10-24〜）。
     #    どちらの場合も最新のレポートはサーバーに保存され、管理画面で読める。
