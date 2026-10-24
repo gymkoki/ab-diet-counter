@@ -260,6 +260,80 @@ def _fill_sushi_rice(foods):
             f["sushi_rice_g"] = round(float(mm.group(1)) * SUSHI_RICE_PER_PIECE_G)
 
 
+# ── バナナのBカウントをそろえる（会員の声 2026-10-21） ──────────────────
+# 「バナナ4分の1が、Bカウント0の時と0.5の時がある」。バナナは「1本で最低B0.5」の特例があるため、
+# 1本未満でもAIがB0.5を付けることがあった。本数の基準をサーバー側で確定させる：
+#   1本未満（1/4本・半分など）→ 必ずB0 ／ 1本以上 → 最低B0.5（2本以上の値は触らない）
+# 対象は「バナナそのもの」の項目だけ（チョコバナナ・バナナケーキ・スムージーなどの加工品は触らない）。
+BANANA_ONE_G = 100           # バナナ1本の可食部の目安（本数が書かれていないとき）
+BANANA_ONE_KCAL = 90         # 同じくkcalの目安
+BANANA_UNDER_ONE_RATIO = 0.7  # 重さ・kcalから推すときは、目安の7割未満を「1本未満」とみなす
+_BANANA_PLAIN_REST_RE = re.compile(
+    r"[\d.,/⁄]+|本|分の|半分|半|約|ほど|程度|くらい|ぐらい|個|切れ|カット|輪切り|スライス|"
+    r"kcal|g|生|完熟|皮むき|小さめ|小|中|大きめ|大|房|の|・|、|\s")
+_BANANA_FRAC_RE = re.compile(r"(\d+)\s*[/⁄]\s*(\d+)\s*本?")
+_BANANA_BUNNO_RE = re.compile(r"(\d+)\s*分の\s*(\d+)")
+_BANANA_COUNT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*本")
+BANANA_UNDER_ONE_REASON = "バナナは1本未満なのでB0（1本以上で最低B0.5）"
+BANANA_AT_LEAST_ONE_REASON = "バナナは糖質が多いため、120kcal未満でも最低B0.5"
+
+
+def _is_plain_banana(name):
+    """料理名が「バナナ」そのもの（量の書き添えだけ）ならTrue。"""
+    import unicodedata
+    text = unicodedata.normalize("NFKC", name or "")
+    if "バナナ" not in text:
+        return False
+    rest = re.sub(r"[(（\[［【].*?[)）\]］】]", "", text).replace("バナナ", "", 1)
+    return _BANANA_PLAIN_REST_RE.sub("", rest) == ""
+
+
+def _banana_count(f):
+    """バナナの本数を推定する。(本数, 本数が書かれていたか) を返し、分からなければ (None, False)。"""
+    import unicodedata
+    text = unicodedata.normalize("NFKC", f"{f.get('name') or ''} {f.get('amount') or ''}")
+    m = _BANANA_FRAC_RE.search(text)
+    if m and int(m.group(2)) > 0:
+        return int(m.group(1)) / int(m.group(2)), True
+    m = _BANANA_BUNNO_RE.search(text)         # 「4分の1」
+    if m and int(m.group(1)) > 0:
+        return int(m.group(2)) / int(m.group(1)), True
+    if "半分" in text or "半本" in text:
+        return 0.5, True
+    m = _BANANA_COUNT_RE.search(text)
+    if m:
+        return float(m.group(1)), True
+    g = _num(f.get("fruit_g"))
+    if g > 0:
+        return g / BANANA_ONE_G, False
+    kcal = _num(f.get("kcal_per_serving"))
+    if kcal > 0:
+        return kcal / BANANA_ONE_KCAL, False
+    return None, False
+
+
+def _sanitize_banana(foods):
+    """バナナの項目のBを本数の基準にそろえる。変えた項目には元の値を b_adjusted_from に残す。"""
+    for f in foods:
+        if not isinstance(f, dict) or not _is_plain_banana(str(f.get("name") or "")):
+            continue
+        n, explicit = _banana_count(f)
+        if n is None:
+            continue
+        b = _num(f.get("b_count"))
+        # 重さ・kcalから推すときは小さめの1本を「1本未満」と取り違えないよう、目安の7割を境にする
+        under_one = n < (1 if explicit else BANANA_UNDER_ONE_RATIO)
+        if under_one and b > 0:
+            f["b_adjusted_from"] = b
+            f["b_count"] = 0
+            f["reason"] = BANANA_UNDER_ONE_REASON
+        elif not under_one and b < 0.5:
+            f["b_adjusted_from"] = b
+            f["b_count"] = 0.5
+            f["reason"] = BANANA_AT_LEAST_ONE_REASON
+    return foods
+
+
 def recompute_totals(result):
     """total_* を必ず foods の合計に一致させる。
     AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
@@ -272,6 +346,7 @@ def recompute_totals(result):
     if isinstance(foods, list):
         _sanitize_veg(foods)
         _fill_sushi_rice(foods)
+        _sanitize_banana(foods)
         # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
         b_sum = sum(_num(f.get("b_count")) for f in foods)
         result["total_b_count"] = round(b_sum * 2) / 2
@@ -1639,6 +1714,7 @@ B食材例：
   ・大きめ1本・1.5本 → B0.5
   ・2本（約200kcal超）→ B1
   ・半分だけ（約50g・45kcal程度）→ B0
+  ・1/4本・1/3本など、1本に満たない量 → 必ず【B0】（「最低B0.5」は1本以上のときだけ）
   ※バナナはこの本数基準を優先し、kcalのしきい値で下げないこと。
   ※kcal_per_serving は実際のkcal（例：約100kcal）のまま入れ、reason欄に
     「バナナは糖質が多いため、120kcal未満でも最低B0.5」と必ず書く。
@@ -1720,6 +1796,7 @@ Bカウントは「実際に食べた量」で決まる。料理名や食材か�
 糖質が特に多く、kcalが低めに出るのにダイエット上は無視できない食材は、
 120kcal未満でも下記の最低カウントを付ける。理由は必ず reason 欄に書く。
 - バナナ1本 … 約90〜130kcalでも【最低B0.5】（詳細はB食材例のバナナの項を参照）
+  ※1本未満（半分・1/4本など）はこの例外の対象外で、必ずB0。
 これ以外の食材で、120kcal未満なのにカウントを付けることはしない。
 
 【最重要・二重計上の絶対禁止（全食材共通）】
