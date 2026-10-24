@@ -3426,6 +3426,56 @@ function bFromKcal(kcal) {
   if (kcal <= 400) return 1;
   return 2 + 0.5 * Math.max(0, Math.ceil((kcal - 400) / 200) - 1);
 }
+// ── バナナの本数でBを決める（会員の声 2026-10-24：「バナナ4分の1が、B0の時と0.5の時がある」） ──
+//   1本未満 → B0 ／ 1〜1.5本 → B0.5 ／ 2本以上 → B1（以降はkcalのSTEP2。ただし最低B1）
+// ※サーバー側（app.py の _is_banana_only / _banana_pieces / _banana_b）と同じ計算にすること。
+const BANANA_KCAL_PER_PIECE = 95;
+const BANANA_ONLY_REST_RE = /[0-9.／/〜~約程度本個切れ枚gグラム分の小中大きめさ（）()\s・、,×xX]|半分|半本|カット|輪切り|スライス|完熟|冷凍|皮むき|皮|むき|サイズ|房|生|果物/g;
+function isBananaOnly(name) {
+  const t = String(name || '').normalize('NFKC');
+  const parts = t.split('バナナ');
+  if (parts.length !== 2) return false;
+  return (parts[0] + parts[1]).replace(BANANA_ONLY_REST_RE, '') === '';
+}
+function bananaPieces(text, kcal) {
+  const t = String(text || '').normalize('NFKC');
+  let m = t.match(/(\d+)\s*分の\s*(\d+)/);
+  if (m && Number(m[1]) > 0) return Number(m[2]) / Number(m[1]);
+  m = t.match(/(\d+)\s*\/\s*(\d+)\s*本?/);
+  if (m && Number(m[2]) > 0) return Number(m[1]) / Number(m[2]);
+  if (/半分|半本/.test(t)) return 0.5;
+  m = t.match(/(\d+(?:\.\d+)?)\s*本/);
+  if (m) return Number(m[1]);
+  if (typeof kcal === 'number' && isFinite(kcal) && kcal > 0) return kcal / BANANA_KCAL_PER_PIECE;
+  return null;
+}
+function bananaB(pieces, kcal) {
+  if (pieces < 0.9) return 0;
+  if (pieces < 1.75) return 0.5;
+  const b = (typeof kcal === 'number' && isFinite(kcal)) ? bFromKcal(kcal) : 1;
+  return Math.max(1, b);
+}
+
+// 量ボタン（0.5倍・1.5倍・2倍）を押したあとのBカウント（2026-10-24）。
+// 以前はBをそのまま掛けて0.5刻みに丸めていたため、B0.5の0.5倍（0.25）が切り上げでB0.5のまま残り、
+// バナナ1本の1.5倍がB1になるなど、同じ量でもAIの判定とボタンの結果が食い違っていた。
+//   ・バナナだけの項目 → 本数×倍率で早見表
+//   ・ふつうの基準（kcal→B）どおりに付いていた項目 → 倍率をかけたkcalで付け直す
+//   ・それ以外（油の最低カウントなどの例外）→ 掛け算。減らすときは切り捨て、増やすときは四捨五入
+function scaledBCount(food, base, factor) {
+  const b0 = Number(base.b_count) || 0;
+  if (factor === 1) return b0;
+  const k0 = Number(base.kcal_per_serving);
+  const k = (isFinite(k0) && k0 > 0) ? k0 * factor : null;
+  if (isBananaOnly(food.name) && !/訂正反映/.test(String(food.reason || ''))) {
+    const p0 = bananaPieces(`${food.name || ''} ${base.amount || ''}`, isFinite(k0) ? k0 : null);
+    if (p0 != null) return bananaB(p0 * factor, k);
+  }
+  if (k != null && b0 === bFromKcal(k0)) return bFromKcal(k);
+  const v = b0 * factor * 2;
+  return (factor < 1 ? Math.floor(v + 1e-9) : Math.round(v)) / 2;
+}
+
 function daySushiBonus(items) {
   let riceG = 0, already = 0;
   (items || []).forEach(i => {
@@ -4578,8 +4628,8 @@ function setFoodQty(mealId, itemId, foodIndex, factor) {
 
   food.kcal_per_serving = (typeof base.kcal_per_serving === 'number')
     ? Math.round(base.kcal_per_serving * next) : base.kcal_per_serving;
-  // Bカウントは0.5刻みに丸める（表示と日次集計の刻みに合わせる）
-  food.b_count   = Math.round((Number(base.b_count) || 0) * next * 2) / 2;
+  // Bカウントは倍率をかけた量で付け直す（0.5刻み。バナナは本数の早見表）
+  food.b_count   = scaledBCount(food, base, next);
   food.protein_g = Math.round((Number(base.protein_g) || 0) * next);
   food.veg_g     = Math.round((Number(base.veg_g)     || 0) * next);
   if (base.fruit_g   !== undefined) food.fruit_g   = Math.round((Number(base.fruit_g)   || 0) * next);

@@ -89,7 +89,9 @@ def test_fix_keeps_the_original_estimate():
     assert "qtyBase" in body
     assert "if (!food.qtyBase)" in body, "元の値を1回だけ控える処理がありません"
     # 倍率は必ず「元の値 × 倍率」で計算する
-    assert "base.b_count" in body and "base.kcal_per_serving" in body
+    assert "base.kcal_per_serving" in body
+    # Bは scaledBCount に元の値（base）を渡して計算する（2026-10-24）
+    assert "scaledBCount(food, base, next)" in body and "base.b_count" in _fn("scaledBCount")
 
 
 def test_same_button_cancels():
@@ -117,7 +119,10 @@ def test_recalc_matches_the_server_rule():
 def test_bcount_stays_in_half_steps():
     """直したあともBカウントが0.5刻みであること（0.75などにしない）。"""
     body = _fn("setFoodQty")
-    assert "Math.round((Number(base.b_count) || 0) * next * 2) / 2" in body
+    # 2026-10-24：倍率をかけた量で付け直す（scaledBCount。バナナは本数の早見表）。0.5刻みはそのまま
+    assert "food.b_count   = scaledBCount(food, base, next);" in body
+    fn = _fn("scaledBCount")
+    assert "Math.floor(v + 1e-9) : Math.round(v)) / 2" in fn
 
 
 def test_amount_shows_that_it_was_fixed():
