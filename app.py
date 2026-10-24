@@ -965,6 +965,13 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+        # 既存DBへの列追加（デイリーレポート用 2026-10-24）：その日に何の運動をしたか
+        # （[{"type":"ウォーキング","min":30,...}] のJSON）。追加前の行と古いアプリからの保存は NULL＝内容不明。
+        try:
+            cur.execute("ALTER TABLE daily_exercise ADD COLUMN detail TEXT")
+            conn.commit()
+        except Exception:
+            conn.rollback()
     finally:
         conn.close()
 
@@ -3669,6 +3676,67 @@ def _member_report_photos(cur, uid, per_member, since_date):
     return photos
 
 
+def _member_report_days(cur, uid, since_date):
+    """デイリーレポートの写真を「1日ごと」にまとめて見せるための、日ごとの要約（新しい順）。
+    オーナー指示 2026-10-24：「1日ごとにB何回、食事記録何回、運動は何をしたかを視覚的に分かりやすく」。
+      food_b     …その日の食事のB（_summarize_day_meals と同じ。お菓子・寿司の特別ルールも含む）
+      ex_b       …運動で相殺したB（無ければ 0）
+      net_b      …差し引き（アプリの「今日のB合計」と同じ考え方）
+      meal_count …食事記録の回数（写真・文章・コピーご飯。_summarize_day_meals の件数）
+      exercises  …運動の内容（["ウォーキング 30分", ...]。内容の分からない日は None）
+    明細（daily_meals）が残っている日だけ（5日ぶん）。読めなければ空のリスト（レポートは止めない）。"""
+    try:
+        cur.execute(f"SELECT date, payload FROM daily_meals WHERE user_id={PH} AND date>={PH}",
+                    (uid, since_date))
+        meal_rows = cur.fetchall()
+        try:
+            cur.execute(f"SELECT date, ex_b_count, detail FROM daily_exercise "
+                        f"WHERE user_id={PH} AND date>={PH}", (uid, since_date))
+            ex_rows = cur.fetchall()
+        except Exception:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+            cur.execute(f"SELECT date, ex_b_count, NULL FROM daily_exercise "
+                        f"WHERE user_id={PH} AND date>={PH}", (uid, since_date))
+            ex_rows = cur.fetchall()
+    except Exception as e:
+        app.logger.warning("member report days skipped: %s", e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+        return []
+    ex = {}
+    for d, b, detail in ex_rows:
+        items = None
+        if detail:
+            try:
+                items = [_exercise_label(it) for it in json.loads(detail) if isinstance(it, dict)]
+            except Exception:
+                items = None
+        ex[str(d)[:10]] = (float(b) if isinstance(b, (int, float)) and b > 0 else 0.0, items)
+    days = []
+    for d, payload in meal_rows:
+        summary = _summarize_day_meals(payload)
+        if not summary:
+            continue
+        d = str(d)[:10]
+        ex_b, items = ex.get(d, (0.0, None))
+        food_b = float(summary.get("b_count") or 0)
+        days.append({
+            "date": d,
+            "food_b": round(food_b, 2),
+            "ex_b": round(ex_b, 2),
+            "net_b": round(max(0.0, food_b - ex_b), 2),
+            "meal_count": summary.get("meal_count") or 0,
+            "exercises": items,
+        })
+    days.sort(key=lambda x: x["date"], reverse=True)
+    return days
+
+
 # レポートの推移グラフに載せる点の上限（毎日記録している人でも1年ぶん程度は描ける）
 PROGRESS_MAX_POINTS = 400
 # 「開始直後」と「いま」の食べ方を比べる期間（日）
@@ -3884,6 +3952,8 @@ def admin_report_photos():
                     "photos": photos,
                     # 開始時 → いま の推移（オーナー指示 2026-09-30）
                     "progress": _member_progress(cur, mem["uid"]),
+                    # 1日ごとの B・記録の回数・運動の内容（オーナー指示 2026-10-24）
+                    "days": _member_report_days(cur, mem["uid"], since_date),
                     # 直近7日の写真の枚数（1日平均。オーナー指示 2026-10-10）
                     "record_rate": _member_record_rate(cur, mem["uid"]),
                     # 直近7日のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）
@@ -7585,6 +7655,43 @@ def post_daily_diary():
     return jsonify({"ok": True})
 
 
+EXERCISE_DETAIL_MAX_ITEMS = 20
+
+
+def _clean_exercise_items(items):
+    """アプリから届いた運動の内容を、保存用のJSON文字列にする（型・長さを絞る）。
+    items が無い・リストでなければ None（＝既存の内容を残す）。空のリストは "[]"（＝運動なし）。"""
+    if not isinstance(items, list):
+        return None
+    out = []
+    for it in items[:EXERCISE_DETAIL_MAX_ITEMS]:
+        if not isinstance(it, dict):
+            continue
+        typ = str(it.get("type") or "").strip()[:20]
+        if not typ:
+            continue
+        row = {"type": typ}
+        for k in ("min", "steps", "floors", "bc"):
+            v = it.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                row[k] = round(float(v), 1) if k == "bc" else int(v)
+        out.append(row)
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _exercise_label(it):
+    """運動1件の表示（「ウォーキング 30分」「階段 5階」「ウォーキング 8,000歩」「ジム」）。
+    アプリの運動記録の一覧（renderExLog）と同じ見せ方。"""
+    typ = it.get("type") or "運動"
+    if typ == "階段" and it.get("floors"):
+        return f"{typ} {it['floors']}階"
+    if it.get("steps"):
+        return f"{typ} {int(it['steps']):,}歩"
+    if it.get("min"):
+        return f"{typ} {it['min']}分"
+    return typ
+
+
 @app.route("/api/daily-exercise", methods=["POST"])
 def post_daily_exercise():
     """その日の運動によるBカウント消費合計を記録（運動の保存・削除時に呼ばれる）"""
@@ -7598,6 +7705,9 @@ def post_daily_exercise():
         ex_b_count = 0
     if not uid or not date:
         return jsonify({"error": "パラメータ不足"}), 400
+    # 何の運動をしたか（デイリーレポート用 2026-10-24）。送られてこなければ（古いアプリ・
+    # 他の端末で記録した日）既存の内容を残す＝None のまま COALESCE で上書きしない。
+    detail = _clean_exercise_items((data or {}).get("items"))
 
     ts = datetime.datetime.now(JST).isoformat()
     with _db_lock:
@@ -7606,17 +7716,19 @@ def post_daily_exercise():
             cur = conn.cursor()
             if USE_PG:
                 cur.execute(
-                    """INSERT INTO daily_exercise (user_id, date, ex_b_count, created_at)
-                       VALUES (%s, %s, %s, %s)
-                       ON CONFLICT (user_id, date) DO UPDATE SET ex_b_count=%s, created_at=%s""",
-                    (uid, date, ex_b_count, ts, ex_b_count, ts)
+                    """INSERT INTO daily_exercise (user_id, date, ex_b_count, created_at, detail)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT (user_id, date) DO UPDATE SET ex_b_count=%s, created_at=%s,
+                         detail=COALESCE(EXCLUDED.detail, daily_exercise.detail)""",
+                    (uid, date, ex_b_count, ts, detail, ex_b_count, ts)
                 )
             else:
                 cur.execute(
-                    """INSERT INTO daily_exercise (user_id, date, ex_b_count, created_at)
-                       VALUES (?, ?, ?, ?)
-                       ON CONFLICT(user_id, date) DO UPDATE SET ex_b_count=excluded.ex_b_count, created_at=excluded.created_at""",
-                    (uid, date, ex_b_count, ts)
+                    """INSERT INTO daily_exercise (user_id, date, ex_b_count, created_at, detail)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(user_id, date) DO UPDATE SET ex_b_count=excluded.ex_b_count, created_at=excluded.created_at,
+                         detail=COALESCE(excluded.detail, daily_exercise.detail)""",
+                    (uid, date, ex_b_count, ts, detail)
                 )
             conn.commit()
         finally:
