@@ -6610,8 +6610,7 @@ def submit_feedback():
         print(f"[FEEDBACK][WARN] DB保存に失敗: {e}")
 
     # メール転送（ベストエフォート。設定が無い・失敗しても受信箱に残っていれば受付成功）
-    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
-    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
+    gmail_user, gmail_pass = _gmail_creds()
     if not gmail_user or not gmail_pass:
         if saved:
             return jsonify({"ok": True})
@@ -6633,9 +6632,7 @@ def submit_feedback():
     msg["To"] = FEEDBACK_TO
     msg["Reply-To"] = FEEDBACK_TO
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
-            smtp.login(gmail_user, gmail_pass)
-            smtp.sendmail(gmail_user, [FEEDBACK_TO], msg.as_bytes())
+        _smtp_send(gmail_user, gmail_pass, FEEDBACK_TO, msg.as_bytes())
     except Exception as e:
         if not saved:
             return jsonify({"error": f"送信に失敗しました。時間をおいて再度お試しください。({e})"}), 500
@@ -7158,6 +7155,236 @@ def _set_setting(key: str, value: str):
         conn.close()
 
 
+# ── メール送信の共通処理と、デイリーレポートの「サーバー経由の送信」 ─────────────
+# 経緯（2026-10-23〜24）：GitHub Actions から Gmail へのログインが拒否され
+# （SMTPServerDisconnected: Connection unexpectedly closed）、2日続けてレポートが届かなかった。
+# GitHub の Secrets を直すにはオーナーが GitHub の設定画面を触る必要があり手間が大きいため、
+#   ① GitHub からの送信に失敗したら、組み立て済みのレポートをサーバーへ送り、
+#      サーバーに保存してある Gmail 設定（管理画面で入力）で送り直す
+#   ② 最新のレポートはサーバーに1通だけ保存し、メールが全部だめでも管理画面で読めるようにする
+#   ③ Gmail のアプリパスワードは管理画面のカードから入れ直せる（GitHub を触らなくてよい）
+# にした。宛先は今までどおり _resolve_report_to()（オーナーだけ）。
+LATEST_REPORT_KEY = "latest-daily-report"
+REPORT_MAIL_STATUS_KEY = "daily-report-mail-status"
+# 管理画面から入れた Gmail 設定は、Render の環境変数より優先する
+# （_get_setting は環境変数が先なので、古い値が環境変数に残っていると入れ直しても効かないため）
+GMAIL_SETTING_KEYS = ("GMAIL_USER", "GMAIL_APP_PASSWORD")
+
+
+class MailSendError(Exception):
+    """Gmail への送信に失敗した。stage は "connect" / "login" / "send"。"""
+
+    def __init__(self, stage, original):
+        self.stage = stage
+        self.original = original
+        super().__init__(f"{stage}: {type(original).__name__}: {original}")
+
+
+def _get_db_setting(key: str) -> str:
+    """環境変数を見ずに、settings テーブルの値だけを返す（読めなければ空）。"""
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT value FROM settings WHERE key={PH}", (key,))
+            row = cur.fetchone()
+            return row[0] if row and row[0] else ""
+        finally:
+            conn.close()
+    except Exception:
+        return ""
+
+
+def _gmail_creds():
+    """(送信元アドレス, アプリパスワード)。管理画面で入れた値 → 環境変数 の順。空白は除く。"""
+    out = []
+    for key in GMAIL_SETTING_KEYS:
+        v = _get_db_setting(key) or os.environ.get(key, "")
+        out.append("".join((v or "").split()))
+    return out[0], out[1]
+
+
+def _smtp_send(user: str, password: str, to: str, raw: bytes):
+    """Gmail で1通送る。465(SSL) で接続や送信が切れたら 587(STARTTLS) で1回だけやり直す。
+    パスワードが違うと言われた（SMTPAuthenticationError）ときはやり直さない（何度試しても同じで、
+    失敗を重ねると Google にロックされやすくなるため）。"""
+    last = None
+    for mode in ("ssl", "starttls"):
+        stage = "connect"
+        try:
+            if mode == "ssl":
+                smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30)
+            else:
+                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+            with smtp:
+                if mode == "starttls":
+                    smtp.starttls()
+                stage = "login"
+                smtp.login(user, password)
+                stage = "send"
+                smtp.sendmail(user, [to], raw)
+            return mode
+        except smtplib.SMTPAuthenticationError as e:
+            raise MailSendError("login", e)
+        except Exception as e:   # noqa: BLE001
+            last = MailSendError(stage, e)
+            print(f"[MAIL][WARN] {mode} で送信失敗: {last}")
+    raise last
+
+
+def _mail_error_hint(err) -> str:
+    """送信失敗の理由を、オーナーが次に何をすればよいか分かる日本語にする。"""
+    stage = getattr(err, "stage", "")
+    if stage == "login":
+        return ("Gmail がログインを拒否しました。アプリパスワードが無効になっている可能性が高いです"
+                "（Google アカウントのパスワードを変えると、アプリパスワードは自動で無効になります）。"
+                "新しいアプリパスワードを発行して、このカードの欄に入れ直してください。")
+    if stage == "connect":
+        return "Gmail のサーバーにつながりませんでした。一時的な不調の可能性があります。時間をおいて「もう一度送る」を押してください。"
+    if stage == "send":
+        return "ログインはできましたが、送信の途中で切れました。時間をおいて「もう一度送る」を押してください。"
+    return f"送信に失敗しました（{err}）"
+
+
+def _build_report_mime(subject: str, html: str, images: dict, gmail_user: str, to: str):
+    """send_report.py の send_email と同じ形（本文＋cid参照の画像）でメールを組み立てる。"""
+    from email.mime.image import MIMEImage
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = gmail_user
+    msg["To"] = to
+    msg.attach(MIMEText("ABダイエット デイリーレポート\nHTMLメールをご覧ください。", "plain", "utf-8"))
+    related = MIMEMultipart("related")
+    related.attach(MIMEText(html, "html", "utf-8"))
+    for cid, b64 in (images or {}).items():
+        try:
+            png = base64.b64decode(b64)
+        except Exception:
+            continue
+        img = MIMEImage(png, name=f"{cid}.png")
+        img.add_header("Content-ID", f"<{cid}>")
+        img.add_header("Content-Disposition", "inline", filename=f"{cid}.png")
+        related.attach(img)
+    msg.attach(related)
+    return msg
+
+
+def _load_report_setting(key: str):
+    raw = _get_db_setting(key)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _set_mail_status(report_date, ok, via="", error="", github_error=""):
+    st = {"report_date": report_date, "ok": bool(ok), "via": via, "error": error,
+          "github_error": github_error,
+          "at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M")}
+    _set_setting(REPORT_MAIL_STATUS_KEY, json.dumps(st, ensure_ascii=False))
+    return st
+
+
+def _send_stored_report(github_error=""):
+    """保存してある最新のレポートを、サーバーの Gmail 設定で送る。状況を保存して返す。"""
+    rep = _load_report_setting(LATEST_REPORT_KEY)
+    if not rep:
+        return _set_mail_status("", False, error="保存されたレポートがありません（翌朝8時の実行で届きます）。")
+    user, pw = _gmail_creds()
+    if not user or not pw:
+        return _set_mail_status(rep.get("report_date", ""), False, github_error=github_error,
+                                error="サーバーに Gmail の設定がありません。このカードの欄に入力してください。")
+    to = _resolve_report_to()
+    msg = _build_report_mime(rep.get("subject") or "[ABダイエット] デイリーレポート",
+                             rep.get("html") or "", rep.get("images") or {}, user, to)
+    try:
+        _smtp_send(user, pw, to, msg.as_bytes())
+    except Exception as e:   # noqa: BLE001
+        print(f"[REPORT-MAIL][WARN] サーバーからの送信に失敗: {e}")
+        return _set_mail_status(rep.get("report_date", ""), False, via="server",
+                                error=_mail_error_hint(e), github_error=github_error)
+    return _set_mail_status(rep.get("report_date", ""), True, via="server", github_error=github_error)
+
+
+@app.route("/api/admin/report-relay", methods=["POST"])
+@_admin_required
+def admin_report_relay():
+    """GitHub Actions（report/send_report.py）が、組み立て済みのレポートを送ってくる。
+    最新の1通として保存し、GitHub 側で送れなかったときはサーバーから送る。"""
+    d = request.get_json(silent=True) or {}
+    html = d.get("html") or ""
+    if not html:
+        return jsonify({"error": "html がありません"}), 400
+    images = d.get("images") or {}
+    if not isinstance(images, dict):
+        images = {}
+    rep = {"report_date": str(d.get("report_date") or ""), "subject": str(d.get("subject") or ""),
+           "html": html, "images": images,
+           "stored_at": datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M")}
+    _set_setting(LATEST_REPORT_KEY, json.dumps(rep, ensure_ascii=False))
+    github_error = str(d.get("github_error") or "")[:300]
+    if d.get("github_ok"):
+        st = _set_mail_status(rep["report_date"], True, via="github")
+    else:
+        st = _send_stored_report(github_error=github_error)
+    return jsonify({"stored": True, "sent": st["ok"], "via": st["via"], "error": st["error"]})
+
+
+@app.route("/api/admin/report-mail")
+@_admin_required
+def admin_report_mail():
+    """管理画面のカード用：最後のレポートの送信状況と Gmail 設定の有無。"""
+    rep = _load_report_setting(LATEST_REPORT_KEY) or {}
+    user, pw = _gmail_creds()
+    return jsonify({
+        "status": _load_report_setting(REPORT_MAIL_STATUS_KEY),
+        "latest_date": rep.get("report_date") or "",
+        "latest_stored_at": rep.get("stored_at") or "",
+        "gmail_user": user,
+        "gmail_configured": bool(user and pw),
+        "report_to": _resolve_report_to(),
+    })
+
+
+@app.route("/api/admin/latest-report")
+@_admin_required
+def admin_latest_report():
+    """保存してある最新のレポートを、画像を埋め込んだ1枚のHTMLとして返す（管理画面で読む用）。"""
+    rep = _load_report_setting(LATEST_REPORT_KEY)
+    if not rep:
+        return jsonify({"error": "まだ保存されたレポートがありません"}), 404
+    html = rep.get("html") or ""
+    for cid, b64 in (rep.get("images") or {}).items():
+        html = html.replace(f'"cid:{cid}"', f'"data:image/png;base64,{b64}"')
+    return jsonify({"report_date": rep.get("report_date") or "", "html": html})
+
+
+@app.route("/api/admin/report-mail/resend", methods=["POST"])
+@_admin_required
+def admin_report_mail_resend():
+    st = _send_stored_report()
+    return jsonify(st), (200 if st["ok"] else 502)
+
+
+@app.route("/api/admin/report-mail/settings", methods=["POST"])
+@_admin_required
+def admin_report_mail_settings():
+    """Gmail の送信元とアプリパスワードを保存し、その場で最新のレポートを送って確かめる。"""
+    d = request.get_json(silent=True) or {}
+    user = "".join(str(d.get("gmail_user") or "").split())
+    pw = "".join(str(d.get("gmail_app_password") or "").split())
+    if not user or "@" not in user:
+        return jsonify({"error": "送信元の Gmail アドレスを入れてください"}), 400
+    if len(pw) != 16:
+        return jsonify({"error": "アプリパスワードは16文字です（スペースは入れても入れなくても大丈夫です）"}), 400
+    _set_setting("GMAIL_USER", user)
+    _set_setting("GMAIL_APP_PASSWORD", pw)
+    st = _send_stored_report()
+    return jsonify(st), (200 if st["ok"] else 502)
+
+
 @app.route(f"{ADMIN_BASE}/setup-email", methods=["GET"])
 @_admin_required
 def setup_email_page():
@@ -7308,8 +7535,7 @@ def _make_backup_attachment():
 
 
 def _send_daily_report():
-    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
-    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
+    gmail_user, gmail_pass = _gmail_creds()
     report_to  = _resolve_report_to()
     if not gmail_user or not gmail_pass or not report_to:
         raise ValueError(f"メール設定が未登録です。{ADMIN_BASE}/setup-email で設定してください。")
@@ -7322,15 +7548,12 @@ def _send_daily_report():
     msg["To"]      = report_to
     msg.attach(MIMEText("ABダイエット デイリーレポートです。HTMLメールをご覧ください。", "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
-        smtp.login(gmail_user, gmail_pass)
-        smtp.sendmail(gmail_user, [report_to], msg.as_bytes())
+    _smtp_send(gmail_user, gmail_pass, report_to, msg.as_bytes())
 
 
 def _send_backup_email():
     """全データのバックアップ(.json.gz)をメール添付で送る。復元用の命綱。"""
-    gmail_user = "".join((_get_setting("GMAIL_USER") or "").split())
-    gmail_pass = "".join((_get_setting("GMAIL_APP_PASSWORD") or "").split())
+    gmail_user, gmail_pass = _gmail_creds()
     report_to  = _resolve_report_to()
     if not gmail_user or not gmail_pass or not report_to:
         print("[BACKUP][WARN] メール未設定のためバックアップを送れません")
@@ -7346,9 +7569,7 @@ def _send_backup_email():
             "この添付ファイルから復元できます。</p>")
     msg.attach(MIMEText(note, "html", "utf-8"))
     msg.attach(part)
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
-        smtp.login(gmail_user, gmail_pass)
-        smtp.sendmail(gmail_user, [report_to], msg.as_bytes())
+    _smtp_send(gmail_user, gmail_pass, report_to, msg.as_bytes())
     print(f"[BACKUP] バックアップメールを送信しました（{total_rows}件）")
 
 

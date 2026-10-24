@@ -8,6 +8,8 @@ name: Daily Dashboard Report
 #   GMAIL_USER         : 送信元 Gmail アドレス（rits.1159@gmail.com）
 #                        ※ここがそのまま差出人になる。アプリパスワードも同じアカウントのものを使う。
 #   GMAIL_APP_PASSWORD : Gmail アプリパスワード（Google アカウント > セキュリティ > アプリ パスワード）
+#                        ※ここで送れなくても、レポートはサーバーへ渡してサーバーの Gmail 設定で送り直す（2026-10-24〜）。
+#                          サーバー側のアプリパスワードは管理画面の「📧 デイリーレポートのメール」で入れ直せる。
 #   REPORT_TO          : 送信先メールアドレス（rits.1159@gmail.com）
 #                        ※未設定でも rits.1159@gmail.com に送られる。
 #                          reallgym.tokyo@gmail.com を入れても送られない（コード側で振り替える）。
