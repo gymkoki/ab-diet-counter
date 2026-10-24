@@ -1216,11 +1216,52 @@ def send_email(subject: str, html_body: str, charts: dict):
         related.attach(img)
     msg.attach(related)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
-        smtp.login(GMAIL_USER, GMAIL_PASS)
-        smtp.sendmail(GMAIL_USER, [REPORT_TO], msg.as_bytes())
+    # 465(SSL) で切れたら 587(STARTTLS) で1回だけやり直す。パスワードが違うと言われたらやり直さない
+    # （何度試しても同じで、失敗を重ねると Google にロックされやすくなるため）。
+    last = None
+    for port in (465, 587):
+        try:
+            if port == 465:
+                smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30)
+            else:
+                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+            with smtp:
+                if port == 587:
+                    smtp.starttls()
+                smtp.login(GMAIL_USER, GMAIL_PASS)
+                smtp.sendmail(GMAIL_USER, [REPORT_TO], msg.as_bytes())
+            print(f"Email sent → {REPORT_TO} (port {port})")
+            return
+        except smtplib.SMTPAuthenticationError:
+            raise
+        except Exception as e:   # noqa: BLE001
+            last = e
+            print(f"  port {port} failed: {type(e).__name__}: {e}")
+    raise last
 
-    print(f"Email sent → {REPORT_TO}")
+
+# サーバーの受け付けは16MBまで（app.py の MAX_CONTENT_LENGTH）。超えそうなら写真を外して送る。
+RELAY_MAX_BYTES = 14 * 1024 * 1024
+
+
+def relay_to_server(subject: str, html: str, charts: dict, report_date: str,
+                    github_ok: bool, github_error: str = "") -> dict:
+    """組み立て済みのレポートをサーバーへ送る（2026-10-24〜）。
+    サーバーは最新の1通として保存し（管理画面で読める）、github_ok が False なら
+    サーバーに保存してある Gmail 設定で送り直す。会員のデータはログに出さない。"""
+    images = {cid: base64.b64encode(png).decode("ascii") for cid, png in charts.items()}
+    payload = {"report_date": report_date, "subject": subject, "html": html, "images": images,
+               "github_ok": github_ok, "github_error": github_error}
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if len(body) > RELAY_MAX_BYTES:
+        payload["images"] = {k: v for k, v in images.items() if not k.startswith("ph_")}
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        print("  relay: too large — photos omitted")
+    r = requests.post(f"{APP_URL}/api/admin/report-relay", data=body,
+                      headers={"Content-Type": "application/json"},
+                      auth=(ADMIN_USER, ADMIN_PASS), timeout=120)
+    r.raise_for_status()
+    return r.json()
 
 
 # ── エントリーポイント ──────────────────────────────────────────
@@ -1265,14 +1306,43 @@ def main():
     subject = f"[ABダイエット] デイリーレポート {rdate}"
     html    = build_html(data, credit, photo_html)
 
+    # ① GitHub の Secrets の Gmail で送る → ② だめならサーバー経由で送る（2026-10-24〜）。
+    #    どちらの場合も最新のレポートはサーバーに保存され、管理画面で読める。
+    github_ok, github_error = False, ""
     if GMAIL_USER and GMAIL_PASS:
         print("Sending email...")
-        send_email(subject, html, charts)
+        try:
+            send_email(subject, html, charts)
+            github_ok = True
+        except Exception as e:   # noqa: BLE001
+            github_error = f"{type(e).__name__}: {e}"
+            print(f"  GitHub からの送信に失敗: {github_error}")
     else:
-        out_path = f"report_{rdate}.html"
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(html)
-        print(f"Email config missing — saved to {out_path}")
+        github_error = "GitHub Secrets に GMAIL_USER / GMAIL_APP_PASSWORD がありません"
+        print(f"  {github_error}")
+
+    print("Saving report to the server" + ("" if github_ok else " and sending from the server") + "...")
+    try:
+        res = relay_to_server(subject, html, charts, rdate, github_ok, github_error)
+    except Exception as e:   # noqa: BLE001
+        res = {"sent": False, "error": f"サーバーへ送れませんでした（{type(e).__name__}: {e}）"}
+    if github_ok:
+        if not res.get("stored"):
+            print(f"  （メールは送信済み。サーバーへの保存だけ失敗: {res.get('error')}）")
+        return
+    if res.get("sent"):
+        print(f"Email sent from the server → {REPORT_TO}")
+        return
+    out_path = f"report_{rdate}.html"
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print("")
+    print("❌ レポートのメールを送れませんでした。")
+    print(f"   GitHub から: {github_error}")
+    print(f"   サーバーから: {res.get('error')}")
+    print("   → 管理画面の「📧 デイリーレポートのメール」で Gmail のアプリパスワードを入れ直してください。")
+    print("     （レポート自体はサーバーに保存されていれば、同じカードの「最新のレポートを開く」で読めます）")
+    sys.exit(1)
 
 
 if __name__ == "__main__":

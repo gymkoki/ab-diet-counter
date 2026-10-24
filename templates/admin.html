@@ -309,6 +309,34 @@
     </div>
   </div>
 
+  <!-- デイリーレポートのメール（2026-10-24〜：GitHub から送れなかったときはサーバーから送る） -->
+  <div class="card" style="margin-bottom:20px" id="report-mail-card">
+    <h2>📧 デイリーレポートのメール</h2>
+    <div id="report-mail-now" style="font-size:13px;color:#374151;line-height:1.7;margin-bottom:10px"><div class="spinner"></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="apikey-save" style="width:auto;padding:8px 16px;font-size:13px" onclick="openLatestReport()">📰 最新のレポートを開く</button>
+      <button class="apikey-save" style="width:auto;padding:8px 16px;font-size:13px;background:linear-gradient(135deg,#6366F1,#4F46E5)" onclick="resendReportMail()">📧 もう一度メールで送る</button>
+    </div>
+    <details id="report-mail-form">
+      <summary style="cursor:pointer;font-size:13px;font-weight:700;color:#374151">🔑 Gmail のアプリパスワードを入れ直す</summary>
+      <div style="font-size:12px;color:#6B7280;line-height:1.7;margin:8px 0">
+        1. 送信元の Gmail にログインした状態で
+        <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" style="color:#FF6B35">アプリパスワードの画面</a> を開く
+        （開けないときは先に <a href="https://myaccount.google.com/signinoptions/two-step-verification" target="_blank" rel="noopener" style="color:#FF6B35">2段階認証</a> をオンに）<br>
+        2. 名前に「AB Diet」と入れて「作成」→ 出てきた16文字をコピー<br>
+        3. 下に貼り付けて「保存して送る」→ 最新のレポートがその場で届けば完了です（GitHub の設定は触らなくて大丈夫です）
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="email" id="report-mail-user" placeholder="送信元 Gmail（例：rits.1159@gmail.com）"
+               style="flex:1;min-width:220px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:14px;font-family:inherit">
+        <input type="password" id="report-mail-pass" placeholder="アプリパスワード（16文字）" autocomplete="new-password"
+               style="flex:1;min-width:200px;padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:14px;font-family:inherit">
+        <button class="apikey-save" style="width:auto;padding:8px 18px;font-size:13px" onclick="saveReportMail()">保存して送る</button>
+      </div>
+    </details>
+    <div id="report-mail-status" style="font-size:13px;margin-top:8px;line-height:1.6"></div>
+  </div>
+
   <!-- Charts -->
   <div class="charts-grid">
     <div class="card">
@@ -1956,6 +1984,79 @@
   }
 
   // こまめ記録ポイント・リオールジムからの特別メッセージ（2026-10-15〜）
+  // デイリーレポートのメール（2026-10-24〜）
+  async function loadReportMail() {
+    const now = document.getElementById('report-mail-now');
+    if (!now) return;
+    try {
+      const d = await (await fetch('/api/admin/report-mail')).json();
+      const st = d.status;
+      let line;
+      if (!st) {
+        line = '<span style="color:#6B7280">まだ送信の記録がありません（次の朝8時の実行から記録されます）</span>';
+      } else if (st.ok) {
+        const via = st.via === 'server' ? 'サーバーから送信' : 'GitHub から送信';
+        line = `<span style="color:#065F46;font-weight:800">✅ ${escapeHtml(st.report_date || '')} 分を送信しました</span>（${via}・${escapeHtml(st.at || '')}）`;
+        if (st.via === 'server' && st.github_error) line += '<br><span style="font-size:12px;color:#9CA3AF">GitHub からは送れなかったため、サーバーから送りました。このままで大丈夫です。</span>';
+      } else {
+        line = `<span style="color:#DC2626;font-weight:800">❌ ${escapeHtml(st.report_date || '')} 分のメールを送れませんでした</span>（${escapeHtml(st.at || '')}）`
+          + `<br><span style="font-size:12px;color:#991B1B">${escapeHtml(st.error || '')}</span>`;
+        document.getElementById('report-mail-form').open = true;
+      }
+      now.innerHTML = line
+        + `<br><span style="font-size:12px;color:#9CA3AF">送信元：${escapeHtml(d.gmail_user || '未設定')}　／　宛先：${escapeHtml(d.report_to || '')}`
+        + (d.latest_date ? `　／　保存中のレポート：${escapeHtml(d.latest_date)} 分` : '') + '</span>';
+      const u = document.getElementById('report-mail-user');
+      if (u && !u.value) u.value = d.gmail_user || '';
+    } catch (e) {
+      now.textContent = '読み込みに失敗しました';
+    }
+  }
+
+  async function openLatestReport() {
+    const st = document.getElementById('report-mail-status');
+    const w = window.open('', '_blank');   // ポップアップを止められないよう、押した直後に開いておく
+    try {
+      const r = await fetch('/api/admin/latest-report');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || '読み込みに失敗しました');
+      if (w) { w.document.open(); w.document.write(d.html); w.document.close(); }
+      else { st.style.color = '#DC2626'; st.textContent = '⚠️ 新しいタブを開けませんでした（ポップアップを許可してください）'; }
+    } catch (e) {
+      if (w) w.close();
+      st.style.color = '#DC2626'; st.textContent = '⚠️ ' + e.message;
+    }
+  }
+
+  async function _reportMailPost(url, body, busyText) {
+    const st = document.getElementById('report-mail-status');
+    st.style.color = '#6B7280'; st.textContent = busyText;
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const d = await r.json();
+      if (r.ok && d.ok) {
+        st.style.color = '#065F46'; st.textContent = `✅ ${d.report_date || ''} 分のレポートを送りました。受信ボックスをご確認ください。`;
+        const p = document.getElementById('report-mail-pass'); if (p) p.value = '';
+      } else {
+        st.style.color = '#DC2626'; st.textContent = '⚠️ ' + (d.error || '送信に失敗しました');
+      }
+    } catch (e) {
+      st.style.color = '#DC2626'; st.textContent = '⚠️ 送信に失敗しました';
+    }
+    loadReportMail();
+  }
+
+  function resendReportMail() {
+    _reportMailPost('/api/admin/report-mail/resend', {}, '送信中…');
+  }
+
+  function saveReportMail() {
+    _reportMailPost('/api/admin/report-mail/settings', {
+      gmail_user: document.getElementById('report-mail-user').value.trim(),
+      gmail_app_password: document.getElementById('report-mail-pass').value,
+    }, '保存して送信中…');
+  }
+
   async function loadSpecialMessage() {
     const now = document.getElementById('special-msg-now');
     if (!now) return;
@@ -2196,7 +2297,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

@@ -337,6 +337,21 @@
   （`_mame_points_stats()` → `mame_points` → `_mame_points_section()`）。人数だけで名前は出さない。
 - `tests/test_meal_points.py` が回帰を検知する。
 
+## レポートのメールが GitHub から送れないときはサーバーから送る（2026-10-24）
+
+- 経緯：10/23・10/24 の朝、GitHub Actions から Gmail へのログインが拒否され（`SMTPServerDisconnected:
+  Connection unexpectedly closed`）、レポートが届かなかった（データ取得・組み立ては成功していた）。
+- いまの流れ（`report/send_report.py` の `main()`）：①GitHub Secrets の Gmail で送る（465 で切れたら 587 で1回だけ
+  やり直す。パスワード違いはやり直さない）→ ②**成否に関わらず**組み立て済みのレポートを `/api/admin/report-relay` へ送る。
+  サーバーは最新の1通を settings の `latest-daily-report` に保存し、①が失敗していればサーバーの Gmail 設定で送り直す。
+  ①②とも失敗したときだけ Actions を失敗にする（GitHub の通知で気づける）。
+- サーバーの Gmail 設定は `_gmail_creds()`：**管理画面で入れた値が Render の環境変数より優先**（古い値が環境変数に
+  残っていても入れ直しが効くように）。メール送信は `_smtp_send()` に一本化（問い合わせ転送・バックアップも同じ）。
+- 管理画面の「📧 デイリーレポートのメール」カード：最後の送信結果（`daily-report-mail-status`）・
+  「最新のレポートを開く」（画像を埋め込んで別タブで表示）・「もう一度メールで送る」・アプリパスワードの入れ直し
+  （保存するとその場で最新のレポートを送って確かめる）。宛先は今までどおり `_resolve_report_to()`（オーナーだけ）。
+- `tests/test_report_mail_relay.py` が回帰を検知する。
+
 ## デプロイ構成
 
 - ホスティング：Render（`render.yaml`）。`main` ブランチを自動デプロイ。
