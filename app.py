@@ -4262,6 +4262,242 @@ def admin_dev_proposals():
                     "proposals": proposals, "cached": cached})
 
 
+# ── 毎朝の「収益を改善するために何をすべきか」（オーナー指示 2026-10-24） ─────────
+# デイリーレポートのいちばん下に、毎日1〜3つ。提案ごとに「このチャット（Claude Code）に
+# そのまま貼れる依頼文」を付ける。以前の「Claude Code に頼める改善案」は質が低く外したので、
+#  ・AIに渡すのは収益に直結する数字（有料会員・利用状況・AI費用）だけ（会員の名前・IDは渡さない）
+#  ・提案ごとに根拠の数字と見込み効果（円）を必ず書かせる／良い提案が無い日は1件でよい
+#  ・直近に出した提案の見出しを渡して、同じ提案を繰り返させない
+REVENUE_PROPOSAL_PROMPT = """あなたはABダイエットアプリ（リオールジムの会員向け）の事業パートナーです。
+読み手はジムのオーナー（非エンジニア）で、毎朝のレポートメールのいちばん下で読みます。
+
+【ミッション】渡された数字を見て、「アプリの収益を増やすために、今日なにをすべきか」を1〜3つ提案する。
+収益＝有料会員の数 × 月額 − AIの費用。だから効くのは
+ ①有料プランに申し込む人を増やす ②有料会員に使い続けてもらう（解約を減らす） ③AIの費用を下げる
+のどれか。オーナーは提案に付いた依頼文を Claude Code（開発担当のAI）にそのまま貼れば、
+アプリの改修や会員向けの文面づくりが始まる。
+
+【料金と方針（オーナーが決めたこと。これを覆す提案はしない）】
+- 2026-11-01から月額1,100円（税込・Stripe）。既存の会員に無料期間は無い。初めて使う人だけ3日間無料。
+- 無料期間はカード登録を求めない（勝手に課金しない）。合言葉（会員限定）はそのまま残す。
+- AIの費用は写真1枚の解析ごとにかかる（だから食事は1枚にまとめて撮ってもらっている）。
+
+""" + APP_CAPABILITIES + """
+- 追加済み（2026-10）：有料プランの申し込み画面（特定商取引法の表示つき）、こまめ記録ポイント（10ptで特別メッセージ）、
+  食事アルバム（履歴から写真を見返せる）、デイリーレポート。
+
+【提案の条件】
+- 必ず渡された数字を根拠にする（why に具体的な数字を入れる）。数字に無いことを決めつけない。
+- effect には見込み効果を「月 +◯円」か「月 −◯円の費用削減」の形で、前提（例：有料会員が+3人）と一緒に書く。
+- 今日〜今週中に着手できる具体的な行動にする（「検討する」「強化する」だけの抽象論は書かない）。
+- kind は "アプリ"（アプリの画面・機能・文言を変える）か "運営"（ジムでの声かけ・案内文づくりなど）。
+- prompt は Claude Code にそのまま貼れる日本語の依頼文（1〜3文）。運営の提案でも、案内文の下書きや
+  掲示物づくりなど Claude Code に頼めることを書く。
+- 良い提案が無い日は1件でよい。数合わせで弱い提案を足さない。
+- 直近に出した提案（下に見出しを渡す）と同じ内容は出さない。
+
+【禁止】
+- 離脱者・休眠会員の呼び戻し（復帰キャンペーン、再開うながし通知、安否確認）。取り戻すのが難しく優先度が低いと判断済み。
+- 解約しにくくする仕組み、無断の課金・自動更新の隠蔽、誇大な減量効果の表示、会員の健康データの販売・外部提供。
+- 会員に不快感を与えるもの（通知の連投、体重の晒し、煽り文言）。
+
+【出力形式】必ず次のJSONだけを出力する（前置き・説明・コードブロックは書かない）：
+{"proposals":[{"title":"（20字以内の見出し）","why":"（根拠の数字と狙い。60〜120字）",
+"effect":"（見込み効果と前提。40字以内）","kind":"アプリ","prompt":"（Claude Codeにそのまま貼れる依頼文）"}]}"""
+
+REVENUE_PROPOSAL_HISTORY_DAYS = 14
+REVENUE_PROPOSAL_MODELS = ("claude-opus-5", ANALYSIS_MODEL)   # 1日1回だけなので精度重視。使えなければ次へ
+
+
+def _collect_revenue_metrics():
+    """収益の提案に使う数字（集計値だけ。会員の名前・IDは含めない）。読めない項目は飛ばす。"""
+    now = datetime.datetime.now(JST)
+    today = now.date()
+    d7 = (today - datetime.timedelta(days=7)).isoformat()
+    d30 = (today - datetime.timedelta(days=30)).isoformat()
+    m = {
+        "today": today.isoformat(),
+        "plan": {"price_jpy": BILLING_PRICE_JPY, "start_date": BILLING_START, "trial_days": BILLING_TRIAL_DAYS,
+                 "stripe_ready": _billing_configured(), "charging_started": _billing_active(),
+                 "preorder_open": _billing_preorder_open()},
+        "ai_cost_per_analysis_jpy": COST_PER_ANALYSIS_JPY,
+    }
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+
+        def _q(key, sql, params=()):
+            try:
+                cur.execute(sql, params)
+                return cur.fetchall()
+            except Exception as e:
+                app.logger.warning("revenue metric %s skipped: %s", key, e)
+                try:
+                    cur.connection.rollback()
+                except Exception:
+                    pass
+                return None
+
+        rows = _q("members", "SELECT COUNT(*) FROM user_profile")
+        if rows:
+            m["registered_members"] = int(rows[0][0] or 0)
+        acts = ",".join([PH] * len(_RECORD_ACTIONS))
+        for key, since in (("active_members_7d", d7), ("active_members_30d", d30)):
+            rows = _q(key, f"SELECT COUNT(DISTINCT user_id) FROM action_log WHERE created_at>={PH} "
+                           f"AND action IN ({acts})", (since, *_RECORD_ACTIONS))
+            if rows:
+                m[key] = int(rows[0][0] or 0)
+        rows = _q("new_members", f"SELECT user_id, MIN(created_at) FROM action_log WHERE action IN ({acts}) "
+                                 f"GROUP BY user_id", tuple(_RECORD_ACTIONS))
+        if rows is not None:
+            firsts = [str(r[1])[:10] for r in rows if r[1]]
+            m["new_members_7d"] = sum(1 for f in firsts if f >= d7)
+            m["new_members_30d"] = sum(1 for f in firsts if f >= d30)
+        rows = _q("analyses", f"SELECT COUNT(*) FROM usage_log WHERE created_at>={PH}", (d30 + "T00:00:00",))
+        if rows:
+            n = int(rows[0][0] or 0)
+            m["analyses_30d"] = n
+            m["ai_cost_30d_jpy_estimate"] = round(n * COST_PER_ANALYSIS_JPY)
+        rows = _q("billing", "SELECT status, cancel_at_period_end FROM billing_accounts "
+                             "WHERE subscription_id IS NOT NULL")
+        if rows is not None:
+            paying = sum(1 for s, _ in rows if s in BILLING_OK_STATUSES)
+            m["subscriptions"] = {
+                "paying": paying,
+                "trialing": sum(1 for s, _ in rows if s == "trialing"),
+                "past_due": sum(1 for s, _ in rows if s == "past_due"),
+                "will_cancel": sum(1 for s, c in rows if s in BILLING_OK_STATUSES and c),
+                "canceled": sum(1 for s, _ in rows if s in ("canceled", "unpaid", "incomplete_expired")),
+                "monthly_revenue_jpy": paying * BILLING_PRICE_JPY,
+            }
+    finally:
+        conn.close()
+    try:
+        members = _active_members(_collect_cut_member_stats())
+        changes = [x["change_30d_kg"] for x in members if isinstance(x.get("change_30d_kg"), (int, float))]
+        m["cut_members_active"] = len(members)
+        m["cut_members_losing_30d"] = sum(1 for c in changes if c < 0)
+    except Exception as e:
+        app.logger.warning("revenue metric cut members skipped: %s", e)
+    try:
+        mp = _mame_points_stats((today - datetime.timedelta(days=1)).isoformat())
+        if mp:
+            m["mame_points"] = {k: v for k, v in mp.items() if k != "trend"}
+    except Exception as e:
+        app.logger.warning("revenue metric mame points skipped: %s", e)
+    try:
+        m["feature_usage_30d"] = _collect_feature_usage()
+    except Exception as e:
+        app.logger.warning("revenue metric feature usage skipped: %s", e)
+    return m
+
+
+def _recent_revenue_titles(today, days=REVENUE_PROPOSAL_HISTORY_DAYS):
+    """直近 days 日に出した提案の見出し（同じ提案を繰り返さないためにAIへ渡す）。"""
+    titles = []
+    for i in range(1, days + 1):
+        d = (today - datetime.timedelta(days=i)).isoformat()
+        try:
+            for p in json.loads(_get_setting(f"revenue-proposals-{d}", "") or "[]"):
+                if isinstance(p, dict) and p.get("title"):
+                    titles.append(f"{d}：{p['title']}")
+        except Exception:
+            continue
+    return titles
+
+
+def _parse_revenue_proposals(raw):
+    match = re.search(r"\{.*\}", raw or "", re.S)
+    if not match:
+        raise ValueError("AIの応答からJSONを取得できませんでした")
+    proposals = []
+    for item in (json.loads(match.group(0)).get("proposals") or []):
+        if not isinstance(item, dict):
+            continue
+        title  = str(item.get("title") or "").strip()
+        prompt = str(item.get("prompt") or "").strip()
+        if not title or not prompt:
+            continue
+        kind = str(item.get("kind") or "").strip()
+        proposals.append({
+            "title":  title[:40],
+            "why":    str(item.get("why") or "").strip()[:240],
+            "effect": str(item.get("effect") or "").strip()[:80],
+            "kind":   kind if kind in ("アプリ", "運営") else "アプリ",
+            "prompt": prompt[:500],
+        })
+    return proposals[:3]
+
+
+def _get_or_generate_revenue_proposals():
+    """今日の「収益改善の提案」（1〜3件）を返す（当日キャッシュ優先・無ければAIで1回だけ生成）。
+    戻り値：(proposals, cached)／生成失敗時は例外を送出する。"""
+    today = datetime.datetime.now(JST).date()
+    cache_key = f"revenue-proposals-{today.isoformat()}"
+    cached_raw = _get_setting(cache_key, "")
+    if cached_raw:
+        try:
+            return json.loads(cached_raw), True
+        except Exception:
+            pass   # 壊れていたら作り直す
+
+    client = get_client()
+    if client is None:
+        raise _CoachNoApiKey()
+
+    recent = _recent_revenue_titles(today)
+    user_text = (
+        f"今日の日付：{today.isoformat()}\n"
+        f"収益に関する数字（集計値）：\n{json.dumps(_collect_revenue_metrics(), ensure_ascii=False)}\n\n"
+        "直近に出した提案（同じ内容は出さない）：\n" + ("\n".join(recent) if recent else "（なし）")
+    )
+    last_err = None
+    started = time.monotonic()
+    for model in REVENUE_PROPOSAL_MODELS:
+        # 1つ目で時間を使い切ったら次は試さない（サーバーの持ち時間300秒を超えないように）
+        if last_err is not None and time.monotonic() - started > 60:
+            break
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=8000,
+                timeout=150.0,
+                thinking={"type": "adaptive"},
+                system=[{"type": "text", "text": REVENUE_PROPOSAL_PROMPT}],
+                messages=[{"role": "user", "content": [{"type": "text", "text": user_text}]}],
+            )
+        except Exception as e:   # モデルが使えない・混雑などは次のモデルで試す
+            last_err = e
+            print(f"[REVENUE-PROPOSAL] {model} failed: {type(e).__name__}: {e}")
+            continue
+        raw = "".join(b.text for b in (getattr(response, "content", []) or [])
+                      if getattr(b, "type", "") == "text").strip()
+        proposals = _parse_revenue_proposals(raw)
+        if proposals:
+            try:
+                _set_setting(cache_key, json.dumps(proposals, ensure_ascii=False))
+            except Exception:
+                pass
+        return proposals, False
+    raise last_err or RuntimeError("提案を生成できませんでした")
+
+
+@app.route("/api/admin/revenue-proposals")
+@_admin_required
+def admin_revenue_proposals():
+    """【管理者専用】デイリーレポート用：今日の「収益改善の提案」（1〜3件）。
+    同じ日は結果をキャッシュして返す（テスト送信と朝の本送信で二重にAIを呼ばない）。"""
+    try:
+        proposals, cached = _get_or_generate_revenue_proposals()
+    except _CoachNoApiKey:
+        return jsonify({"error": "APIキーが設定されていません"}), 503
+    except Exception as e:
+        print(f"[REVENUE-PROPOSAL][ERROR] {type(e).__name__}: {e}")
+        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。"}), 502
+    return jsonify({"date": datetime.datetime.now(JST).strftime("%Y-%m-%d"),
+                    "proposals": proposals, "cached": cached})
+
+
 @app.route("/api/admin/coach-advice")
 @_admin_required
 def admin_coach_advice():
