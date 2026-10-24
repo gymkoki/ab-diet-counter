@@ -4768,12 +4768,28 @@ async function submitDailyWeight(weight, date) {
   } catch(e) {}
 }
 
+// その日に端末で記録した運動の内容（デイリーレポートで「何の運動をしたか」を出すため。2026-10-24）。
+// この端末にその日の記録が無いのにBだけある（＝他の端末で記録した）ときは null を返し、
+// サーバーに残っている内容を消さない。
+function _exerciseItemsForDate(date, exBCount) {
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  const items = logs.filter(l => l && l.date === date).map(l => ({
+    type: l.type, min: l.min, steps: l.steps, floors: l.floors, bc: l.bc,
+  }));
+  if (items.length === 0 && Number(exBCount) > 0) return null;
+  return items;
+}
+
 async function submitDailyExercise(exBCount, date) {
   try {
+    const body = { user_id: USER_ID, ex_b_count: exBCount, date };
+    const items = _exerciseItemsForDate(date, exBCount);
+    if (items) body.items = items;
     await fetch('/api/daily-exercise', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: USER_ID, ex_b_count: exBCount, date })
+      body: JSON.stringify(body)
     });
   } catch(e) {}
 }

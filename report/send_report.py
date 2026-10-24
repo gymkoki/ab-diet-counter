@@ -624,6 +624,62 @@ def _intake_line(intake) -> str:
 MEAL_SLOT_LABELS = ("朝", "昼", "夕", "間食")
 
 
+WEEKDAYS_JA = "月火水木金土日"
+
+
+def _esc(v) -> str:
+    return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _chip(text: str, bg: str, fg: str) -> str:
+    return (f'<span style="display:inline-block;padding:1px 9px;margin:0 4px 2px 0;border-radius:999px;'
+            f'background:{bg};color:{fg};font-weight:800;white-space:nowrap">{text}</span>')
+
+
+def _day_header(day: dict, target) -> str:
+    """1日ぶんの見出し（オーナー指示 2026-10-24：1日ごとにB何回・食事記録何回・運動は何をしたかを
+    ひと目で分かるように）。日付の横に 🍽B（運動で相殺したら 食事B − 運動 = 差し引き）・📝記録の回数・
+    🏃運動の内容 を色つきの札で並べる。
+      B   ：目標以内＝緑／超えた＝赤（目標が分からなければ灰色）
+      記録：3回以上＝緑／2回＝黄／1回以下＝赤
+      運動：した日＝青（内容が分からない古い記録は「内容未登録」）／しなかった日＝灰色"""
+    try:
+        d = datetime.date.fromisoformat(str(day.get("date"))[:10])
+        date_lbl = f"{d.month}/{d.day}（{WEEKDAYS_JA[d.weekday()]}）"
+    except ValueError:
+        date_lbl = _esc(day.get("date") or "")
+
+    food_b = float(day.get("food_b") or 0)
+    ex_b = float(day.get("ex_b") or 0)
+    net_b = float(day.get("net_b") if day.get("net_b") is not None else max(0.0, food_b - ex_b))
+    b_txt = (f"🍽 B{food_b:g} − 🏃{ex_b:g} = B{net_b:g}" if ex_b > 0 else f"🍽 B{net_b:g}")
+    if isinstance(target, (int, float)):
+        ok = net_b <= target
+        b_chip = _chip(b_txt + f"（目標{target:g}）", "#D1FAE5" if ok else "#FEE2E2", "#047857" if ok else "#B91C1C")
+    else:
+        b_chip = _chip(b_txt, "#E5E7EB", "#374151")
+
+    n = int(day.get("meal_count") or 0)
+    if n >= 3:
+        rec_chip = _chip(f"📝 記録 {n}回", "#D1FAE5", "#047857")
+    elif n == 2:
+        rec_chip = _chip(f"📝 記録 {n}回", "#FEF3C7", "#92400E")
+    else:
+        rec_chip = _chip(f"📝 記録 {n}回", "#FEE2E2", "#B91C1C")
+
+    items = day.get("exercises")
+    if ex_b > 0 or items:
+        what = "・".join(_esc(x) for x in items) if items else "内容未登録"
+        ex_chip = _chip(f"🏃 {what}" + (f"（−{ex_b:g}B）" if ex_b > 0 else ""), "#DBEAFE", "#1D4ED8")
+    else:
+        ex_chip = _chip("🏃 運動なし", "#FFFFFF", "#9CA3AF")
+
+    return (f'<div style="margin:12px 0 6px;padding:6px 10px;background:#F3F4F6;border-radius:8px;'
+            f'font-size:12px;line-height:1.9">'
+            f'<b style="font-size:14px;color:#111827;margin-right:8px">{date_lbl}</b>'
+            f'{b_chip}{rec_chip}{ex_chip}</div>')
+
+
 def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget: int = MAX_PHOTOS_TOTAL) -> str:
     """会員1人ぶんの写真カード（名前・体重変化・その人の写真すべて）を組み立てる。
     budget は「セクション全体であと何枚載せられるか」。"""
@@ -641,7 +697,11 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
 
     # 写真は1行3枚で折り返す（枚数に制限を設けず全部載せる／オーナー指示 2026-09-23）
     PER_ROW = 3
+    # 1日ごとの要約があれば、写真を日ごとにまとめて見出しに B・記録の回数・運動を出す（2026-10-24）。
+    # 古いサーバー（days が無い）のときは、これまでどおり写真ごとに「この日の合計」を添える。
+    days = [d for d in (member.get("days") or []) if isinstance(d, dict) and d.get("date")]
     cells = []
+    cell_dates = []
     for i, ph in enumerate(member.get("photos") or []):
         if len(cells) >= budget:
             break
@@ -671,22 +731,50 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         # 朝・昼・夕・間食（記録した時刻と中身からの推測。分からない写真には付けない）
         slot = ph.get("meal_slot")
         slot_lbl = f'<b class="ps">{slot}</b> ' if slot in MEAL_SLOT_LABELS else ""
+        if days:
+            # 日付・この日の合計・運動は見出しに出すので、写真の下は「その食事」のことだけ
+            head = f"{slot_lbl}<br>" if slot_lbl else ""
+        else:
+            head = f'{slot_lbl}{ph.get("date", "")}{day_lbl}<br>'
         cells.append(
             f'<td class="pc"><img src="cid:{cid}" alt="meal" class="pi">'
-            f'<div class="pt">{slot_lbl}{ph.get("date", "")}{day_lbl}<br>'
+            f'<div class="pt">{head}'
             f'<b class="{"pg" if good else "pb"}">{sub}</b><br>'
             f'<span class="pf">{foods}</span></div></td>'
         )
+        cell_dates.append(str(ph.get("date") or "")[:10])
     if not cells:
         return ""
 
     # 開始時 → 現在 の推移（写真のあるカードにだけ付ける＝使わない画像を添付しない）
     progress_html = _progress_block(member.get("progress"), f"{cid_prefix}_progress", charts, good)
 
-    rows = "".join(
-        f"<tr>{''.join(cells[i:i + PER_ROW])}</tr>"
-        for i in range(0, len(cells), PER_ROW)
-    )
+    def _rows(cells):
+        """1行3枚で折り返す（横にはみ出さないように）。"""
+        return "".join(f"<tr>{''.join(cells[i:i + PER_ROW])}</tr>" for i in range(0, len(cells), PER_ROW))
+
+    if days:
+        by_date = {}
+        for dt, c in zip(cell_dates, cells):
+            by_date.setdefault(dt, []).append(c)
+        target = member.get("b_target")
+        blocks = []
+        shown = set()
+        for day in days:
+            dt = str(day["date"])[:10]
+            shown.add(dt)
+            cs = by_date.get(dt) or []
+            body = (f'<table cellpadding="0" cellspacing="0" border="0">{_rows(cs)}</table>' if cs else
+                    '<div style="font-size:11px;color:#9CA3AF;margin:0 0 6px 4px">'
+                    '写真なし（文章・コピーご飯などで記録）</div>')
+            blocks.append(_day_header(day, target) + body)
+        # 要約の無い日の写真（ふつうは無い）も落とさずに載せる
+        for dt in sorted({d for d in cell_dates if d not in shown}, reverse=True):
+            blocks.append(f'<div style="margin:12px 0 6px;font-size:13px;font-weight:800;color:#111827">{_esc(dt)}</div>'
+                          f'<table cellpadding="0" cellspacing="0" border="0">{_rows(by_date[dt])}</table>')
+        photos_html = "".join(blocks)
+    else:
+        photos_html = f'<table cellpadding="0" cellspacing="0" border="0">{_rows(cells)}</table>'
     name = str(member.get("name") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return f"""
     <div style="margin-bottom:14px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-left:4px solid {color};border-radius:8px">
@@ -696,7 +784,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
       </div>{_record_rate_line(member.get("record_rate"))}{_exercise_line(member)}{_intake_line(member.get("intake"))}{progress_html}
-      <table cellpadding="0" cellspacing="0" border="0">{rows}</table>
+      {photos_html}
     </div>"""
 
 
