@@ -6,6 +6,7 @@ ABダイエット デイリーレポート送信スクリプト
 import os
 import io
 import json
+from html import escape as html_escape
 import time
 import base64
 import datetime
@@ -920,8 +921,9 @@ def _sweet_rule_section(sr) -> str:
 
 
 def _mame_points_section(mp, recorders=None) -> str:
-    """🎁 まめポイント（こまめ記録ポイント）を昨日何人が獲得したか（オーナー指示 2026-10-17）。
-    朝・昼・夜の3回とも、その時間帯のうちに記録できた人が1日1ポイント。人数だけで名前は出さない。"""
+    """🎁 こまめポイント（こまめ記録ポイント）を昨日何人が獲得したか（オーナー指示 2026-10-17）。
+    朝・昼・夜の3回とも、その時間帯のうちに記録できた人が1日1ポイント。
+    2026-10-24：呼び名を「まめポイント」→「こまめポイント」に。累計ポイントの上位5人（名前つき）を追加。"""
     if not mp:
         return ""
     earned = mp.get("earned", 0)
@@ -936,12 +938,28 @@ def _mame_points_section(mp, recorders=None) -> str:
           <th style="padding:5px 6px;text-align:left">日付</th><th style="padding:5px 6px">獲得した人</th>
         </tr>{rows}
       </table>""" if rows else ""
+    medal = {1: "🥇", 2: "🥈", 3: "🥉"}
+    top_rows = "".join(
+        f"<tr style='border-bottom:1px solid #F3F4F6'>"
+        f"<td style='padding:6px;font-weight:800;white-space:nowrap'>{medal.get(t['rank'], '')}{t['rank']}位</td>"
+        f"<td style='padding:6px;font-weight:700'>{html_escape(str(t.get('name', '')))}</td>"
+        f"<td style='padding:6px;text-align:center;font-weight:900;color:#7C5CE0'>{t['points']}pt</td>"
+        f"<td style='padding:6px;text-align:center;color:#6B7280'>+{t.get('week', 0)}</td></tr>"
+        for t in mp.get("top") or [])
+    top_table = f"""
+      <h3 style="font-size:14px;margin:16px 0 6px;color:#374151">🏆 こまめポイント 上位5人（累計）</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:12px">
+          <th style="padding:6px;text-align:left">順位</th><th style="padding:6px;text-align:left">名前</th>
+          <th style="padding:6px">累計</th><th style="padding:6px">直近7日</th>
+        </tr>{top_rows}
+      </table>""" if top_rows else ""
     return f"""
     <div class="section">
-      <h2>🎁 まめポイント（こまめ記録）（{mp.get('date', '')}）</h2>
+      <h2>🎁 こまめポイント（{mp.get('date', '')}）</h2>
       <div class="kpi-row">
         <div class="kpi">
-          <div class="kpi-lbl">昨日まめポイントを獲得した人</div>
+          <div class="kpi-lbl">昨日こまめポイントを獲得した人</div>
           <div class="kpi-val" style="font-size:24px;color:#7C5CE0">{earned}人</div>
           <div class="kpi-sub">{rate}</div>
         </div>
@@ -955,9 +973,10 @@ def _mame_points_section(mp, recorders=None) -> str:
           <div class="kpi-val" style="font-size:22px">{mp.get('holders', 0)}人</div>
           <div class="kpi-sub">累計</div>
         </div>
-      </div>{table}
+      </div>{top_table}{table}
       <div style="font-size:11px;color:#9CA3AF;margin-top:6px;line-height:1.6">
         ※ 朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録できた人が1日1ポイント。
+        上位5人は累計ポイントの多い順（同点は直近7日に多く獲得した人を上に）。
       </div>
     </div>"""
 
@@ -1190,7 +1209,7 @@ def build_html(data: dict, credit=None, photo_section="") -> str:
     <!-- 🍬 お菓子・スイーツ・ジュースの特別ルールの適用人数（オーナー依頼 2026-10-07） -->
     {_sweet_rule_section(data.get("sweet_rule"))}
 
-    <!-- 🎁 まめポイント（こまめ記録）を昨日何人が獲得したか（オーナー指示 2026-10-17） -->
+    <!-- 🎁 こまめポイントを昨日何人が獲得したか・上位5人（オーナー指示 2026-10-17／10-24） -->
     {_mame_points_section(data.get("mame_points"), meal.get("users"))}
 
     <!-- ② 体重・Bカウント・運動 推移 -->
