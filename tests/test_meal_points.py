@@ -140,7 +140,7 @@ def test_card_is_on_record_screen():
     assert "renderMealPoints();" in re.search(r"function updateDailyTotal\(\) \{.*?\n\}", html, re.S).group(0)
 
 
-# ── デイリーレポート：昨日まめポイントを獲得した人数（オーナー指示 2026-10-17） ──
+# ── デイリーレポート：昨日こまめポイントを獲得した人数（オーナー指示 2026-10-17。10-24 に「まめ」→「こまめ」） ──
 def test_report_stats_count_yesterday(client):
     conn = m._get_conn()
     cur = conn.cursor()
@@ -169,7 +169,8 @@ def test_report_shows_mame_points_section():
     sr = pytest.importorskip("send_report")
     html = sr._mame_points_section({"date": "2026-10-16", "earned": 3, "goal": 10, "unlocked": 1, "holders": 5,
                                     "trend": [{"date": "2026-10-16", "earned": 3}]}, recorders=12)
-    assert "まめポイント" in html and "3人" in html and "記録した12人中・25%" in html
+    assert "こまめポイント" in html and "3人" in html and "記録した12人中・25%" in html
+    assert "まめポイント" not in html.replace("こまめポイント", ""), "旧称「まめポイント」が残っています"
     assert sr._mame_points_section(None) == ""
     src = open(sr.__file__, encoding="utf-8").read()
     assert '_mame_points_section(data.get("mame_points")' in src
@@ -205,3 +206,40 @@ def test_card_is_compact_and_below_record_buttons():
     # 点線の枠をやめた
     rec_card = re.search(r"\n    \.rec-card \{[^}]*\}", html).group(0)
     assert "dashed" not in rec_card
+
+
+def test_report_top5(client):
+    """累計ポイントの上位5人（同点は同じ順位・直近7日に多い人を上に）。"""
+    conn = m._get_conn()
+    cur = conn.cursor()
+    cur.execute(f"INSERT INTO user_profile (user_id, display_name, updated_at) VALUES ('p1','佐藤','x')")
+    cur.execute(f"INSERT INTO user_profile (user_id, display_name, updated_at) VALUES ('p2','<b>鈴木</b>','x')")
+    conn.commit()
+    conn.close()
+    _seed("p1", 8)          # 2026-01-01〜（直近7日には入らない）
+    _seed("p2", 8)
+    _seed("p3", 3)
+    _seed("p4", 2); _seed("p5", 1); _seed("p6", 1)
+    conn = m._get_conn()
+    cur = conn.cursor()
+    cur.execute(f"INSERT INTO meal_points (user_id,date,created_at) VALUES ('p2','2026-10-16','x')")
+    cur.execute(f"INSERT INTO meal_points (user_id,date,created_at) VALUES ('p1','2026-10-15','x')")
+    conn.commit()
+    conn.close()
+    top = m._mame_points_stats("2026-10-16")["top"]
+    assert len(top) == 5
+    assert [t["points"] for t in top] == [9, 9, 3, 2, 1]
+    assert [t["rank"] for t in top] == [1, 1, 3, 4, 5], "同点は同じ順位"
+    # 同点の2人は、最後に獲得した日が新しい p2（鈴木）が先
+    assert top[0]["name"] == "<b>鈴木</b>" and top[1]["name"] == "佐藤"
+    assert top[2]["name"] == "会員p3", "名前が無い会員は「会員xxxx」"
+
+
+def test_report_top5_is_escaped():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "report"))
+    sr = pytest.importorskip("send_report")
+    html = sr._mame_points_section({"date": "2026-10-16", "earned": 1, "goal": 10, "unlocked": 0, "holders": 1,
+                                    "trend": [], "top": [{"rank": 1, "name": "<b>鈴木</b>", "points": 9, "week": 1}]})
+    assert "上位5人" in html and "&lt;b&gt;鈴木" in html and "<b>鈴木</b>" not in html
+    assert "🥇1位" in html and "9pt" in html

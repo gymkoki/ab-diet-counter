@@ -7021,8 +7021,9 @@ def _meal_points_payload(uid):
 
 
 def _mame_points_stats(target_date, days=7):
-    """デイリーレポート用：まめポイント（3食こまめ記録ポイント）を昨日何人が獲得したか
-    （オーナー指示 2026-10-17）。直近 days 日の推移と、累計の達成者数も返す。人数だけで名前は出さない。
+    """デイリーレポート用：こまめポイント（こまめ記録ポイント）を昨日何人が獲得したか
+    （オーナー指示 2026-10-17。2026-10-24 に呼び名を「まめ」→「こまめ」へ）。直近 days 日の推移と、
+    累計の達成者数、**累計ポイントの上位5人**（オーナー指示 2026-10-24。ここだけ名前を出す）も返す。
     読めなくてもレポートは止めない（None を返す）。"""
     try:
         end = datetime.date.fromisoformat(target_date)
@@ -7033,13 +7034,29 @@ def _mame_points_stats(target_date, days=7):
             cur.execute(f"SELECT date, COUNT(*) FROM meal_points WHERE date>={PH} AND date<={PH} GROUP BY date",
                         (start, target_date))
             by_day = {str(r[0])[:10]: r[1] for r in cur.fetchall()}
-            cur.execute("SELECT user_id, COUNT(*) FROM meal_points GROUP BY user_id")
-            counts = [r[1] for r in cur.fetchall()]
+            cur.execute(f"SELECT user_id, COUNT(*), MAX(date), "
+                        f"SUM(CASE WHEN date>={PH} THEN 1 ELSE 0 END) "
+                        f"FROM meal_points WHERE date<={PH} GROUP BY user_id", (start, target_date))
+            per_user = [(r[0], int(r[1]), str(r[2])[:10], int(r[3] or 0)) for r in cur.fetchall()]
+            counts = [c for _u, c, _l, _w in per_user]
+            names = {}
+            if per_user:
+                cur.execute("SELECT user_id, display_name FROM user_profile")
+                names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
         finally:
             conn.close()
     except Exception as e:
         app.logger.warning("mame points stats skipped: %s", e)
         return None
+    # 上位5人：累計ポイントが多い順。同点なら直近7日に多く獲得した人、さらに最後に獲得した日が新しい人。
+    # 順位は同点なら同じ数字にする（1位・2位・2位・4位…）。
+    ranked = sorted(per_user, key=lambda r: r[2], reverse=True)      # 最後に獲得した日が新しい順
+    ranked = sorted(ranked, key=lambda r: (-r[1], -r[3]))           # 累計 → 直近7日（並びは安定）
+    top = []
+    for i, (uid, pts, last, week) in enumerate(ranked[:5]):
+        rank = i + 1 if i == 0 or pts != top[-1]["points"] else top[-1]["rank"]
+        top.append({"rank": rank, "name": (names.get(uid) or f"会員{uid[:4]}")[:12],
+                    "points": pts, "week": week, "last": last})
     trend = [{"date": (end - datetime.timedelta(days=i)).isoformat(),
               "earned": by_day.get((end - datetime.timedelta(days=i)).isoformat(), 0)}
              for i in range(days - 1, -1, -1)]
@@ -7050,6 +7067,7 @@ def _mame_points_stats(target_date, days=7):
         "goal": MEAL_POINTS_GOAL,
         "holders": len(counts),
         "unlocked": sum(1 for c in counts if c >= MEAL_POINTS_GOAL),
+        "top": top,
     }
 
 
