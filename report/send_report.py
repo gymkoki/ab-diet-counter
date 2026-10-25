@@ -434,7 +434,14 @@ def fetch_revenue_proposals():
             auth=(ADMIN_USER, ADMIN_PASS),
             timeout=200,  # AIが考えてから返すので時間がかかる
         )
-        r.raise_for_status()
+        if not r.ok:
+            # 理由が分かるように、状態コードとサーバーが返した理由（会員のデータは含まない）を出す
+            try:
+                detail = (r.json() or {}).get("detail") or ""
+            except Exception:
+                detail = ""
+            print(f"revenue-proposals skipped: HTTP {r.status_code} {detail[:200]}")
+            return None
         return r.json()
     except Exception as e:
         print(f"revenue-proposals skipped: {type(e).__name__}")

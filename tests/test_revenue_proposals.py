@@ -165,3 +165,105 @@ def test_report_section_at_bottom_with_copy_text():
     # いちばん下（④の後・フッターの前）に置く
     assert body.index("🎯 4. 減量希望者") < body.index("{_revenue_section(revenue)}") < body.index('<div class="footer">')
     assert "revenue-proposals" in src and "fetch_revenue_proposals()" in src
+
+
+# ── 2026-10-25：レポートの欄が空になった件の再発防止 ─────────────────────
+def _stub_by_model(monkeypatch, replies):
+    """モデルごとに返す本文を変える（None は例外）。"""
+    calls = []
+
+    class _Messages:
+        def create(self, **kw):
+            calls.append(kw)
+            text = replies.get(kw["model"])
+            if text is None:
+                raise RuntimeError("model not available")
+            msg = _Msg(text)
+            msg.stop_reason = "max_tokens" if not text.strip().endswith("}") else "end_turn"
+            return msg
+
+    class _Client:
+        messages = _Messages()
+
+    monkeypatch.setattr(m, "get_client", lambda: _Client())
+    return calls
+
+
+def test_truncated_reply_falls_back_to_next_model(client, monkeypatch):
+    """1つ目のモデルの応答が途中切れ（考えすぎて上限に達した等）でも、2つ目で作り直す。
+    以前はここで 502 になり、レポートの欄が空になっていた。"""
+    good = json.dumps({"proposals": SAMPLE[:1]}, ensure_ascii=False)
+    first, second = m.REVENUE_PROPOSAL_MODELS[:2]
+    calls = _stub_by_model(monkeypatch, {first: '{"proposals":[{"title":"途中', second: good})
+    r = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r.status_code == 200 and len(r.get_json()["proposals"]) == 1
+    assert [c["model"] for c in calls] == [first, second]
+
+
+def test_enough_room_for_thinking(client, monkeypatch):
+    calls = _stub_ai(monkeypatch, json.dumps({"proposals": SAMPLE[:1]}, ensure_ascii=False))
+    client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert calls[0]["max_tokens"] >= 16000, "思考の分も含めて余裕を持たせる（8000では途中で切れた）"
+
+
+def test_failure_reason_is_returned_and_kept(client, monkeypatch):
+    _stub_by_model(monkeypatch, {})
+    m._set_setting(m.REVENUE_PROPOSAL_ERROR_KEY, "")
+    r = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r.status_code == 502
+    assert "RuntimeError" in r.get_json()["detail"]
+    assert "RuntimeError" in json.loads(m._get_setting(m.REVENUE_PROPOSAL_ERROR_KEY, "{}"))["reason"]
+
+
+def test_points_ranking_names_are_not_sent_to_ai(client, monkeypatch):
+    """こまめポイントの上位5人（名前つき）はAIに渡さない。"""
+    yesterday = (datetime.datetime.now(m.JST).date() - datetime.timedelta(days=1)).isoformat()
+    conn = m._get_conn()
+    cur = conn.cursor()
+    cur.execute(f"DELETE FROM user_profile WHERE user_id={m.PH}", ("rev-top-uid",))
+    cur.execute(f"DELETE FROM meal_points WHERE user_id={m.PH}", ("rev-top-uid",))
+    cur.execute(f"INSERT INTO user_profile (user_id, display_name, goal, updated_at) VALUES ({m.PH},{m.PH},'cut','x')",
+                ("rev-top-uid", "ランキング太郎"))
+    cur.execute(f"INSERT INTO meal_points (user_id, date, created_at) VALUES ({m.PH},{m.PH},'x')",
+                ("rev-top-uid", yesterday))
+    conn.commit()
+    conn.close()
+    calls = _stub_ai(monkeypatch, json.dumps({"proposals": SAMPLE[:1]}, ensure_ascii=False))
+    try:
+        client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    finally:
+        conn = m._get_conn()
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM user_profile WHERE user_id={m.PH}", ("rev-top-uid",))
+        cur.execute(f"DELETE FROM meal_points WHERE user_id={m.PH}", ("rev-top-uid",))
+        conn.commit()
+        conn.close()
+    text = calls[0]["messages"][0]["content"][0]["text"]
+    assert "mame_points" in text, "人数などの集計は渡す"
+    assert "ランキング太郎" not in text and "rev-top" not in text
+
+
+def test_metrics_with_decimal_do_not_break(client, monkeypatch):
+    """PostgreSQL が返す Decimal などが混ざっても、AIへの入力を作れること。"""
+    import decimal
+    real = m._collect_revenue_metrics
+    monkeypatch.setattr(m, "_collect_revenue_metrics", lambda: {**real(), "x": decimal.Decimal("1.5"),
+                                                                "d": datetime.date(2026, 10, 25)})
+    _stub_ai(monkeypatch, json.dumps({"proposals": SAMPLE[:1]}, ensure_ascii=False))
+    assert client.get("/api/admin/revenue-proposals", headers=ADMIN).status_code == 200
+
+
+def test_report_log_shows_status_and_reason(monkeypatch, capsys):
+    pytest.importorskip("requests", reason="requests 未インストール")
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    import send_report as sr
+
+    class _R:
+        ok, status_code = False, 502
+
+        def json(self):
+            return {"error": "x", "detail": "ValueError: AIの応答からJSONを取得できませんでした（stop_reason=max_tokens）"}
+    monkeypatch.setattr(sr.requests, "get", lambda *a, **k: _R())
+    assert sr.fetch_revenue_proposals() is None
+    out = capsys.readouterr().out
+    assert "HTTP 502" in out and "stop_reason=max_tokens" in out

@@ -93,6 +93,12 @@
 - 以前の「Claude Code に頼める改善案」（`dev-proposals`）とは別物（そちらはレポートに戻していない）。
 - **このチャットへの自動の提案は、まだできない**：このクラウド環境のネットワーク設定で ab-diet-counter.onrender.com への
   接続が拒否される（403）。オーナーが環境の Network access でこのドメインを許可すれば、毎朝の Routine で取りに行く形にできる。
+- 経緯（2026-10-25）：初回の朝に「revenue-proposals skipped: HTTPError」で欄が空になった。対策として
+  ①応答が空・途中切れ・JSONでない場合も**そのモデルの失敗として次のモデルで作り直す**（以前は例外が外に出て502）、
+  ②思考の分も含めて `REVENUE_PROPOSAL_MAX_TOKENS = 16000`（8000では考えている途中で上限に達しうる）、
+  ③失敗の理由を 502 の `detail` と settings の `revenue-proposals-last-error` に残し、レポートのログに状態コードと理由を出す
+  （理由はエラーの種類とメッセージだけ。会員のデータは含めない）、④AIへの入力の `json.dumps` は `default=str`、
+  ⑤こまめポイントの上位5人（名前つき）は**AIに渡さない**。
 - `tests/test_revenue_proposals.py` が回帰を検知する。
 
 ## 「5. システム・運用状況」はレポートに載せない（オーナー指示 2026-10-01）
