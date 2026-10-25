@@ -309,6 +309,18 @@
     </div>
   </div>
 
+  <!-- 会員を名前で検索して、通算で何kgやせたかを見る（オーナー指示 2026-10-25） -->
+  <div class="card" style="margin-bottom:20px" id="member-search-card">
+    <h2>🔎 会員を名前で検索（通算の体重の変化）</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="search" id="member-search-input" placeholder="名前の一部（例：松澤）" autocomplete="off"
+             oninput="memberSearch()" onkeydown="if(event.key==='Enter')memberSearch()"
+             style="flex:1;min-width:220px;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:15px;font-family:inherit">
+    </div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:6px">全会員から探します（直近に記録していない人も対象）。通算＝最初に記録した体重 → いちばん新しい体重。</div>
+    <div id="member-search-result" style="margin-top:10px"></div>
+  </div>
+
   <!-- デイリーレポートのメール（2026-10-24〜：GitHub から送れなかったときはサーバーから送る） -->
   <div class="card" style="margin-bottom:20px" id="report-mail-card">
     <h2>📧 デイリーレポートのメール</h2>
@@ -776,6 +788,78 @@
     return String(s ?? '').replace(/[&<>"']/g, c => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
+  }
+
+  // ── 会員を名前で検索して、通算で何kgやせたかを出す（オーナー指示 2026-10-25）──
+  // 「直近3日に記録した会員」の一覧には出てこない人もいるため、全会員（/api/admin/users）から探す。
+  let _msUsers = null, _msLoadedAt = 0, _msTimer = null;
+  function _msNorm(s) {
+    // 全角/半角・大文字/小文字・空白・カタカナ/ひらがなの違いを無視して比べる
+    return String(s || '').normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+      .replace(/[\u30a1-\u30f6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  }
+  function _msDate(d) {
+    if (!d) return '';
+    const p = String(d).slice(0, 10).split('-');
+    return p.length === 3 ? `${Number(p[0])}/${Number(p[1])}/${Number(p[2])}` : String(d);
+  }
+  function memberSearchResultHtml(u) {
+    const name = u.display_name ? escapeHtml(u.display_name) : `<span style="color:#9CA3AF">（名前未設定）${escapeHtml(u.user_id_short || '')}</span>`;
+    const goalCls = u.goal === 'cut' ? 'goal-cut' : u.goal === 'maintain' ? 'goal-maintain' : u.goal === 'bulk' ? 'goal-bulk' : 'goal-none';
+    const head = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-size:16px">${name}</b>
+        <span class="goal-badge ${goalCls}">${escapeHtml(u.goal_label || '未設定')}</span>
+        <a class="detail-link" style="margin-left:auto" href="${ADMIN_BASE}/user/${encodeURIComponent(u.user_id)}">詳細 ›</a>
+      </div>`;
+    let body;
+    const w0 = u.initial_weight, w1 = u.latest_weight, n = u.weight_records || 0;
+    if (w0 == null || w1 == null) {
+      body = '<div style="color:#9CA3AF;font-size:13px;margin-top:6px">体重の記録がまだありません</div>';
+    } else if (n < 2) {
+      body = `<div style="color:#9CA3AF;font-size:13px;margin-top:6px">体重の記録が1回だけ（${w0.toFixed(1)} kg・${_msDate(u.weight_start_date)}）なので、変化はまだ分かりません</div>`;
+    } else {
+      const ch = Math.round((w1 - w0) * 10) / 10;
+      const pct = w0 ? (ch / w0 * 100) : 0;
+      const days = (u.weight_start_date && u.weight_latest_date)
+        ? Math.round((new Date(String(u.weight_latest_date).slice(0, 10)) - new Date(String(u.weight_start_date).slice(0, 10))) / 86400000) : null;
+      const big = ch < 0
+        ? `<span style="color:#15803D">通算 −${Math.abs(ch).toFixed(1)} kg やせました</span>`
+        : ch > 0 ? `<span style="color:#DC2626">通算 +${ch.toFixed(1)} kg 増えました</span>`
+        : '<span style="color:#6B7280">通算 ±0 kg（変わらず）</span>';
+      body = `<div style="font-size:22px;font-weight:900;margin-top:6px">${big}
+          <span style="font-size:13px;font-weight:700;color:#6B7280">（${pct > 0 ? '+' : pct < 0 ? '−' : '±'}${Math.abs(pct).toFixed(1)}%）</span></div>
+        <div style="font-size:13px;color:#374151;margin-top:2px">
+          開始 <b>${w0.toFixed(1)} kg</b>（${_msDate(u.weight_start_date)}）→ 現在 <b>${w1.toFixed(1)} kg</b>（${_msDate(u.weight_latest_date)}）
+          <span style="color:#9CA3AF">${days != null ? `・${days}日間` : ''}・体重の記録 ${n}回</span>
+        </div>`;
+    }
+    return `<div style="padding:12px 14px;border:1px solid #E5E7EB;border-radius:12px;margin-bottom:8px">${head}${body}</div>`;
+  }
+  async function memberSearch() {
+    clearTimeout(_msTimer);
+    _msTimer = setTimeout(async () => {
+      const box = document.getElementById('member-search-result');
+      const q = _msNorm(document.getElementById('member-search-input').value);
+      if (!q) { box.innerHTML = ''; return; }
+      try {
+        if (!_msUsers || Date.now() - _msLoadedAt > 5 * 60 * 1000) {
+          box.innerHTML = '<div class="spinner"></div>';
+          const r = await fetch('/api/admin/users');
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const d = await r.json();
+          _msUsers = d.users || d || [];
+          _msLoadedAt = Date.now();
+        }
+        const hits = _msUsers.filter(u => _msNorm(u.display_name).includes(q)
+          || (q.length >= 4 && String(u.user_id || '').toLowerCase().startsWith(q)));
+        box.innerHTML = hits.length
+          ? hits.slice(0, 20).map(memberSearchResultHtml).join('')
+            + (hits.length > 20 ? `<div style="font-size:12px;color:#9CA3AF">ほか ${hits.length - 20}人（もう少し詳しく入力してください）</div>` : '')
+          : '<div style="color:#9CA3AF;font-size:13px">見つかりませんでした（名前が未設定の会員は「会員◯◯◯◯」の英数字でも探せます）</div>';
+      } catch (e) {
+        box.innerHTML = `<div style="color:#DC2626;font-size:13px">読み込みに失敗しました（${escapeHtml(e.message)}）</div>`;
+      }
+    }, 250);
   }
 
   // ── 体重変化の分析（目的別平均＋Bカウント相関の散布図）──
