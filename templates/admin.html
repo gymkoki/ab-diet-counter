@@ -1214,7 +1214,11 @@
         ? `<a href="${ADMIN_BASE}/user/${encodeURIComponent(i.user_id)}" style="color:#FF6B35;font-weight:700;text-decoration:none">${escapeHtml(i.name || '(名前未設定)')}</a> <span style="color:#9CA3AF">(${escapeHtml(i.user_id.slice(0, 8))}…)</span>`
         : `${escapeHtml(i.name || '(名前未設定)')} <span style="color:#DC2626;font-size:11px">user_id不明のため返信できません</span>`;
       const replyBlock = i.reply_text
-        ? `<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7;white-space:pre-wrap">↩️ ${escapeHtml(i.reply_text)}<div style="color:#9CA3AF;font-size:11px;margin-top:4px">返信日時: ${fmtDateTime(i.replied_at)}</div></div>`
+        ? `<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7;white-space:pre-wrap">↩️ ${escapeHtml(i.reply_text)}<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+            <span style="color:#9CA3AF;font-size:11px">返信日時: ${fmtDateTime(i.replied_at)}</span>
+            <button onclick="cancelFeedbackReply(${i.id}, ${i.read_at ? 'true' : 'false'})" id="fb-cancel-${i.id}"
+              style="padding:5px 12px;border:1px solid #FCA5A5;border-radius:8px;background:#fff;color:#DC2626;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">↩︎ 送信を取り消す</button>
+          </div></div>`
         : '';
       const replyUi = i.user_id ? `
         <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-start">
@@ -1257,6 +1261,28 @@
       btn.disabled = false;
       btn.textContent = '送信';
       alert('返信の送信に失敗しました。再度お試しください。');
+    }
+  }
+
+  // 送信の取り消し：本人のアプリから返信を消し、受信箱は「未返信」に戻す。
+  // すでに読まれた返信は、アプリからは消えても読んだ事実は取り消せないので、確認で伝える。
+  async function cancelFeedbackReply(id, alreadyRead) {
+    const msg = alreadyRead
+      ? 'この返信はすでに相手が読んでいます。\n取り消すと相手のアプリからは消えますが、読まれた内容は取り消せません。\n取り消しますか？'
+      : 'この返信の送信を取り消しますか？\n相手のアプリには表示されなくなります。';
+    if (!confirm(msg)) return;
+    const btn = document.getElementById(`fb-cancel-${id}`);
+    if (btn) { btn.disabled = true; btn.textContent = '取り消し中…'; }
+    try {
+      const r = await fetch(`/api/admin/feedback/${id}/reply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancel: true }),
+      });
+      if (!r.ok) throw new Error('cancel');
+      await loadFeedback();
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = '↩︎ 送信を取り消す'; }
+      alert('送信の取り消しに失敗しました。再度お試しください。');
     }
   }
 

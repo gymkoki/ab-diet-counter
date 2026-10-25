@@ -6977,9 +6977,15 @@ def admin_feedback_list():
 @app.route("/api/admin/feedback/<int:fid>/reply", methods=["POST"])
 @_admin_required
 def admin_feedback_reply(fid):
-    """個別返信を保存する。再送信（上書き）すると未読に戻る。空文字で返信の取り消し。"""
+    """個別返信を保存する。再送信（上書き）すると未読に戻る。
+    {"cancel": true} で送信の取り消し（本人のアプリから返信が消え、受信箱は「未返信」に戻る）。
+    取り消しは明示したときだけ（空の本文を誤って送っても、送った返信は消さない）。"""
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
+    if data.get("cancel") is True:
+        text = ""
+    elif not text:
+        return jsonify({"error": "返信の本文が空です"}), 400
     if len(text) > 5000:
         text = text[:5000]
     ts = datetime.datetime.now(JST).isoformat()
