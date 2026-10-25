@@ -5557,6 +5557,8 @@ def admin_users():
                 rec["initial"] = float(wt_w)
                 rec["start_date"] = dt_w
             rec["latest"] = float(wt_w)
+            rec["latest_date"] = dt_w
+            rec["count"] = rec.get("count", 0) + 1
     finally:
         conn.close()
 
@@ -5586,6 +5588,9 @@ def admin_users():
             "initial_weight": initial_w,
             "latest_weight": latest_w,
             "weight_start_date": wr.get("start_date"),
+            # 名前検索で「通算で何kgやせたか」を出すため（オーナー指示 2026-10-25）
+            "weight_latest_date": wr.get("latest_date"),
+            "weight_records": wr.get("count", 0),
             "weight_change": change,
         })
 
