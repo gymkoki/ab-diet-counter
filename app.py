@@ -4449,6 +4449,10 @@ REVENUE_PROPOSAL_PROMPT = """あなたはABダイエットアプリ（リオー�
 "effect":"（見込み効果と前提。40字以内）","kind":"アプリ","prompt":"（Claude Codeにそのまま貼れる依頼文）"}]}"""
 
 REVENUE_PROPOSAL_HISTORY_DAYS = 14
+# 思考（adaptive thinking）に使う分も含めた出力の上限。8000では考えている途中で上限に達し、
+# 提案のJSONが空・途中切れになることがあった（2026-10-25 のレポートで欄が空になった）。
+REVENUE_PROPOSAL_MAX_TOKENS = 16000
+REVENUE_PROPOSAL_ERROR_KEY = "revenue-proposals-last-error"
 REVENUE_PROPOSAL_MODELS = ("claude-opus-5", ANALYSIS_MODEL)   # 1日1回だけなので精度重視。使えなければ次へ
 
 
@@ -4525,7 +4529,8 @@ def _collect_revenue_metrics():
     try:
         mp = _mame_points_stats((today - datetime.timedelta(days=1)).isoformat())
         if mp:
-            m["mame_points"] = {k: v for k, v in mp.items() if k != "trend"}
+            # 上位5人（top）は名前つきなのでAIには渡さない（会員の名前・IDは渡さない約束）
+            m["mame_points"] = {k: v for k, v in mp.items() if k not in ("trend", "top")}
     except Exception as e:
         app.logger.warning("revenue metric mame points skipped: %s", e)
     try:
@@ -4589,9 +4594,10 @@ def _get_or_generate_revenue_proposals():
         raise _CoachNoApiKey()
 
     recent = _recent_revenue_titles(today)
+    # default=str：PostgreSQL が返す Decimal・日付などがあっても落ちないように
     user_text = (
         f"今日の日付：{today.isoformat()}\n"
-        f"収益に関する数字（集計値）：\n{json.dumps(_collect_revenue_metrics(), ensure_ascii=False)}\n\n"
+        f"収益に関する数字（集計値）：\n{json.dumps(_collect_revenue_metrics(), ensure_ascii=False, default=str)}\n\n"
         "直近に出した提案（同じ内容は出さない）：\n" + ("\n".join(recent) if recent else "（なし）")
     )
     last_err = None
@@ -4603,26 +4609,38 @@ def _get_or_generate_revenue_proposals():
         try:
             response = client.messages.create(
                 model=model,
-                max_tokens=8000,
+                max_tokens=REVENUE_PROPOSAL_MAX_TOKENS,
                 timeout=150.0,
                 thinking={"type": "adaptive"},
                 system=[{"type": "text", "text": REVENUE_PROPOSAL_PROMPT}],
                 messages=[{"role": "user", "content": [{"type": "text", "text": user_text}]}],
             )
-        except Exception as e:   # モデルが使えない・混雑などは次のモデルで試す
+            raw = "".join(b.text for b in (getattr(response, "content", []) or [])
+                          if getattr(b, "type", "") == "text").strip()
+            # 応答が空・途中切れ・JSONでないときも、このモデルの失敗として次のモデルで試す
+            # （以前はここで例外が外に出て、2つ目のモデルを試さずに 502 になっていた）
+            try:
+                proposals = _parse_revenue_proposals(raw)
+            except ValueError as e:
+                stop = getattr(response, "stop_reason", None)
+                raise ValueError(f"{e}（stop_reason={stop}・本文{len(raw)}文字）") from e
+            if not proposals:
+                raise ValueError("提案が0件でした")
+        except Exception as e:   # モデルが使えない・混雑・応答が壊れている などは次のモデルで試す
             last_err = e
             print(f"[REVENUE-PROPOSAL] {model} failed: {type(e).__name__}: {e}")
             continue
-        raw = "".join(b.text for b in (getattr(response, "content", []) or [])
-                      if getattr(b, "type", "") == "text").strip()
-        proposals = _parse_revenue_proposals(raw)
-        if proposals:
-            try:
-                _set_setting(cache_key, json.dumps(proposals, ensure_ascii=False))
-            except Exception:
-                pass
+        try:
+            _set_setting(cache_key, json.dumps(proposals, ensure_ascii=False))
+        except Exception:
+            pass
         return proposals, False
     raise last_err or RuntimeError("提案を生成できませんでした")
+
+
+def _revenue_error_reason(e):
+    """失敗の理由を短く（会員のデータは含まれない。モデルの名前・エラーの種類・メッセージだけ）。"""
+    return f"{type(e).__name__}: {str(e)[:200]}"
 
 
 @app.route("/api/admin/revenue-proposals")
@@ -4635,8 +4653,17 @@ def admin_revenue_proposals():
     except _CoachNoApiKey:
         return jsonify({"error": "APIキーが設定されていません"}), 503
     except Exception as e:
-        print(f"[REVENUE-PROPOSAL][ERROR] {type(e).__name__}: {e}")
-        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。"}), 502
+        reason = _revenue_error_reason(e)
+        print(f"[REVENUE-PROPOSAL][ERROR] {reason}")
+        # 何が起きたか後から分かるように残す（レポートのログにも出る）
+        try:
+            _set_setting(REVENUE_PROPOSAL_ERROR_KEY, json.dumps(
+                {"at": datetime.datetime.now(JST).isoformat(timespec="seconds"), "reason": reason},
+                ensure_ascii=False))
+        except Exception:
+            pass
+        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。",
+                        "detail": reason}), 502
     return jsonify({"date": datetime.datetime.now(JST).strftime("%Y-%m-%d"),
                     "proposals": proposals, "cached": cached})
 
