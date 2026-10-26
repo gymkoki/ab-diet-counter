@@ -321,6 +321,16 @@
     <div id="member-search-result" style="margin-top:10px"></div>
   </div>
 
+  <!-- 💰 収益を伸ばすために今日やること（レポートを待たずにここで作って見られる。2026-10-26） -->
+  <div class="card" style="margin-bottom:20px" id="revenue-card">
+    <h2>💰 収益を伸ばすために今日やること</h2>
+    <div style="font-size:12px;color:#6B7280;line-height:1.7;margin-bottom:10px">
+      デイリーレポートのいちばん下と同じ提案です。今日の分がまだ無ければ、ここで作ります（AIが考えるので1〜2分かかります。1日1回だけ作り、2回目からはすぐ出ます）。
+    </div>
+    <button class="apikey-save" style="width:auto;padding:8px 16px;font-size:13px" onclick="loadRevenueProposals()">💰 今日の提案を見る</button>
+    <div id="revenue-result" style="margin-top:12px"></div>
+  </div>
+
   <!-- デイリーレポートのメール（2026-10-24〜：GitHub から送れなかったときはサーバーから送る） -->
   <div class="card" style="margin-bottom:20px" id="report-mail-card">
     <h2>📧 デイリーレポートのメール</h2>
@@ -788,6 +798,60 @@
     return String(s ?? '').replace(/[&<>"']/g, c => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
+  }
+
+  // ── 💰 収益を伸ばすために今日やること（2026-10-26）──
+  // レポートは朝に作った時点の内容で保存されるため、提案の作成に失敗した日は空のまま残る。
+  // ここで同じ /api/admin/revenue-proposals を呼び、その場で作って見られるようにする。
+  function revenueProposalsHtml(d) {
+    const props = ((d && d.proposals) || []).filter(p => p && p.prompt).slice(0, 3);
+    if (!props.length) return '<div style="color:#9CA3AF;font-size:13px">今日の提案はありませんでした。</div>';
+    const box = 'font-family:Menlo,Consolas,monospace;font-size:12px;line-height:1.6;color:#111827;background:#F3F4F6;'
+              + 'border:1px dashed #9CA3AF;border-radius:6px;padding:8px 10px;white-space:pre-wrap;word-break:break-all';
+    const cards = props.map((p, i) => {
+      const kind = p.kind === '運営' ? '運営' : 'アプリ';
+      return `<div style="border:1px solid #E5E7EB;border-left:4px solid #F59E0B;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:14px;font-weight:800;color:#111827">${i + 1}. ${escapeHtml(p.title)}
+          <span style="font-size:11px;font-weight:700;color:#fff;background:${kind === 'アプリ' ? '#2563EB' : '#059669'};border-radius:8px;padding:1px 7px;margin-left:6px">${kind}</span></div>
+        <div style="font-size:12px;color:#374151;line-height:1.7;margin-top:4px">${escapeHtml(p.why)}</div>
+        ${p.effect ? `<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:4px">💴 見込み：${escapeHtml(p.effect)}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 3px">
+          <span style="font-size:11px;color:#6B7280">📋 Claude Code への依頼文</span>
+          <button class="detail-link" style="cursor:pointer" onclick="copyRevenuePrompt(${i})">コピー</button>
+        </div>
+        <div style="${box}">${escapeHtml(p.prompt)}</div>
+      </div>`;
+    }).join('');
+    return `<div style="font-size:12px;color:#6B7280;margin-bottom:8px">${escapeHtml(d.date || '')} の提案${d.cached ? '' : '（いま作りました）'}</div>${cards}
+      <button class="detail-link" style="cursor:pointer" onclick="copyRevenuePrompt(-1)">📋 全部まとめてコピー</button>`;
+  }
+  let _revenueData = null;
+  function copyRevenuePrompt(i) {
+    const props = ((_revenueData && _revenueData.proposals) || []).filter(p => p && p.prompt);
+    const text = i >= 0 ? (props[i] || {}).prompt || ''
+      : `${_revenueData.date || ''} の「収益を伸ばすために今日やること」から、次を進めてください。\n`
+        + props.map((p, k) => `${k + 1}. ${p.title}：${p.prompt}`).join('\n');
+    navigator.clipboard.writeText(text).then(() => alert('コピーしました。Claude Code のチャットに貼り付けてください。'),
+                                            () => prompt('コピーしてください', text));
+  }
+  async function loadRevenueProposals() {
+    const box = document.getElementById('revenue-result');
+    box.innerHTML = '<div class="spinner"></div><div style="font-size:12px;color:#9CA3AF;text-align:center">AIが考えています（1〜2分）…</div>';
+    try {
+      const r = await fetch('/api/admin/revenue-proposals');
+      let d = {};
+      try { d = await r.json(); } catch (e) {}
+      if (!r.ok) {
+        box.innerHTML = `<div style="color:#DC2626;font-size:13px;line-height:1.7">作れませんでした（HTTP ${r.status}）。<br>`
+          + `理由：${escapeHtml(d.detail || d.error || '不明')}<br>`
+          + '<span style="color:#6B7280">この画面を Claude Code に送ってもらえれば、理由をもとに直します。</span></div>';
+        return;
+      }
+      _revenueData = d;
+      box.innerHTML = revenueProposalsHtml(d);
+    } catch (e) {
+      box.innerHTML = `<div style="color:#DC2626;font-size:13px">読み込みに失敗しました（${escapeHtml(e.message)}）</div>`;
+    }
   }
 
   // ── 会員を名前で検索して、通算で何kgやせたかを出す（オーナー指示 2026-10-25）──
