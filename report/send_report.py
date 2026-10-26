@@ -435,11 +435,14 @@ def fetch_revenue_proposals():
             timeout=200,  # AIが考えてから返すので時間がかかる
         )
         if not r.ok:
-            # 理由が分かるように、状態コードとサーバーが返した理由（会員のデータは含まない）を出す
+            # 理由が分かるように、状態コードとサーバーが返した理由（会員のデータは含まない）を出す。
+            # 理由が無い応答（想定外のエラー・途中の中継サーバーのエラー画面など）は本文の先頭を出す。
             try:
                 detail = (r.json() or {}).get("detail") or ""
             except Exception:
                 detail = ""
+            if not detail:
+                detail = "本文：" + " ".join((r.text or "")[:160].split())
             print(f"revenue-proposals skipped: HTTP {r.status_code} {detail[:200]}")
             return None
         return r.json()
@@ -1526,6 +1529,11 @@ def main():
     print(f"   サーバーから: {res.get('error')}")
     print("   → 管理画面の「📧 デイリーレポートのメール」で Gmail のアプリパスワードを入れ直してください。")
     print("     （レポート自体はサーバーに保存されていれば、同じカードの「最新のレポートを開く」で読めます）")
+    # GitHub の実行画面のいちばん上に赤い注記として出す（失敗通知メールから開いたときに、やることがすぐ分かるように）
+    print("::error title=レポートのメールを送れませんでした（Gmail のアプリパスワードの入れ直しが必要）::"
+          "Gmail がログインを拒否しています。Google で新しいアプリパスワードを発行し、"
+          "管理画面の「📧 デイリーレポートのメール」→「Gmail のアプリパスワードを入れ直す」に貼って「保存して送る」を押してください。"
+          "保存した時点で最新のレポートが届けば直っています。")
     sys.exit(1)
 
 
