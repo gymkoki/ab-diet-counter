@@ -4628,7 +4628,7 @@ def _get_or_generate_revenue_proposals():
                 raise ValueError("提案が0件でした")
         except Exception as e:   # モデルが使えない・混雑・応答が壊れている などは次のモデルで試す
             last_err = e
-            print(f"[REVENUE-PROPOSAL] {model} failed: {type(e).__name__}: {e}")
+            _safe_log(f"[REVENUE-PROPOSAL] {model} failed: {_revenue_error_reason(e)}")
             continue
         try:
             _set_setting(cache_key, json.dumps(proposals, ensure_ascii=False))
@@ -4639,8 +4639,28 @@ def _get_or_generate_revenue_proposals():
 
 
 def _revenue_error_reason(e):
-    """失敗の理由を短く（会員のデータは含まれない。モデルの名前・エラーの種類・メッセージだけ）。"""
-    return f"{type(e).__name__}: {str(e)[:200]}"
+    """失敗の理由を短く（会員のデータは含まれない。モデルの名前・エラーの種類・メッセージだけ）。
+    ここ自体が失敗すると 502 の代わりに理由の無い 500 になるので、何があっても文字列を返す。"""
+    try:
+        msg = str(e)
+    except Exception:
+        msg = repr(e)
+    return f"{type(e).__name__}: {msg[:200]}"
+
+
+def _safe_log(text):
+    """ログ出力で失敗しない（標準出力の文字コードが日本語を扱えない環境でも例外を出さない）。"""
+    try:
+        app.logger.warning(text)
+    except Exception:
+        pass
+    try:
+        print(text)
+    except Exception:
+        try:
+            print(str(text).encode("ascii", "backslashreplace").decode("ascii"))
+        except Exception:
+            pass
 
 
 @app.route("/api/admin/revenue-proposals")
@@ -4654,7 +4674,7 @@ def admin_revenue_proposals():
         return jsonify({"error": "APIキーが設定されていません"}), 503
     except Exception as e:
         reason = _revenue_error_reason(e)
-        print(f"[REVENUE-PROPOSAL][ERROR] {reason}")
+        _safe_log(f"[REVENUE-PROPOSAL][ERROR] {reason}")
         # 何が起きたか後から分かるように残す（レポートのログにも出る）
         try:
             _set_setting(REVENUE_PROPOSAL_ERROR_KEY, json.dumps(

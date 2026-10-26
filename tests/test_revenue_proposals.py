@@ -267,3 +267,59 @@ def test_report_log_shows_status_and_reason(monkeypatch, capsys):
     assert sr.fetch_revenue_proposals() is None
     out = capsys.readouterr().out
     assert "HTTP 502" in out and "stop_reason=max_tokens" in out
+
+
+# ── 2026-10-26：理由の無い HTTP 500 になった件 ──────────────────────────
+def test_logging_failure_does_not_turn_into_500(client, monkeypatch):
+    """標準出力が日本語を書けない環境でも、ログ出力で例外を出して 500 にしない（502＋理由を返す）。"""
+    import builtins
+    real_print = builtins.print
+
+    def ascii_only_print(*args, **kw):
+        text = " ".join(str(a) for a in args)
+        text.encode("ascii")          # 日本語があれば UnicodeEncodeError
+        real_print(*args, **kw)
+    monkeypatch.setattr(builtins, "print", ascii_only_print)
+    _stub_ai(monkeypatch, "JSONではありません")          # 日本語のエラーメッセージになる
+    r = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r.status_code == 502, "ログ出力の失敗で理由の無い 500 になっている"
+    assert r.get_json()["detail"]
+
+
+def test_unprintable_exception_still_gives_reason(client, monkeypatch):
+    class Weird(Exception):
+        def __str__(self):
+            raise RuntimeError("cannot str")
+
+    class _Messages:
+        def create(self, **kw):
+            raise Weird()
+
+    class _Client:
+        messages = _Messages()
+    monkeypatch.setattr(m, "get_client", lambda: _Client())
+    r = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r.status_code == 502 and "Weird" in r.get_json()["detail"]
+
+
+def test_report_log_shows_body_when_no_reason(monkeypatch, capsys):
+    pytest.importorskip("requests", reason="requests 未インストール")
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    import send_report as sr
+
+    class _R:
+        ok, status_code, text = False, 500, "<html><title>Internal Server Error</title></html>"
+
+        def json(self):
+            raise ValueError("not json")
+    monkeypatch.setattr(sr.requests, "get", lambda *a, **k: _R())
+    sr.fetch_revenue_proposals()
+    out = capsys.readouterr().out
+    assert "HTTP 500" in out and "Internal Server Error" in out
+
+
+def test_mail_failure_is_annotated_with_the_fix():
+    """メールが送れなかったとき、GitHub の実行画面に「やること」を赤い注記で出す。"""
+    src = open(os.path.join(ROOT, "report", "send_report.py"), encoding="utf-8").read()
+    assert "::error title=レポートのメールを送れませんでした" in src
+    assert "アプリパスワードを入れ直す" in src
