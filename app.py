@@ -2452,6 +2452,13 @@ def admin_daily_trend():
 @_admin_required
 def admin_report_data():
     """毎日8時メールレポート用の集計データを返す。"""
+    # 「💰 収益を伸ばすために今日やること」をこの時点から別スレッドで作り始める
+    # （集計とグラフ作りの間に出来上がるので、レポートが待たされない）
+    if REVENUE_PROPOSAL_AUTOSTART:
+        try:
+            _start_revenue_generation()
+        except Exception:
+            pass
     now = datetime.datetime.now(JST)
     # 8時実行時は前日が対象日
     target_date = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -4663,29 +4670,126 @@ def _safe_log(text):
             pass
 
 
+# ── 提案はバックグラウンドで作る（2026-10-28） ──────────────────────────
+# 10/25〜10/28 の朝、提案を取りに行くとサーバー（gunicorn）そのものの「Internal Server Error」が返り、
+# Flask のエラー処理まで届かないため理由も残らなかった。AIを待つ長いリクエストをやめ、
+# ①レポートの集計（/api/admin/report-data）や管理画面のボタンを合図に、別スレッドで作り始める
+# ②提案のAPIは最大 REVENUE_PROPOSAL_WAIT_MAX 秒だけ待って「できた／作成中(202)／失敗(理由つき)」を返す
+# ③呼ぶ側（レポート・管理画面）は短いリクエストを繰り返して待つ
+# 別スレッドの中の失敗はすべてここで受け止め、理由を settings に残す。
+REVENUE_PROPOSAL_WAIT_MAX = 20
+# レポートの集計を取りに来た時点で作り始めるか（テストでは本物のAIを呼ばないよう 0 にする）
+REVENUE_PROPOSAL_AUTOSTART = os.environ.get("REVENUE_PROPOSAL_AUTOSTART", "1") != "0"
+_revenue_gen_lock = threading.Lock()
+_revenue_gen_running = {"date": None}
+
+
+def _revenue_today():
+    return datetime.datetime.now(JST).date().isoformat()
+
+
+def _revenue_cached(day):
+    try:
+        raw = _get_setting(f"revenue-proposals-{day}", "")
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def _revenue_last_error(day):
+    """その日の失敗の理由（無ければ None）。"""
+    try:
+        err = json.loads(_get_setting(REVENUE_PROPOSAL_ERROR_KEY, "") or "{}")
+    except Exception:
+        return None
+    return err if isinstance(err, dict) and err.get("date") == day else None
+
+
+def _revenue_generation_running(day):
+    with _revenue_gen_lock:
+        return _revenue_gen_running.get("date") == day
+
+
+def _start_revenue_generation():
+    """今日の提案がまだ無ければ、別スレッドで作り始める。戻り値は "ready" / "running" / "started"。
+    失敗しても例外は出さない（レポートの集計などを止めない）。"""
+    day = _revenue_today()
+    if _revenue_cached(day):
+        return "ready"
+    with _revenue_gen_lock:
+        if _revenue_gen_running.get("date") == day:
+            return "running"
+        _revenue_gen_running["date"] = day
+
+    def run():
+        try:
+            _get_or_generate_revenue_proposals()
+            try:
+                _set_setting(REVENUE_PROPOSAL_ERROR_KEY, "")
+            except Exception:
+                pass
+        except BaseException as e:   # ここで全部受け止める（理由を残す）
+            reason = ("APIキーが設定されていません" if isinstance(e, _CoachNoApiKey)
+                      else _revenue_error_reason(e))
+            _safe_log(f"[REVENUE-PROPOSAL][ERROR] {reason}")
+            try:
+                _set_setting(REVENUE_PROPOSAL_ERROR_KEY, json.dumps(
+                    {"date": day, "at": datetime.datetime.now(JST).isoformat(timespec="seconds"),
+                     "reason": reason, "no_api_key": isinstance(e, _CoachNoApiKey)}, ensure_ascii=False))
+            except Exception:
+                pass
+        finally:
+            with _revenue_gen_lock:
+                if _revenue_gen_running.get("date") == day:
+                    _revenue_gen_running["date"] = None
+
+    try:
+        threading.Thread(target=run, daemon=True, name="revenue-proposals").start()
+    except Exception as e:
+        with _revenue_gen_lock:
+            _revenue_gen_running["date"] = None
+        _safe_log(f"[REVENUE-PROPOSAL] thread start failed: {_revenue_error_reason(e)}")
+        return "ready"
+    return "started"
+
+
 @app.route("/api/admin/revenue-proposals")
 @_admin_required
 def admin_revenue_proposals():
-    """【管理者専用】デイリーレポート用：今日の「収益改善の提案」（1〜3件）。
-    同じ日は結果をキャッシュして返す（テスト送信と朝の本送信で二重にAIを呼ばない）。"""
+    """【管理者専用】今日の「収益改善の提案」（1〜3件）。
+    できていれば 200（同じ日はキャッシュ）。まだなら別スレッドで作り始め、最大 wait 秒（既定・上限20秒）待つ。
+    それでも作成中なら 202 {"status":"generating"}（呼ぶ側は少し待って同じURLをもう一度呼ぶ）。
+    失敗していれば 502（APIキー無しは 503）と理由 detail。"""
+    day = _revenue_today()
     try:
-        proposals, cached = _get_or_generate_revenue_proposals()
-    except _CoachNoApiKey:
-        return jsonify({"error": "APIキーが設定されていません"}), 503
-    except Exception as e:
-        reason = _revenue_error_reason(e)
-        _safe_log(f"[REVENUE-PROPOSAL][ERROR] {reason}")
-        # 何が起きたか後から分かるように残す（レポートのログにも出る）
+        wait = max(0.0, min(float(request.args.get("wait", REVENUE_PROPOSAL_WAIT_MAX)), REVENUE_PROPOSAL_WAIT_MAX))
+    except (TypeError, ValueError):
+        wait = REVENUE_PROPOSAL_WAIT_MAX
+    cached = _revenue_cached(day)
+    if cached:
+        return jsonify({"date": day, "proposals": cached, "cached": True})
+    # 前回の失敗の理由は、作り直しを始める前に消しておく（古い理由を今回の結果と取り違えない）
+    if not _revenue_generation_running(day):
         try:
-            _set_setting(REVENUE_PROPOSAL_ERROR_KEY, json.dumps(
-                {"at": datetime.datetime.now(JST).isoformat(timespec="seconds"), "reason": reason},
-                ensure_ascii=False))
+            _set_setting(REVENUE_PROPOSAL_ERROR_KEY, "")
         except Exception:
             pass
-        return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。",
-                        "detail": reason}), 502
-    return jsonify({"date": datetime.datetime.now(JST).strftime("%Y-%m-%d"),
-                    "proposals": proposals, "cached": cached})
+    _start_revenue_generation()
+    deadline = time.monotonic() + wait
+    while True:
+        cached = _revenue_cached(day)
+        if cached:
+            return jsonify({"date": day, "proposals": cached, "cached": False})
+        if not _revenue_generation_running(day):
+            break
+        if time.monotonic() >= deadline:
+            return jsonify({"status": "generating", "date": day}), 202
+        time.sleep(0.2)
+    err = _revenue_last_error(day) or {}
+    if err.get("no_api_key"):
+        return jsonify({"error": "APIキーが設定されていません", "detail": err.get("reason")}), 503
+    return jsonify({"error": "提案の生成に失敗しました。次回のレポートで再試行します。",
+                    "detail": err.get("reason") or "理由は記録されていません"}), 502
 
 
 @app.route("/api/admin/coach-advice")

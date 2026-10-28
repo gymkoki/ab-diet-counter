@@ -323,3 +323,93 @@ def test_mail_failure_is_annotated_with_the_fix():
     src = open(os.path.join(ROOT, "report", "send_report.py"), encoding="utf-8").read()
     assert "::error title=レポートのメールを送れませんでした" in src
     assert "アプリパスワードを入れ直す" in src
+
+
+# ── 2026-10-28：提案は別スレッドで作る（サーバーそのものの 500 で理由も残らなかった件） ────
+import threading as _threading  # noqa: E402
+import time as _time  # noqa: E402
+
+
+def _wait_idle():
+    for _ in range(100):
+        if not m._revenue_generation_running(m._revenue_today()):
+            return
+        _time.sleep(0.05)
+
+
+def test_report_data_starts_generation_in_background(client, monkeypatch):
+    """レポートの集計を取りに来た時点で、提案づくりを別スレッドで始めておく。"""
+    monkeypatch.setattr(m, "REVENUE_PROPOSAL_AUTOSTART", True)
+    calls = _stub_ai(monkeypatch, json.dumps({"proposals": SAMPLE[:1]}, ensure_ascii=False))
+    client.get("/api/admin/report-data", headers=ADMIN)
+    _wait_idle()
+    assert len(calls) == 1
+    d = client.get("/api/admin/revenue-proposals", headers=ADMIN).get_json()
+    assert d["cached"] is True and len(d["proposals"]) == 1, "あとから取りに来たときはすぐ返す"
+
+
+def test_slow_generation_returns_202_then_result(client, monkeypatch):
+    """作成中は 202 を返し、できたら 200。1回の問い合わせが長く待たされない。"""
+    gate = _threading.Event()
+    calls = []
+
+    class _Messages:
+        def create(self, **kw):
+            calls.append(kw)
+            gate.wait(5)
+            return _Msg(json.dumps({"proposals": SAMPLE[:2]}, ensure_ascii=False))
+
+    class _Client:
+        messages = _Messages()
+    monkeypatch.setattr(m, "get_client", lambda: _Client())
+    t0 = _time.monotonic()
+    r = client.get("/api/admin/revenue-proposals?wait=0.3", headers=ADMIN)
+    assert r.status_code == 202 and r.get_json()["status"] == "generating"
+    assert _time.monotonic() - t0 < 3, "AIを待って長いリクエストにしない"
+    r2 = client.get("/api/admin/revenue-proposals?wait=0.3", headers=ADMIN)
+    assert r2.status_code == 202 and len(calls) == 1, "作成中に重ねてAIを呼ばない"
+    gate.set()
+    _wait_idle()
+    r3 = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r3.status_code == 200 and len(r3.get_json()["proposals"]) == 2
+
+
+def test_any_failure_in_background_is_recorded(client, monkeypatch):
+    """別スレッドの中の失敗は、種類を問わず理由を残して 502 で返す（サーバーの 500 にしない）。"""
+    class _Messages:
+        def create(self, **kw):
+            raise SystemExit("worker is stopping")       # Exception ではない種類の失敗
+
+    class _Client:
+        messages = _Messages()
+    monkeypatch.setattr(m, "get_client", lambda: _Client())
+    r = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r.status_code == 502 and "SystemExit" in r.get_json()["detail"]
+
+
+def test_no_api_key_is_503_with_reason(client, monkeypatch):
+    monkeypatch.setattr(m, "get_client", lambda: None)
+    r = client.get("/api/admin/revenue-proposals", headers=ADMIN)
+    assert r.status_code == 503 and "APIキー" in r.get_json()["detail"]
+
+
+def test_report_polls_while_generating(monkeypatch):
+    pytest.importorskip("requests", reason="requests 未インストール")
+    pytest.importorskip("matplotlib", reason="matplotlib 未インストール")
+    import send_report as sr
+    replies = [202, 202, 200]
+
+    class _R:
+        def __init__(self, code):
+            self.status_code, self.ok, self.text = code, code < 400, ""
+
+        def json(self):
+            return {"status": "generating"} if self.status_code == 202 else {"date": "d", "proposals": SAMPLE[:1]}
+    seen = []
+
+    def fake_get(url, **kw):
+        seen.append(kw.get("params"))
+        return _R(replies.pop(0))
+    monkeypatch.setattr(sr.requests, "get", fake_get)
+    d = sr.fetch_revenue_proposals()
+    assert d["proposals"] and len(seen) == 3 and seen[0] == {"wait": 20}
