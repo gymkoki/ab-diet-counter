@@ -246,6 +246,7 @@ def _load_send_report(monkeypatch):
     for fn in ("chart_weight_loss", "chart_nutrition", "chart_goal_compare"):
         monkeypatch.setattr(sr, fn, lambda data: b"png")
     monkeypatch.setattr(sr, "fetch_report_photos", lambda: None)
+    monkeypatch.setattr(sr, "fetch_revenue_proposals", lambda: None)
     monkeypatch.setattr(sr, "build_html", lambda *a, **kw: "<html>report</html>")
     monkeypatch.setattr(sr, "GMAIL_USER", "sender@example.com")
     monkeypatch.setattr(sr, "GMAIL_PASS", "abcdabcdabcdabcd")

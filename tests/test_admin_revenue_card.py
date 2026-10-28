@@ -25,7 +25,8 @@ def test_card_calls_the_same_api_and_shows_reason():
     html = _html()
     assert 'id="revenue-card"' in html and 'onclick="loadRevenueProposals()"' in html
     body = re.search(r"async function loadRevenueProposals\(\) \{.*?\n  \}", html, re.S).group(0)
-    assert "fetch('/api/admin/revenue-proposals')" in body
+    assert "fetch('/api/admin/revenue-proposals?wait=20')" in body
+    assert "r.status !== 202" in body, "作成中(202)のあいだは問い合わせを繰り返して待つ"
     assert "d.detail" in body, "失敗の理由を画面に出すこと"
 
 

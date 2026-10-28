@@ -838,9 +838,18 @@
     const box = document.getElementById('revenue-result');
     box.innerHTML = '<div class="spinner"></div><div style="font-size:12px;color:#9CA3AF;text-align:center">AIが考えています（1〜2分）…</div>';
     try {
-      const r = await fetch('/api/admin/revenue-proposals');
-      let d = {};
-      try { d = await r.json(); } catch (e) {}
+      // サーバーは別スレッドで作る。作成中(202)のあいだは短い問い合わせを繰り返して待つ（最大およそ4分）
+      let r, d = {};
+      for (let i = 0; i < 12; i++) {
+        r = await fetch('/api/admin/revenue-proposals?wait=20');
+        d = {};
+        try { d = await r.json(); } catch (e) {}
+        if (r.status !== 202) break;
+      }
+      if (r.status === 202) {
+        box.innerHTML = '<div style="color:#B45309;font-size:13px">まだAIが考えています。少し待ってから、もう一度ボタンを押してください。</div>';
+        return;
+      }
       if (!r.ok) {
         box.innerHTML = `<div style="color:#DC2626;font-size:13px;line-height:1.7">作れませんでした（HTTP ${r.status}）。<br>`
           + `理由：${escapeHtml(d.detail || d.error || '不明')}<br>`

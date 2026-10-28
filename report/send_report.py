@@ -423,17 +423,32 @@ def fetch_report_photos():
     return None
 
 
+REVENUE_POLL_TRIES = 12      # 1回の問い合わせは最大20秒待ち。合計でおよそ4分まで待つ
+
+
 def fetch_revenue_proposals():
     """今日の「収益改善の提案」（1〜3件）を取得する（オーナー指示 2026-10-24）。
-    サーバーが1日1回だけAIで作ってキャッシュする。失敗してもレポート本体は送る（欄だけ省略）。"""
-    # 再試行はしない：レポート全体の持ち時間（GitHub Actions の上限）を食いつぶさないため。
-    # 失敗した日は欄が出ないだけで、次の朝にまた作られる。
-    try:
-        r = requests.get(
-            f"{APP_URL}/api/admin/revenue-proposals",
-            auth=(ADMIN_USER, ADMIN_PASS),
-            timeout=200,  # AIが考えてから返すので時間がかかる
-        )
+    サーバーは別スレッドでAIに作らせる（集計データを取りに行った時点で作り始めている）。
+    ここでは短い問い合わせを繰り返し、「できた(200)」になるまで待つ（作成中は 202）。
+    失敗してもレポート本体は送る（欄だけ省略）。理由はログに出す（会員のデータは含まない）。"""
+    conn_errors = 0
+    for attempt in range(REVENUE_POLL_TRIES):
+        try:
+            r = requests.get(
+                f"{APP_URL}/api/admin/revenue-proposals",
+                params={"wait": 20},
+                auth=(ADMIN_USER, ADMIN_PASS),
+                timeout=60,
+            )
+        except Exception as e:
+            conn_errors += 1
+            print(f"revenue-proposals: {type(e).__name__}（{conn_errors}回目）")
+            if conn_errors >= 3:          # つながらないときは早めにあきらめる（レポート本体を待たせない）
+                return None
+            time.sleep(5)
+            continue
+        if r.status_code == 202:
+            continue                      # まだ作成中 → もう一度
         if not r.ok:
             # 理由が分かるように、状態コードとサーバーが返した理由（会員のデータは含まない）を出す。
             # 理由が無い応答（想定外のエラー・途中の中継サーバーのエラー画面など）は本文の先頭を出す。
@@ -445,10 +460,13 @@ def fetch_revenue_proposals():
                 detail = "本文：" + " ".join((r.text or "")[:160].split())
             print(f"revenue-proposals skipped: HTTP {r.status_code} {detail[:200]}")
             return None
-        return r.json()
-    except Exception as e:
-        print(f"revenue-proposals skipped: {type(e).__name__}")
-        return None
+        try:
+            return r.json()
+        except Exception as e:
+            print(f"revenue-proposals skipped: {type(e).__name__}")
+            return None
+    print("revenue-proposals skipped: 時間内にできあがりませんでした（作成中のまま）")
+    return None
 
 
 def _esc(text) -> str:

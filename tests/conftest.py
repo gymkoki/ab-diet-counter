@@ -100,3 +100,10 @@ def clear_devices():
             conn.commit()
         finally:
             conn.close()
+
+
+@pytest.fixture(autouse=True)
+def _no_revenue_autostart(monkeypatch):
+    """レポートの集計（/api/admin/report-data）を叩くテストで、本物のAIに収益の提案を
+    作らせに行かないようにする（別スレッドで外部へ通信してしまうため）。試すテストだけ True にする。"""
+    monkeypatch.setattr(m, "REVENUE_PROPOSAL_AUTOSTART", False, raising=False)

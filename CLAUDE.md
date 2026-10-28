@@ -102,6 +102,13 @@
 - 続報（2026-10-26）：翌朝は理由の無い **HTTP 500** になった（例外が 502 の処理の外へ漏れた）。理由を作る処理
   （`_revenue_error_reason`）とログ出力（`_safe_log`）を**絶対に失敗しない**形にし、レポートのログには理由が無い応答の
   本文の先頭も出すようにした（次に失敗したら原因がログで分かる）。
+- 続報（2026-10-28）：ログに返ってきた本文が **gunicorn そのものの「Internal Server Error」**（Flask のJSONではない）＝
+  AIを待つ長いリクエストの途中で、Flask のエラー処理の外で落ちていた。そこで**提案は別スレッドで作る**形に変えた：
+  `/api/admin/report-data` が呼ばれた時点で `_start_revenue_generation()` が作り始め（`REVENUE_PROPOSAL_AUTOSTART`。
+  テストでは conftest が False にする）、`/api/admin/revenue-proposals` は最大20秒だけ待って
+  「200＝できた／202＝作成中／502・503＝失敗（理由 `detail`）」を返す。レポート（`fetch_revenue_proposals`）と
+  管理画面のカードは 202 のあいだ短い問い合わせを繰り返す（最大およそ4分）。別スレッドの失敗は `BaseException` まで
+  受け止めて `revenue-proposals-last-error`（その日の日付つき）に残す。**AIを待つ長いリクエストに戻さないこと。**
 - **管理画面にも同じ提案のカード「💰 収益を伸ばすために今日やること」**（`#revenue-card`／`loadRevenueProposals()`）。
   レポートは朝に作った時点の内容で保存されるため、作成に失敗した日は再送しても空のまま。カードは同じAPIを呼んで
   その場で作る（当日キャッシュがあればすぐ出る）。失敗したら HTTP の番号と `detail` を画面に出す。
