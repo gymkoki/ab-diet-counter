@@ -21,16 +21,20 @@
   P0／P1 の基準もそこに書いてある。**守るべき約束を CLAUDE.md に足したら、レビューで見てほしいものは AGENTS.md にも足す。**
 - 手順（PRを作ったあと）：
   1. PR 本文に「変更の意図」と「壊れてはいけない約束（関係する CLAUDE.md の項目）」を書く（Codex が読む）。
-  2. PR に `@codex review` とだけコメントする（自動レビューは使わず、Claude Code が毎回呼ぶ。二重レビューを避けるため）。
+  2. **Codex は PR を開いた時点で自動でレビューする**（2026-10-31 設定済み：Codex の設定 → Code Review →
+     `gymkoki/ab-diet-counter` の「Automatic review」と「Auto security review」がオン）。
+     なので `@codex review` は**基本コメントしない**（二重レビューになる）。5分たっても Codex の 👀 もレビューも
+     付かないときだけ、`@codex review` とコメントして呼ぶ。
   3. `subscribe_pr_activity` で PR を見張り、Codex（`chatgpt-codex-connector` などのボット）のレビューを待つ。
      **待つのは最大15分**。来なければマージして、報告に「Codex のレビューは来なかった」と書く（オーナーを止めない）。
   4. P0・P1 の指摘は、正しければ直して push し、もう一度 `@codex review`（やり直しは2回まで）。
      間違いだと判断した指摘は、PR のコメントで理由を1〜2行返してからマージする。黙って無視しない。
   5. 指摘なし（👍 や「問題は見つからなかった」）ならそのままマージ。
-- **会員からの障害報告など急ぐ修正**は先にマージしてよい。その場合も `@codex review` は呼び、指摘は後追いの PR で直す。
+- **会員からの障害報告など急ぐ修正**は先にマージしてよい。その場合も Codex のレビュー（自動で付く）は確認し、指摘は後追いの PR で直す。
 - 文書だけの変更（CLAUDE.md・AGENTS.md・コメント）はレビューを待たずにマージしてよい。
-- Codex 側の準備（オーナーが一度だけ）：chatgpt.com/codex で GitHub を接続し、このリポジトリの **Code review をオン**にする
-  （「自動レビュー」はオフのままでよい）。
+- Codex 側の準備（2026-10-31 オーナーが完了）：GitHub の「ChatGPT Codex Connector」に `ab-diet-counter` へのアクセスを許可し、
+  Codex の Settings → Code Review でこのリポジトリの自動レビューをオンにした。Codex の「Cloud environment setup」は
+  HTTP 400 で止まったが、レビューには不要。
 
 ## アップデートお知らせ（重要・オーナー指示）
 
