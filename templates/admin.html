@@ -2106,6 +2106,7 @@
     const keyLabel = { live: '✅ 本番', test: '🧪 テスト', set: '✅' }[d.stripe_key] || '<span style="color:#DC2626;font-weight:800">未設定</span>';
     const state = d.disabled ? '<span style="color:#DC2626;font-weight:800">緊急停止中</span>'
       : d.active ? '<span style="color:#065F46;font-weight:800">課金中</span>'
+      : !d.start_date ? '<span style="color:#6B7280;font-weight:800">延期中（開始日は未定・誰も課金されません）</span>'
       : `<span style="color:#B45309;font-weight:800">${escapeHtml(d.start_date)} から開始</span>`;
     now.innerHTML = `状態：${state}　／　Stripeの鍵：${keyLabel}　／　Webhook：${ok(d.webhook_secret)}`
       + `<br>料金：月額 ${d.price_jpy.toLocaleString()}円（税込）・はじめての方は${d.trial_days}日間無料`

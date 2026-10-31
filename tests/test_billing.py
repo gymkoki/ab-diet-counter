@@ -385,3 +385,59 @@ def test_member_app_does_not_link_service_page():
     """会員のアプリからはリンクしない（有料化の告知にならないように）。"""
     html = open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8").read()
     assert "/service" not in html
+
+
+# ── ⑪ 有料化の延期（オーナー指示 2026-10-31「まだやめとく。明日以降も普段通り使えるように」） ──
+def test_start_date_defaults_to_undecided():
+    """既定の開始日は「未定」。日付を入れ直さない限り、Stripe の鍵があっても課金は始まらない。"""
+    src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
+    assert re.search(r'BILLING_START\s*=\s*os\.environ\.get\("BILLING_START",\s*""\)', src)
+
+
+@pytest.fixture
+def postponed(monkeypatch):
+    """本番と同じく Stripe の鍵・Webhook がそろっていて、開始日が未定の状態。"""
+    _reset()
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "rk_live_dummy")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_live")
+    monkeypatch.setattr(m, "BILLING_START", "")
+    yield
+    _reset()
+
+
+def test_postponed_nobody_is_blocked_on_or_after_nov_1(postponed, monkeypatch):
+    _record("u-old", datetime.date(2026, 9, 1))
+    for day in (datetime.date(2026, 11, 1), datetime.date(2026, 12, 15)):
+        assert m._billing_active(day) is False
+        st = m.billing_state("u-old", today=day)
+        assert st["state"] == "off" and st["required"] is False and st["start_date"] is None
+    called = {"n": 0}
+    monkeypatch.setattr(m, "get_client", lambda: called.__setitem__("n", called["n"] + 1) or None)
+    with m.app.test_client() as c:
+        r = c.post("/analyze-text", data={"text": "カレー", "user_id": "u-old"})
+    assert r.status_code != 402 and called["n"] == 1
+
+
+def test_postponed_preview_shows_nothing_and_cannot_subscribe(postponed, monkeypatch):
+    """未定のまま申し込むと、その場で請求される申し込みになってしまうので受け付けない（オーナーの画面確認でも）。"""
+    fake = _FakeCheckout()
+    monkeypatch.setattr(m, "_stripe_lib", lambda: fake)
+    assert m.billing_state("u-owner", preview=True)["state"] == "off"
+    with m.app.test_client() as c:
+        r = c.post("/api/billing/checkout", json={"user_id": "u-owner", "agree": True, "preview": True})
+    assert r.status_code == 403 and fake.params is None
+
+
+def test_postponed_preorder_switch_does_nothing(postponed):
+    m._set_setting(m.BILLING_PREORDER_KEY, "1")
+    assert m._billing_preorder_open(datetime.date(2026, 10, 31)) is False
+
+
+def test_admin_card_says_postponed():
+    html = open(os.path.join(ROOT, "templates", "admin.html"), encoding="utf-8").read()
+    assert "延期中（開始日は未定" in html
+
+
+def test_revenue_prompt_knows_billing_is_postponed():
+    assert "開始は延期中" in m.REVENUE_PROPOSAL_PROMPT
+    assert "2026-11-01から月額" not in m.REVENUE_PROPOSAL_PROMPT
