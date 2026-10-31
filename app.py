@@ -4428,7 +4428,9 @@ REVENUE_PROPOSAL_PROMPT = """あなたはABダイエットアプリ（リオー�
 アプリの改修や会員向けの文面づくりが始まる。
 
 【料金と方針（オーナーが決めたこと。これを覆す提案はしない）】
-- 2026-11-01から月額1,100円（税込・Stripe）。既存の会員に無料期間は無い。初めて使う人だけ3日間無料。
+- 月額1,100円（税込・Stripe）で有料化する準備はできているが、**開始は延期中（開始日は未定）**。いまは誰にも課金していない。
+  開始日はオーナーが決める。開始日を決めること・有料化を急ぐことを提案しない。
+- 有料化したときの決まり：既存の会員に無料期間は無い。初めて使う人だけ3日間無料。
 - 無料期間はカード登録を求めない（勝手に課金しない）。合言葉（会員限定）はそのまま残す。
 - AIの費用は写真1枚の解析ごとにかかる（だから食事は1枚にまとめて撮ってもらっている）。
 
@@ -9175,8 +9177,11 @@ def get_daily_meals():
 
 # ══════════════════════════════════════════════════════════════
 #  有料化（月額1,100円・Stripe）  オーナー指示 2026-10-13
-#  ・11/1（BILLING_START）から、支払っていない会員は食事の解析ができなくなる。
-#  ・すでに使っている会員（11/1より前に記録がある人）に無料期間は無い。
+#  ・開始日（BILLING_START）から、支払っていない会員は食事の解析ができなくなる。
+#  ・すでに使っている会員（開始日より前に記録がある人）に無料期間は無い。
+#  ・【延期中】11/1開始の予定だったが、オーナー指示（2026-10-31「まだやめとく。普段通り使えるように」）で
+#    開始日を「未定」（空）に戻した。空のあいだは誰も止めない・何も表示しない・申し込みも受け付けない。
+#    再開するときは、オーナーが決めた日付を BILLING_START（Render の環境変数か、この既定値）に入れる。
 #  ・初めて使う人は、最初に使った日から3日間（BILLING_TRIAL_DAYS）は無料。
 #    カード登録は求めない（無料期間が終わっても勝手に課金しない。申し込んだ人だけ課金）。
 #  【最重要】Stripe の鍵（STRIPE_SECRET_KEY）が入っていない／開始日前／緊急停止中は
@@ -9184,7 +9189,7 @@ def get_daily_meals():
 #  判定中に DB や Stripe が落ちていても止めない（解析が止まるほうが事故として重い）。
 #  会員への告知や画面表示は、開始日（または先行受付をオンにした時）まで一切出ない。
 # ══════════════════════════════════════════════════════════════
-BILLING_START        = os.environ.get("BILLING_START", "2026-11-01")
+BILLING_START        = os.environ.get("BILLING_START", "")   # 空＝開始日は未定（有料化は延期中）
 BILLING_PRICE_JPY    = 1100          # 税込
 BILLING_TRIAL_DAYS   = 3
 BILLING_PRODUCT_NAME = "ABダイエット 月額プラン"
@@ -9212,6 +9217,9 @@ def _stripe_lib():
 
 
 def _billing_start_date():
+    """有料化の開始日。未定（空）や壊れた値なら None＝課金しない。"""
+    if not (BILLING_START or "").strip():
+        return None
     try:
         return datetime.date.fromisoformat(BILLING_START)
     except (TypeError, ValueError):
@@ -9346,7 +9354,8 @@ def billing_state(uid, today=None, preview=False):
     preview=True は、オーナーが開始前に自分の端末だけで画面を確かめるためのもの（判定には使わない）。"""
     today = today or datetime.datetime.now(JST).date()
     start = _billing_start_date()
-    active = _billing_active(today) or (preview and _billing_configured())
+    # 画面確認（preview）も開始日が決まっているときだけ。未定のまま申し込むと、その場で請求されてしまうため
+    active = _billing_active(today) or (preview and start is not None and _billing_configured())
     preorder = _billing_preorder_open(today)
     base = {
         "enabled": active, "preorder": preorder, "price_jpy": BILLING_PRICE_JPY,
@@ -9431,7 +9440,7 @@ def api_billing_checkout():
         return jsonify({"error": "ユーザー情報が見つかりません。アプリを開き直してください。"}), 400
     if not data.get("agree"):
         return jsonify({"error": "利用規約とプライバシーポリシーへの同意が必要です。"}), 400
-    preview = bool(data.get("preview"))
+    preview = bool(data.get("preview")) and _billing_start_date() is not None
     if not (_billing_active() or _billing_preorder_open() or (preview and _billing_configured())):
         return jsonify({"error": "現在はお申し込みを受け付けていません。"}), 403
 
