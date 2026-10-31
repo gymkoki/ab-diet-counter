@@ -220,6 +220,16 @@
     .btn-copy-add { display:block; width:100%; margin-top:6px; padding:14px; border:none; border-radius:var(--radius-md); background:var(--primary); color:#fff; font-size:17px; font-weight:800; cursor:pointer; }
     .btn-copy-add:disabled { opacity:0.45; cursor:not-allowed; }
     .copy-empty { text-align:center; color:var(--text-muted); font-size:17px; padding:14px 0; line-height:1.7; }
+    /* 記録画面の最上部：よく記録したコピーご飯の上位3件をワンタップで追加
+       （オーナー指示 2026-10-31：写真を撮る前に目に入る位置に置く） */
+    .copy-top3 { margin:10px 0 0; }
+    .copy-top3-hint { font-size:15px; font-weight:700; color:var(--text-muted); margin:0 2px 6px; }
+    .copy-top3-btn { display:flex; align-items:center; gap:10px; width:100%; padding:9px 12px; margin-bottom:6px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); box-shadow:var(--shadow-sm); text-align:left; cursor:pointer; font-family:inherit; transition:all 0.15s; }
+    .copy-top3-btn:active { border-color:var(--primary); background:var(--primary-soft); transform:scale(0.99); }
+    .copy-top3-btn img { width:44px; height:44px; border-radius:var(--radius-sm); object-fit:cover; flex-shrink:0; }
+    .copy-top3-ic { width:44px; height:44px; border-radius:var(--radius-sm); background:var(--primary-soft); display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+    .copy-top3-name { flex:1; min-width:0; font-size:17px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .copy-top3-b { font-size:16px; font-weight:800; color:var(--b-color); font-variant-numeric:tabular-nums; flex-shrink:0; }
     .oil-btn:active { border-color:var(--primary); color:var(--primary); background:var(--primary-soft); }
     /* 「Bだけ追加」の選択欄(.oil-menu / .oil-opt / .btn-oil-save)は機能ごと廃止して削除した。
        .oil-note-input だけは運動画面の「その他の運動」入力欄が使っているので残す。 */
@@ -2039,6 +2049,8 @@ function buildPanel(m) {
            以前は「手動追加」を押してからでないと文章・コピーご飯が出なかった。
            ※「Bだけ追加」はオーナー指示（2026-08）で廃止した。過去に追加済みの
              記録（isOil）は今までどおり表示・集計されるので、消してはいけない。 -->
+      <!-- よく記録したコピーご飯の上位3件（写真を撮る前に目に入る位置。オーナー指示 2026-10-31） -->
+      <div class="copy-top3" id="copytop3-${m.id}"></div>
       <div class="rec-grid">
         <div class="rec-card rec-primary" id="add-${m.id}" onclick="openFileInput('${m.id}')">
           <span class="rec-ic">📷</span>写真を追加<span class="rec-sub">タップして写真を選ぶ・撮る</span>
@@ -2070,6 +2082,7 @@ function buildPanel(m) {
     const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
     if (files.length) addFiles(m.id, files);
   });
+  try { renderCopyTop3(m.id); } catch(e) { console.error('renderCopyTop3 failed', e); }
   if (state[m.id].items.length) {
     // 保存データが壊れていても画面全体が止まらないよう、描画は個別に保護する。
     try { renderStrip(m.id); }   catch(e) { console.error('renderStrip failed', e);   _initHadRenderError = true; }
@@ -3591,6 +3604,43 @@ function getCopyMeals() {
 }
 function saveCopyMeals(arr) {
   localStorage.setItem(COPYMEALS_KEY, JSON.stringify(arr));
+  // 登録・削除・利用のたびに、記録画面の「よく食べる上位3件」も並び直す
+  try { MEALS.forEach(m => renderCopyTop3(m.id)); } catch(e) {}
+}
+
+// ── 記録画面の最上部：よく記録したコピーご飯の上位3件 ──
+// 「同じご飯はコピーが速い」ことを写真を撮る前に伝えるため、記録手段のカードより上に置く。
+// 並び順は利用回数（usedCount）が多い順。同数なら最近使った順→登録が新しい順。
+function topCopyMeals(n = 3) {
+  return getCopyMeals()
+    .slice()
+    .sort((a, b) =>
+      ((Number(b.usedCount) || 0) - (Number(a.usedCount) || 0)) ||
+      ((Number(b.lastUsed) || 0) - (Number(a.lastUsed) || 0))
+    )
+    .slice(0, n);
+}
+
+function renderCopyTop3(mealId) {
+  const el = document.getElementById(`copytop3-${mealId}`);
+  if (!el) return;
+  const top = topCopyMeals(3);
+  if (!top.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = `
+    <div class="copy-top3-hint">🍚 同じご飯はコピーが速いです</div>
+    ${top.map(cm => `
+      <button class="copy-top3-btn" onclick="quickAddCopyMeal('${mealId}','${cm.id}')">
+        ${cm.previewSrc ? `<img src="${cm.previewSrc}" alt="">` : '<span class="copy-top3-ic">🍚</span>'}
+        <span class="copy-top3-name">${esc(cm.name)}</span>
+        <span class="copy-top3-b">B ${fmtCount((cm.result && cm.result.total_b_count) || 0)}</span>
+      </button>`).join('')}`;
+}
+
+// 上位3件のボタン：モーダルを開かずワンタップでその日の記録に追加する
+function quickAddCopyMeal(mealId, copyId) {
+  _copyPickerMeal = mealId;
+  addCopyMealToRecord(copyId);
 }
 
 // 記録画面：コピーご飯を選ぶモーダル
@@ -3681,6 +3731,12 @@ function addSelectedCopyMeals() {
   const picked = _copySelected.map(id => meals.find(c => c.id === id)).filter(Boolean);
   if (!picked.length) return;
   const mealId = _copyPickerMeal || 'food';
+  // 利用回数を記録（記録画面の「よく食べる上位3件」の並び順に使う）
+  picked.forEach(cm => {
+    cm.usedCount = (Number(cm.usedCount) || 0) + 1;
+    cm.lastUsed = Date.now();
+  });
+  saveCopyMeals(meals);
   const item = {
     id: nextItemId(), file:null,
     previewSrc: (picked.find(cm => cm.previewSrc) || {}).previewSrc || null,
