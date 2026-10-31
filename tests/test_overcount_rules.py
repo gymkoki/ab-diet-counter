@@ -62,3 +62,11 @@ def test_examples_are_consistent_with_step2():
     """新しい例の数字が STEP2（kcal→B）と食い違わないこと。"""
     for kcal, b in ((110, 0), (90, 0), (180, 0.5), (135, 0.5), (60, 0), (80, 0)):
         assert m._b_from_kcal(kcal) == b
+
+
+def test_dressing_amounts_follow_step2():
+    """ドレッシングは量×密度のkcalにSTEP2を当てる（「大さじ3以上だけB0.5」のような固定の線引きをしない）。"""
+    assert "大さじ3以上" not in P
+    assert "大さじ2≒120kcal→B0.5" in P and "大さじ4≒240kcal→B1" in P
+    for tbsp, b in ((1.5, 0), (2, 0.5), (4, 1)):
+        assert m._b_from_kcal(tbsp * 60) == b
