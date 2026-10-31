@@ -33,8 +33,10 @@
 - **会員からの障害報告など急ぐ修正**は先にマージしてよい。その場合も Codex のレビュー（自動で付く）は確認し、指摘は後追いの PR で直す。
 - 文書だけの変更（CLAUDE.md・AGENTS.md・コメント）はレビューを待たずにマージしてよい。
 - Codex 側の準備（2026-10-31 オーナーが完了）：GitHub の「ChatGPT Codex Connector」に `ab-diet-counter` へのアクセスを許可し、
-  Codex の Settings → Code Review でこのリポジトリの自動レビューをオンにした。Codex の「Cloud environment setup」は
-  HTTP 400 で止まったが、レビューには不要。
+  Codex の Settings → Code Review でこのリポジトリの自動レビューをオンにした。**レビューには Codex の
+  environment（作業環境）も必要**：無いと PR に「To use Codex here, create an environment for this repo」と返ってくるだけで
+  レビューされない（2026-10-31 に確認。最初の「Cloud environment setup」は HTTP 400 で止まっていた）。
+  作り方：https://chatgpt.com/codex/cloud/settings/environments →「Create environment」→ `gymkoki/ab-diet-counter` を選んで作成。
 
 ## アップデートお知らせ（重要・オーナー指示）
 
