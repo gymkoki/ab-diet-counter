@@ -105,8 +105,9 @@ def test_public_endpoint_returns_aggregates_only(planted):
 def test_notice_39_is_published_with_synced_key():
     html = _html()
     no = int(re.search(r"最新アップデート No\.(\d+)", html).group(1))
-    key = int(re.search(r"NOTICE_KEY\s*=\s*'ab-diet-notice-v(\d+)'", html).group(1))
-    assert no == 39 and key == 41
+    assert no >= 39
+    if no != 39:
+        return   # 次のお知らせに入れ替わったら、この検査は役目を終える（番号と鍵の対応は test_update_notice が見る）
     body = html[html.index("最新アップデート No.39"):html.index("（奥松）")]
     assert "1日に何枚写真をアップしている" in body
     assert 'id="notice-photo-text"' in body

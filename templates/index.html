@@ -1341,27 +1341,32 @@
   <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18)">
    <div class="modal-scroll">
     <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">UPDATE</div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.39</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:16px">📢 最新アップデート No.40</div>
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div style="background:#FFF3EB;border:1px solid #FFD9C2;border-radius:12px;padding:12px 14px;margin-bottom:14px">
-        <b style="color:#B4460F">📸 減量に成功している人は、1日に何枚写真をアップしている？</b>
+        <b style="color:#B4460F">💌 体重が思うように減らないときは、写真を少し多めに</b>
       </div>
       <div style="display:flex;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">📊</span>
-        <span>減量を目標にしている会員のうち、<b>直近60日で体重が減っている方</b>の記録を調べました。</span>
-      </div>
-      <!-- 数字は本番の実データからサーバーが集計した値を差し込む（/api/notice-stats・fillNoticePhotoStats） -->
-      <div id="notice-photo-result" style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">🏆</span>
-        <span id="notice-photo-text">集計結果を読み込んでいます…</span>
+        <span style="font-size:20px;flex-shrink:0">🌱</span>
+        <span>「がんばっているのに、なかなか体重が減らない…」そんなときもありますよね。どうか一人で抱え込まず、焦らずにいきましょう。</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:14px">
-        <span style="font-size:20px;flex-shrink:0">💡</span>
-        <span>コツは<b>食べるたびに記録すること</b>。間食や飲み物も、そのつど写真で残しましょう（1回の食事はこれまでどおり<b>1枚にまとめて</b>撮影をお願いします）。1日のトータル量が見えるほど、減量が決まりやすくなります。</span>
+        <span style="font-size:20px;flex-shrink:0">📸</span>
+        <span>そんなときこそ、食事の写真を<b>いつもより多めにアップ</b>してみてください。食べたものの全体が見えるほど、<b>栄養の状況をより正確に</b>知ることができます。</span>
       </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">🍪</span>
+        <span>間食や飲み物、ちょっとつまんだものも、気軽に残してみてください。思いがけないところに、減量のヒントが見つかることがあります。</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <span style="font-size:20px;flex-shrink:0">🤝</span>
+        <span>記録が増えるほど、私たちも一人ひとりに合ったサポートがしやすくなります。一緒に、無理なく続けていきましょうね。</span>
+      </div>
+      <div style="font-size:15px;color:#6B625B;margin-top:12px">※1回の食事は、これまでどおり<b>1枚にまとめて</b>撮っていただければ大丈夫です。</div>
       <div style="border-top:1px dashed #E7DED6;margin-top:18px;padding-top:14px;font-size:15px;color:#6B625B">
-        <b>📝 前回のお知らせ（No.38）</b><br>
-        ダイエットは<b>1日・1週間・1ヶ月単位のトータル量</b>が大事です。食事写真をこまめにアップするほど、減量が決まりやすくなります。
+        <b>📝 前回のお知らせ（No.39）</b><br>
+        <!-- 数字は本番の実データからサーバーが集計した値を差し込む（/api/notice-stats・fillNoticePhotoStats） -->
+        <span id="notice-photo-text">集計結果を読み込んでいます…</span>
         <div style="margin-top:10px"><b>📝 お願い（No.34）</b><br>
         お名前を<b>ニックネーム</b>か<b>苗字</b>に変えていただけると、アプリの改善にとても助かります。まだの方は下のボタンから変更できます。</div>
       </div>
@@ -6417,7 +6422,7 @@ function closeCoachMessages() {
 // ═══════════════════════════════════════════
 //  アップデートお知らせ（各端末1回のみ）
 // ═══════════════════════════════════════════
-const NOTICE_KEY = 'ab-diet-notice-v41';
+const NOTICE_KEY = 'ab-diet-notice-v42';
 function closeUpdateNotice() {
   localStorage.setItem(NOTICE_KEY, '1');
   document.getElementById('update-notice-overlay').style.display = 'none';
@@ -6583,7 +6588,7 @@ function _step(fn, label) {
   if (!localStorage.getItem(NOTICE_KEY)) {
     const ov = document.getElementById('update-notice-overlay');
     if (ov) ov.style.display = 'flex';
-    fillNoticePhotoStats();       // お知らせNo.39の数字（実データの集計）を差し込む
+    fillNoticePhotoStats();       // お知らせNo.39（いまは「前回のお知らせ」欄）の数字を差し込む
   }
   // ※コツはアプリ起動時には出さない（オーナー指示 2026-08）。
   //   写真の栄養解析が終わったタイミングで analyzeItem から呼び出す。

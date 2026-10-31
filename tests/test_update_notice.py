@@ -99,3 +99,19 @@ def test_notice_38_daily_total_matters():
     assert "1日のトータル量" in text
     assert "1日単位、ひいては1週間、1ヶ月単位の平均摂取量" in text
     assert "食事写真をこまめにアップする" in text and "減量が決まりやすい" in text
+
+
+def test_notice_40_gently_asks_for_more_photos():
+    """お知らせ No.40（オーナー指示 2026-10-31）：減量に苦戦している場合は、写真のアップ数を増やすと
+    より正確な栄養状況が分かるので、多めに食事写真をアップしてほしい。優しく温かみのある文章で。"""
+    html = _html()
+    m = re.search(r"最新アップデート No\.(\d+)", html)
+    assert m and int(m.group(1)) >= 40
+    if int(m.group(1)) != 40:
+        return   # 次のお知らせに入れ替わったら、この検査は役目を終える
+    body = html[m.start(): html.index("（奥松）", m.start())]
+    text = re.sub(r"<[^>]+>", "", body)
+    assert "体重が思うように減らない" in text
+    assert "いつもより多めにアップ" in text and "栄養の状況をより正確に" in text
+    assert "1枚にまとめて" in text, "No.36（1回の食事は1枚に）と食い違って読めてしまう"
+    assert 'id="notice-photo-text"' in body, "前回のお知らせ（No.39）の数字が消えている"
