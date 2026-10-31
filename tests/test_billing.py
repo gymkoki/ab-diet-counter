@@ -3,7 +3,7 @@
 ここで固定する不変条件：
   ①Stripeの鍵が無い／開始日前／緊急停止中は、誰も止めない・会員に何も表示しない
   ②開始日以降、既存の会員（開始日前に記録がある人）は申し込まないと解析できない（無料期間なし）
-  ③初めて使う人は、最初に使った日から3日間は無料
+  ③初めて使う人は、最初に使った日から7日間は無料（2026-10-31 に3日→7日）
   ④申し込み済み（active / trialing / past_due）は使える。解約で期間が終わったら止まる
   ⑤判定中にDBが壊れていても止めない
   ⑥AIを呼ぶ4つの入口すべてで、AIを呼ぶ前に止める
@@ -106,22 +106,24 @@ def test_existing_member_must_pay_from_start(on):
     assert st["state"] == "required" and st["required"] is True
 
 
-# ── ③ 初めての人は3日間無料 ───────────────────────────────
-def test_new_user_gets_three_free_days(on):
+# ── ③ 初めての人は7日間無料 ───────────────────────────────
+def test_new_user_gets_seven_free_days(on):
+    assert m.BILLING_TRIAL_DAYS == 7, "無料期間はオーナー指示で7日間（2026-10-31）"
     first = datetime.date(2026, 11, 5)
     _record("u-new", first)
-    for d in range(3):
+    for d in range(7):
         st = m.billing_state("u-new", today=first + datetime.timedelta(days=d))
         assert st["state"] == "trial", f"{d}日目なのに無料期間ではない"
-        assert st["trial_ends"] == "2026-11-08"
-    assert m.billing_state("u-new", today=first + datetime.timedelta(days=3))["state"] == "required"
+        assert st["trial_ends"] == "2026-11-12"
+    assert m.billing_state("u-new", today=first + datetime.timedelta(days=7))["state"] == "required"
 
 
 def test_brand_new_user_without_records_starts_trial_today(on):
     st = m.billing_state("u-blank", today=datetime.date(2026, 11, 10))
     assert st["state"] == "trial"
     # 2回目以降も同じ日を起点にする（開くたびに無料期間が延びない）
-    assert m.billing_state("u-blank", today=datetime.date(2026, 11, 13))["state"] == "required"
+    assert m.billing_state("u-blank", today=datetime.date(2026, 11, 16))["state"] == "trial"
+    assert m.billing_state("u-blank", today=datetime.date(2026, 11, 17))["state"] == "required"
 
 
 # ── ④ 申し込み済みは使える ────────────────────────────────
@@ -374,7 +376,7 @@ def test_service_page_is_public_and_shows_price_and_cancellation():
     body = r.get_data(as_text=True)
     assert r.status_code == 200
     assert "月額 1,100円" in body and "（税込）" in body
-    assert "3日間、無料" in body and "解約" in body
+    assert "7日間、無料" in body and "解約" in body
     assert "テスト事業者" in body and "info@example.com" in body
     for href in ("/legal/tokushoho", "/legal/terms", "/legal/privacy"):
         assert f'href="{href}"' in body
