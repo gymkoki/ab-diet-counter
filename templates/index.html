@@ -4363,7 +4363,7 @@ function renderResults(mealId) {
           <div class="recalc-divider">または文章で訂正</div>
           <label>気になる点・訂正を入力</label>
           <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：白米を一杯食べているので、B1回追加"></textarea>
-          <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
+          <button class="btn-recalc btn-recalc-text" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
         <button class="recalc-btn" id="copysave-${mealId}-${item.id}" onclick="saveItemAsCopyMeal('${mealId}',${item.id})">🍚 コピーご飯に登録</button>
       </div>
@@ -4757,9 +4757,11 @@ function addManualFoodB(mealId, itemId) {
   const name = nameEl?.value?.trim();
   if (!name) { nameEl?.focus(); return; }
   const bc = parseFloat(cntEl?.value) || 0;
-  const kcalLabel = bc <= 0.5 ? '120~200kcal' : bc <= 1 ? '200~399kcal' : '400kcal以上';
+  // kcal は数値で持つ（サーバーの1日集計は数値しか足さない）。B×300 は bFromKcal で選んだBに戻る目安値。
+  // reason の「訂正反映」は、バナナ早見表・サーバーの安全網に会員の指定Bを書き換えさせないための印。
   item.result.foods = item.result.foods || [];
-  item.result.foods.push({ name, category:'B', kcal_per_serving:kcalLabel, amount:'', b_count:bc, reason:'ユーザーの申告により追加' });
+  item.result.foods.push({ name, category:'B', kcal_per_serving:Math.round(bc * 300), amount:'', b_count:bc,
+                           reason:`訂正反映：ユーザーの申告により追加（B${fmtCount(bc)}）` });
   recalcResultTotals(item.result);
   renderResults(mealId);
   updateDailyTotal();
@@ -4780,7 +4782,7 @@ async function reanalyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
   const textarea = document.getElementById(`recalc-text-${mealId}-${itemId}`);
-  const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
+  const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc-text`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
   // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残す）
