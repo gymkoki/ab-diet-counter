@@ -2169,15 +2169,26 @@ function todayMealPointSlots() {
   return got;
 }
 
+// サーバーの応答を端末のポイントに合わせる。日付は和集合（送信がまだ届いていない日を残す）、
+// ボーナス（はじめの3ステップなど・日付を持たない）は一度もらったら減らさない。
+// 古い応答（受け取り前に出したGETなど）が後から届いても、獲得済みのポイントが消えないようにするため。
+function mergeMealPoints(d) {
+  const mp = getMealPoints();
+  const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
+  const bonus = Math.max(Number(d.bonus) || 0, Number(mp.bonus) || 0);
+  const points = Math.max(Number(d.points) || 0, dates.length + bonus);
+  const merged = Object.assign(mp, d, { dates, bonus, points });
+  if (points >= (merged.goal || 10)) merged.unlocked = true;
+  saveMealPoints(merged);
+  return merged;
+}
+
 async function fetchMealPoints() {
   try {
     const res = await fetch(`/api/meal-points?user_id=${encodeURIComponent(USER_ID)}`);
     if (!res.ok) return;
-    const d = await res.json();
-    const mp = getMealPoints();
     // 送信がまだ届いていない日（電波が悪かった等）は端末側の記録も残す
-    const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
-    saveMealPoints(Object.assign(mp, d, { dates, points: Math.max(d.points || 0, dates.length) }));
+    mergeMealPoints(await res.json());
     renderMealPoints();
   } catch {}
 }
@@ -2190,12 +2201,7 @@ async function sendMealPoint(date) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: USER_ID, date }),
     });
-    if (res.ok) {
-      const d = await res.json();
-      const mp = getMealPoints();
-      const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
-      saveMealPoints(Object.assign(mp, d, { dates, points: Math.max(d.points || 0, dates.length) }));
-    }
+    if (res.ok) mergeMealPoints(await res.json());
   } catch {} finally {
     _mealPointsSending = false;
     renderMealPoints();
@@ -2267,6 +2273,7 @@ const ONBOARD_STEPS = [
 let _onboardFetched = false;
 let _onboardClaiming = false;
 let _onboardClaimTries = 0;
+const ONBOARD_CLAIM_MAX_TRIES = 4;
 
 function getOnboard() {
   const def = { show: false, ends: null, steps: {}, claimed: false, bonus_points: 1, photo_local: false, celebrate: false };
@@ -2308,6 +2315,10 @@ async function fetchOnboarding() {
     Object.assign(o, { show: !!d.show, ends: d.ends || null, steps: d.steps || {},
                        claimed: !!d.claimed, bonus_points: d.bonus_points || 1 });
     saveOnboard(o);
+    // 受け取りに失敗したまま（サーバーの不調など）なら、前面に戻ってきたときにやり直す
+    if (o.celebrate && !o.claimed && !_onboardClaiming && _onboardClaimTries >= ONBOARD_CLAIM_MAX_TRIES) {
+      _onboardClaimTries = 0;
+    }
     renderOnboarding();
   } catch {}
 }
@@ -2328,20 +2339,19 @@ async function claimOnboarding() {
       Object.assign(o, { claimed: true, steps: d.steps || o.steps });
       saveOnboard(o);
       if (d.meal_points) {   // こまめ記録ポイントの表示にもすぐ反映する
-        const mp = getMealPoints();
-        const dates = Array.from(new Set([...(d.meal_points.dates || []), ...(mp.dates || [])])).sort();
-        saveMealPoints(Object.assign(mp, d.meal_points, { dates, points: Math.max(d.meal_points.points || 0, dates.length) }));
+        mergeMealPoints(d.meal_points);
         renderMealPoints();
       }
     } else if (res.status === 409 && d.eligible === false) {
       // 7日の期間が過ぎていた：お祝いは閉じる（ポイントは付かない）
       Object.assign(o, { show: false, celebrate: false });
       saveOnboard(o);
-    } else if (res.status === 409) {
-      // 写真の記録（集計用の送信）がサーバーに届く前に確かめた場合など。少し待ってもう一度
-      retry = _onboardClaimTries < 4;
+    } else if (res.status === 409 || res.status >= 500) {
+      // 409：写真の記録（集計用の送信）がサーバーに届く前に確かめた場合など
+      // 5xx：サーバー側の一時的な不具合。どちらも少し待ってもう一度（最大4回）
+      retry = _onboardClaimTries < ONBOARD_CLAIM_MAX_TRIES;
     }
-  } catch { retry = _onboardClaimTries < 4; }
+  } catch { retry = _onboardClaimTries < ONBOARD_CLAIM_MAX_TRIES; }
   finally {
     _onboardClaiming = false;
     renderOnboarding();
@@ -2372,9 +2382,9 @@ function renderOnboarding() {
     const pts = o.bonus_points || 1;
     const pointMsg = o.claimed
       ? `こまめ記録ポイントを <b>${pts}pt</b> プレゼントしました🎁`
-      : (_onboardClaiming || _onboardClaimTries < 4
+      : (_onboardClaiming || _onboardClaimTries < ONBOARD_CLAIM_MAX_TRIES
           ? 'こまめ記録ポイントを付けています…'
-          : 'こまめ記録ポイントは、次にアプリを開いたときに付きます。');
+          : 'こまめ記録ポイントをうまく付けられませんでした。次にアプリを開いたときに、もう一度付けにいきます。');
     box.innerHTML = `<div class="ob-cele-title">🎉 はじめの3ステップ達成！</div>
       <div class="ob-cele-msg">写真・体重・運動の記録ができました。すばらしいスタートです！<br>${pointMsg}</div>
       <button class="ob-close" onclick="dismissOnboarding()">閉じる</button>`;

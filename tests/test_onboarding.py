@@ -213,3 +213,57 @@ def test_steps_and_hooks():
     assert "renderOnboarding();" in sw
     # サーバーが「出す」と言うまで出さない（既存の会員に誤って出さない）
     assert re.search(r"const def = \{ show: false,", h)
+
+
+# ── Codex レビューの指摘（PR #254）────────────────────────────
+def _node_eval(js):
+    import shutil
+    import subprocess
+    import tempfile
+    if shutil.which("node") is None:
+        pytest.skip("node が見つからない")
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+        f.write(js)
+        path = f.name
+    try:
+        p = subprocess.run(["node", path], capture_output=True, text=True)
+        assert p.returncode == 0, p.stderr
+        return json.loads(p.stdout)
+    finally:
+        os.unlink(path)
+
+
+def test_stale_points_response_does_not_drop_bonus():
+    """受け取り前に出したポイントのGETが受け取り後に届いても、獲得済みのボーナスを消さない。"""
+    h = _html()
+    start = h.index("function mergeMealPoints(d)")
+    fn = h[start:h.index("\n}\n", start) + 3]
+    out = _node_eval("""
+let store = {};
+function getMealPoints() { return Object.assign({ points: 0, goal: 10, dates: [] }, store); }
+function saveMealPoints(mp) { store = JSON.parse(JSON.stringify(mp)); }
+""" + fn + """
+mergeMealPoints({ points: 1, bonus: 1, dates: [] });        // 受け取りの応答
+mergeMealPoints({ points: 0, bonus: 0, dates: [] });        // 古いGETが後から届く
+const a = store.points;
+mergeMealPoints({ points: 2, bonus: 1, dates: ['2026-11-08'] });
+console.log(JSON.stringify({ a, b: store.points, bonus: store.bonus }));
+""")
+    assert out == {"a": 1, "b": 2, "bonus": 1}
+    # ポイントの応答を受け取る3か所が、すべて同じマージを通る
+    for anchor in ("async function fetchMealPoints()", "async function sendMealPoint(date)", "async function claimOnboarding()"):
+        body = h[h.index(anchor):]
+        body = body[:body.index("\n}\n")]
+        assert "mergeMealPoints(" in body, f"{anchor} が獲得済みのボーナスを上書きしうる"
+
+
+def test_claim_retries_on_server_error_and_shows_failure():
+    """受け取りが 5xx でも上限つきで再試行し、試行が終わったら「付けています…」のままにしない。"""
+    h = _html()
+    body = h[h.index("async function claimOnboarding()"):]
+    body = body[:body.index("\n}\n")]
+    assert "res.status >= 500" in body
+    assert "うまく付けられませんでした" in h
+    fo = h[h.index("async function fetchOnboarding()"):]
+    fo = fo[:fo.index("\n}\n")]
+    assert "_onboardClaimTries = 0" in fo, "前面に戻ってきたときに受け取りをやり直す"
