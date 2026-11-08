@@ -175,3 +175,26 @@ def test_broken_chart_does_not_break_the_card(monkeypatch):
     assert "開始時 70.0kg" in html, "グラフが失敗しても要約は出す"
     assert "ph_good2_progress" not in charts
     assert "cid:ph_good2_progress" not in html, "添付していない画像を参照すると空枠になる"
+
+
+# ── ⑥ 見出しの体重は「30日」ではなく開始時からの通算（オーナー指示 2026-11-08） ─────────
+def test_card_header_shows_total_change_not_30_days():
+    pytest.importorskip("matplotlib")
+    import send_report as S
+    pr = {"start_weight": 58.0, "start_date": "2026-07-22", "latest_weight": 56.7, "latest_date": "2026-10-27",
+          "total_change_kg": -1.3, "total_change_pct": -2.2, "days_since_start": 97, "weight_records": 9,
+          "weights": [("2026-07-22", 58.0), ("2026-10-27", 56.7)], "b_daily": []}
+    html = S._photo_card(_member(pr), "t", {}, True)
+    head = html[:html.index("掲載")]
+    assert "通算 -1.3 kg（-2.2%）" in head and "#059669" in head
+    assert "30日" not in head, "見出しに30日の変化が残っている"
+
+
+def test_card_header_total_change_colors_and_missing():
+    pytest.importorskip("matplotlib")
+    import send_report as S
+    gained = S._total_change_chip({"progress": {"total_change_kg": 0.8, "total_change_pct": 1.2, "weight_records": 3}})
+    assert "通算 +0.8 kg（+1.2%）" in gained and "#DC2626" in gained
+    assert "通算 —" in S._total_change_chip({"progress": {"total_change_kg": 0, "weight_records": 1}})
+    assert "通算 —" in S._total_change_chip({"change_30d_kg": -1.0})
+    assert "通算 ±0.0 kg" in S._total_change_chip({"progress": {"total_change_kg": 0, "weight_records": 2}})
