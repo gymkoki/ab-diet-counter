@@ -4520,6 +4520,8 @@ REVENUE_PROPOSAL_PROMPT = """あなたはABダイエットアプリ（リオー�
   掲示物づくりなど Claude Code に頼めることを書く。
 - 良い提案が無い日は1件でよい。数合わせで弱い提案を足さない。
 - 直近に出した提案（下に見出しを渡す）と同じ内容は出さない。
+- 会員の目的は「減量希望者」「体重維持の人」「増量希望者」と書く。「カット中」「cut」「バルク」などの内部の言葉は使わない
+  （オーナーに通じない）。weight_loss_goal_members_active は「減量希望者（直近14日に記録がある人）」の人数。
 
 【禁止】
 - 離脱者・休眠会員の呼び戻し（復帰キャンペーン、再開うながし通知、安否確認）。取り戻すのが難しく優先度が低いと判断済み。
@@ -4604,8 +4606,9 @@ def _collect_revenue_metrics():
     try:
         members = _active_members(_collect_cut_member_stats())
         changes = [x["change_30d_kg"] for x in members if isinstance(x.get("change_30d_kg"), (int, float))]
-        m["cut_members_active"] = len(members)
-        m["cut_members_losing_30d"] = sum(1 for c in changes if c < 0)
+        # キー名は日本語の呼び名に合わせる（cut のままだと AI が「カット中」と書いた。オーナー指摘 2026-11-08）
+        m["weight_loss_goal_members_active"] = len(members)
+        m["weight_loss_goal_members_losing_30d"] = sum(1 for c in changes if c < 0)
     except Exception as e:
         app.logger.warning("revenue metric cut members skipped: %s", e)
     try:
@@ -4636,6 +4639,28 @@ def _recent_revenue_titles(today, days=REVENUE_PROPOSAL_HISTORY_DAYS):
     return titles
 
 
+# AIが内部の言葉（goal="cut"）のまま「カット中」と書いても、オーナーが読む文面では「減量希望者」にそろえる
+# （オーナー指摘 2026-11-08：「カット中って何？減量希望者の事であれば、減量希望者と書いて」）。
+# 「コストカット」など別の意味の「カット」には触らないよう、会員を指す言い方だけを置き換える。
+_REVENUE_WORDING = (("カット中の会員", "減量希望者"), ("カット中の人", "減量希望者"), ("カット中", "減量希望者"),
+                    ("カット会員", "減量希望者"), ("減量希望者の人", "減量希望者"))
+
+
+def _revenue_wording(text):
+    text = str(text or "")
+    for a, b in _REVENUE_WORDING:
+        text = text.replace(a, b)
+    return text
+
+
+def _revenue_clean_items(items):
+    """保存済みの提案（その日のキャッシュ）にも同じ言い換えを当てる。形が違うものはそのまま返す。"""
+    if not isinstance(items, list):
+        return items
+    return [{k: (_revenue_wording(v) if isinstance(v, str) else v) for k, v in it.items()}
+            if isinstance(it, dict) else it for it in items]
+
+
 def _parse_revenue_proposals(raw):
     match = re.search(r"\{.*\}", raw or "", re.S)
     if not match:
@@ -4650,11 +4675,11 @@ def _parse_revenue_proposals(raw):
             continue
         kind = str(item.get("kind") or "").strip()
         proposals.append({
-            "title":  title[:40],
-            "why":    str(item.get("why") or "").strip()[:240],
-            "effect": str(item.get("effect") or "").strip()[:80],
+            "title":  _revenue_wording(title)[:40],
+            "why":    _revenue_wording(str(item.get("why") or "").strip())[:240],
+            "effect": _revenue_wording(str(item.get("effect") or "").strip())[:80],
             "kind":   kind if kind in ("アプリ", "運営") else "アプリ",
-            "prompt": prompt[:500],
+            "prompt": _revenue_wording(prompt)[:500],
         })
     return proposals[:3]
 
@@ -4766,7 +4791,7 @@ def _revenue_today():
 def _revenue_cached(day):
     try:
         raw = _get_setting(f"revenue-proposals-{day}", "")
-        return json.loads(raw) if raw else None
+        return _revenue_clean_items(json.loads(raw)) if raw else None
     except Exception:
         return None
 
@@ -5211,6 +5236,74 @@ def _maybe_queue_name_request(cur, uid):
     return True
 
 
+# 減量希望者で体重が減っておらず、食事の写真が少ない人への「写真のお願い」（オーナー指示 2026-11-08）。
+# 痩せない原因が「写真のアップが少ない（記録に載っていない分がある）」と考えられる人に、
+# 「強いて言えば…」の形で、相手の気を悪くしないように1通送る。
+# 数え方はデイリーレポートと同じ：体重は直近30日の「最新 − 最初」（REPORT_PHOTO_BAD_MIN 以上＝減っていない）、
+# 写真は `_member_record_rate()` の直近7日（写真で記録した回数 ÷ 記録した日数）。
+PHOTO_NUDGE_REASON = "写真アップのお願い（強いて言えば）"
+PHOTO_NUDGE_MAX_PHOTOS_PER_DAY = 2.0   # 記録した日1日あたりの写真がこれ未満なら「少ない」
+PHOTO_NUDGE_MIN_RECORD_DAYS = 3        # 直近7日でこれ未満しか記録が無い人は判断材料が足りないので送らない
+PHOTO_NUDGE_COOLDOWN_DAYS = 14         # 同じ人には14日に1回まで
+PHOTO_NUDGE_QUIET_DAYS = 3             # 直近3日に別の声かけが届いている人には重ねない
+
+
+def _photo_nudge_message(photos_per_day):
+    if photos_per_day < 0.25:
+        photo_txt = "あまり上がっていないようでした"
+    else:
+        n = round(photos_per_day * 2) / 2
+        photo_txt = f"1日あたり約{n:g}枚でした"
+    return (
+        "いつも記録を続けていただき、ありがとうございます！\n"
+        f"ひとつだけ、強いて言えばなのですが……最近は食事の写真が{photo_txt}。"
+        "文章やコピーご飯での記録ももちろん大丈夫なのですが、写真があると量や油・ソースの量まで"
+        "AIが読み取れるので、Bカウントがより正確になります。\n"
+        "体重がなかなか動かない時期は、記録に載っていない「ちょっとした分」が隠れていることもよくあるので、"
+        "食べる前に1枚パシャっと撮っておくと、原因が見つけやすくなります📷\n"
+        "もちろん無理のない範囲で大丈夫です。これからも一緒にがんばりましょう！（奥松）"
+    )
+
+
+def _maybe_queue_photo_nudge(cur, uid):
+    """減量希望で、直近30日の体重が減っておらず、直近7日の食事写真が少ない会員へ1通送る。
+    送ったら True。条件に合わない・読めないときは何もしない（False）。"""
+    cur.execute(f"SELECT goal FROM user_profile WHERE user_id={PH}", (uid,))
+    row = cur.fetchone()
+    if not row or row[0] != "cut":
+        return False
+    now = datetime.datetime.now(JST)
+    cool = (now - datetime.timedelta(days=PHOTO_NUDGE_COOLDOWN_DAYS)).isoformat()
+    cur.execute(f"SELECT 1 FROM coach_messages WHERE user_id={PH} AND reason={PH} "
+                f"AND status='sent' AND sent_at>={PH} LIMIT 1", (uid, PHOTO_NUDGE_REASON, cool))
+    if cur.fetchone():
+        return False
+    quiet = (now - datetime.timedelta(days=PHOTO_NUDGE_QUIET_DAYS)).isoformat()
+    cur.execute(f"SELECT 1 FROM coach_messages WHERE user_id={PH} AND status='sent' AND sent_at>={PH} "
+                f"AND (reason IS NULL OR reason<>{PH}) LIMIT 1", (uid, quiet, NAME_REQUEST_REASON))
+    if cur.fetchone():
+        return False
+    d30 = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    cur.execute(f"SELECT date, weight FROM daily_weight WHERE user_id={PH} AND date>={PH} AND weight>0 "
+                f"ORDER BY date", (uid, d30))
+    w = cur.fetchall()
+    if len(w) < 2 or float(w[-1][1]) - float(w[0][1]) < REPORT_PHOTO_BAD_MIN:
+        return False                          # 減っている（または判断できない）人には送らない
+    rate = _member_record_rate(cur, uid)
+    if not rate or rate["record_days"] < PHOTO_NUDGE_MIN_RECORD_DAYS:
+        return False
+    photos_per_day = (rate["by_kind"].get("photo") or 0) / rate["record_days"]
+    if photos_per_day >= PHOTO_NUDGE_MAX_PHOTOS_PER_DAY:
+        return False
+    ts = now.isoformat()
+    cur.execute(
+        f"""INSERT INTO coach_messages (user_id, name, reason, message, status, created_at, sent_at)
+           VALUES ({PH},NULL,{PH},{PH},'sent',{PH},{PH})""",
+        (uid, PHOTO_NUDGE_REASON, _photo_nudge_message(photos_per_day), ts, ts)
+    )
+    return True
+
+
 @app.route("/api/coach-messages")
 def get_coach_messages():
     """会員本人向け：自分あての送信済みメッセージ（下書きは絶対に返さない）。"""
@@ -5224,6 +5317,10 @@ def get_coach_messages():
             try:
                 cur = conn.cursor()
                 if _maybe_queue_name_request(cur, uid):
+                    conn.commit()
+                # 減量希望で体重が減っておらず、写真が少ない人へ「強いて言えば」の写真のお願い
+                # （お名前のお願いと同じ日には重ねない）
+                elif _maybe_queue_photo_nudge(cur, uid):
                     conn.commit()
             finally:
                 conn.close()

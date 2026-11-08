@@ -289,8 +289,7 @@ def test_checkout_creates_monthly_1100_yen(on, monkeypatch):
 
 
 def _future_start(monkeypatch):
-    """「開始日の前」を試すテスト用に、開始日を常に未来へ置く。
-    固定の START（2026-11-01）を過ぎると「開始前」の前提が崩れてテストが落ちていた（2026-11-08 に発覚）。"""
+    """「開始日前」を試すテスト用に、開始日を常に未来へ置く（固定の START は 2026-11-01 を過ぎると過去になる）。"""
     future = datetime.datetime.now(m.JST).date() + datetime.timedelta(days=30)
     monkeypatch.setattr(m, "BILLING_START", future.isoformat())
     return future
