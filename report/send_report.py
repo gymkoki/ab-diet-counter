@@ -774,15 +774,26 @@ def _day_header(day: dict, target) -> str:
             f'{b_chip}{rec_chip}{ex_chip}</div>')
 
 
+def _total_change_chip(member: dict) -> str:
+    """カード見出しの体重の変化。開始時（最初に体重を記録した日）からの通算で出す
+    （オーナー指示 2026-11-08：「減量幅などの体重変化は30日ではなく、初期からの変化を記入して」）。
+    色は通算の増減で決める（減った＝緑・増えた＝赤）。体重の記録が1回だけなら「通算 —」。"""
+    pr = member.get("progress") or {}
+    ch = pr.get("total_change_kg")
+    if pr.get("weight_records", 0) < 2 or not isinstance(ch, (int, float)):
+        return '<span style="color:#9CA3AF;margin-left:8px">通算 —</span>'
+    c = "#059669" if ch < 0 else ("#DC2626" if ch > 0 else "#6B7280")
+    s = f"{ch:+.1f} kg" if ch else "±0.0 kg"
+    pct = pr.get("total_change_pct")
+    pct_s = f"（{pct:+.1f}%）" if isinstance(pct, (int, float)) and ch else ""
+    return f'<span style="color:{c};margin-left:8px">通算 {s}{pct_s}</span>'
+
+
 def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget: int = MAX_PHOTOS_TOTAL) -> str:
     """会員1人ぶんの写真カード（名前・体重変化・その人の写真すべて）を組み立てる。
     budget は「セクション全体であと何枚載せられるか」。"""
     color = "#10B981" if good else "#EF4444"
-    ch = member.get("change_30d_kg")
-    if isinstance(ch, (int, float)):
-        change_str = f"{ch:+.1f} kg" if ch else "±0.0 kg"
-    else:
-        change_str = "—"
+    change_html = _total_change_chip(member)
     avg_b = member.get("avg_b_7d")
     target = member.get("b_target")
     b_str = f"平均 {avg_b:.1f} B/日" if isinstance(avg_b, (int, float)) else "Bカウント —"
@@ -874,7 +885,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
     <div style="margin-bottom:14px;padding:10px 12px;background:#fff;border:1px solid #E5E7EB;border-left:4px solid {color};border-radius:8px">
       <div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:8px">
         {name}
-        <span style="color:{color};margin-left:8px">30日 {change_str}</span>
+        {change_html}
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
       </div>{_record_rate_line(member.get("record_rate"))}{_exercise_line(member)}{_intake_line(member.get("intake"))}{progress_html}
@@ -938,7 +949,7 @@ def _photo_section(photos: dict, charts: dict) -> str:
     <div class="section" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:16px 18px">
       <h2>🍽️ 実際の食事写真｜順調な人 vs 進んでいない人</h2>
       <div style="font-size:11px;color:#9CA3AF;line-height:1.6;margin-bottom:12px">
-        直近30日の体重変化で分けた、減量希望の会員の実際の記録です。
+        直近30日の体重変化で「順調／進んでいない」に分けた、減量希望の会員の実際の記録です（名前の横の体重は開始時からの通算）。
         <b>この内容は会員の食事写真を含むため、オーナー限定</b>（このメールの宛先のみ）です。
         ※{REPORT_ABSENT_DAYS}日以上まったく記録がない会員は対象外です。
         ※毎日、しばらく載っていない人から順に入れ替えています。
