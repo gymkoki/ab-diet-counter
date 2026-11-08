@@ -879,6 +879,18 @@ def init_db():
                 PRIMARY KEY (user_id, date)
             )
         """)
+        # こまめポイントの「日付に付かない」ボーナス（はじめの3ステップ達成など。2026-11-08）。
+        # meal_points は1人1日1行で「その日に3食記録できたか」の集計にも使うため、別の表に分ける。
+        # 同じ理由（reason）では1人1回だけ。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS meal_point_bonus (
+                user_id    TEXT    NOT NULL,
+                reason     TEXT    NOT NULL,
+                points     INTEGER NOT NULL,
+                created_at TEXT    NOT NULL,
+                PRIMARY KEY (user_id, reason)
+            )
+        """)
         # リオールジム会員限定化（2026-09-15〜）：合言葉を入れた端末を記録する。
         # 端末ごとに1行。token は端末が毎回の解析リクエストに付けてくる通行証。
         cur.execute("""
@@ -4508,6 +4520,8 @@ REVENUE_PROPOSAL_PROMPT = """あなたはABダイエットアプリ（リオー�
   掲示物づくりなど Claude Code に頼めることを書く。
 - 良い提案が無い日は1件でよい。数合わせで弱い提案を足さない。
 - 直近に出した提案（下に見出しを渡す）と同じ内容は出さない。
+- 会員の目的は「減量希望者」「体重維持の人」「増量希望者」と書く。「カット中」「cut」「バルク」などの内部の言葉は使わない
+  （オーナーに通じない）。weight_loss_goal_members_active は「減量希望者（直近14日に記録がある人）」の人数。
 
 【禁止】
 - 離脱者・休眠会員の呼び戻し（復帰キャンペーン、再開うながし通知、安否確認）。取り戻すのが難しく優先度が低いと判断済み。
@@ -4592,8 +4606,9 @@ def _collect_revenue_metrics():
     try:
         members = _active_members(_collect_cut_member_stats())
         changes = [x["change_30d_kg"] for x in members if isinstance(x.get("change_30d_kg"), (int, float))]
-        m["cut_members_active"] = len(members)
-        m["cut_members_losing_30d"] = sum(1 for c in changes if c < 0)
+        # キー名は日本語の呼び名に合わせる（cut のままだと AI が「カット中」と書いた。オーナー指摘 2026-11-08）
+        m["weight_loss_goal_members_active"] = len(members)
+        m["weight_loss_goal_members_losing_30d"] = sum(1 for c in changes if c < 0)
     except Exception as e:
         app.logger.warning("revenue metric cut members skipped: %s", e)
     try:
@@ -4624,6 +4639,28 @@ def _recent_revenue_titles(today, days=REVENUE_PROPOSAL_HISTORY_DAYS):
     return titles
 
 
+# AIが内部の言葉（goal="cut"）のまま「カット中」と書いても、オーナーが読む文面では「減量希望者」にそろえる
+# （オーナー指摘 2026-11-08：「カット中って何？減量希望者の事であれば、減量希望者と書いて」）。
+# 「コストカット」など別の意味の「カット」には触らないよう、会員を指す言い方だけを置き換える。
+_REVENUE_WORDING = (("カット中の会員", "減量希望者"), ("カット中の人", "減量希望者"), ("カット中", "減量希望者"),
+                    ("カット会員", "減量希望者"), ("減量希望者の人", "減量希望者"))
+
+
+def _revenue_wording(text):
+    text = str(text or "")
+    for a, b in _REVENUE_WORDING:
+        text = text.replace(a, b)
+    return text
+
+
+def _revenue_clean_items(items):
+    """保存済みの提案（その日のキャッシュ）にも同じ言い換えを当てる。形が違うものはそのまま返す。"""
+    if not isinstance(items, list):
+        return items
+    return [{k: (_revenue_wording(v) if isinstance(v, str) else v) for k, v in it.items()}
+            if isinstance(it, dict) else it for it in items]
+
+
 def _parse_revenue_proposals(raw):
     match = re.search(r"\{.*\}", raw or "", re.S)
     if not match:
@@ -4638,11 +4675,11 @@ def _parse_revenue_proposals(raw):
             continue
         kind = str(item.get("kind") or "").strip()
         proposals.append({
-            "title":  title[:40],
-            "why":    str(item.get("why") or "").strip()[:240],
-            "effect": str(item.get("effect") or "").strip()[:80],
+            "title":  _revenue_wording(title)[:40],
+            "why":    _revenue_wording(str(item.get("why") or "").strip())[:240],
+            "effect": _revenue_wording(str(item.get("effect") or "").strip())[:80],
             "kind":   kind if kind in ("アプリ", "運営") else "アプリ",
-            "prompt": prompt[:500],
+            "prompt": _revenue_wording(prompt)[:500],
         })
     return proposals[:3]
 
@@ -4754,7 +4791,7 @@ def _revenue_today():
 def _revenue_cached(day):
     try:
         raw = _get_setting(f"revenue-proposals-{day}", "")
-        return json.loads(raw) if raw else None
+        return _revenue_clean_items(json.loads(raw)) if raw else None
     except Exception:
         return None
 
@@ -5199,6 +5236,74 @@ def _maybe_queue_name_request(cur, uid):
     return True
 
 
+# 減量希望者で体重が減っておらず、食事の写真が少ない人への「写真のお願い」（オーナー指示 2026-11-08）。
+# 痩せない原因が「写真のアップが少ない（記録に載っていない分がある）」と考えられる人に、
+# 「強いて言えば…」の形で、相手の気を悪くしないように1通送る。
+# 数え方はデイリーレポートと同じ：体重は直近30日の「最新 − 最初」（REPORT_PHOTO_BAD_MIN 以上＝減っていない）、
+# 写真は `_member_record_rate()` の直近7日（写真で記録した回数 ÷ 記録した日数）。
+PHOTO_NUDGE_REASON = "写真アップのお願い（強いて言えば）"
+PHOTO_NUDGE_MAX_PHOTOS_PER_DAY = 2.0   # 記録した日1日あたりの写真がこれ未満なら「少ない」
+PHOTO_NUDGE_MIN_RECORD_DAYS = 3        # 直近7日でこれ未満しか記録が無い人は判断材料が足りないので送らない
+PHOTO_NUDGE_COOLDOWN_DAYS = 14         # 同じ人には14日に1回まで
+PHOTO_NUDGE_QUIET_DAYS = 3             # 直近3日に別の声かけが届いている人には重ねない
+
+
+def _photo_nudge_message(photos_per_day):
+    if photos_per_day < 0.25:
+        photo_txt = "あまり上がっていないようでした"
+    else:
+        n = round(photos_per_day * 2) / 2
+        photo_txt = f"1日あたり約{n:g}枚でした"
+    return (
+        "いつも記録を続けていただき、ありがとうございます！\n"
+        f"ひとつだけ、強いて言えばなのですが……最近は食事の写真が{photo_txt}。"
+        "文章やコピーご飯での記録ももちろん大丈夫なのですが、写真があると量や油・ソースの量まで"
+        "AIが読み取れるので、Bカウントがより正確になります。\n"
+        "体重がなかなか動かない時期は、記録に載っていない「ちょっとした分」が隠れていることもよくあるので、"
+        "食べる前に1枚パシャっと撮っておくと、原因が見つけやすくなります📷\n"
+        "もちろん無理のない範囲で大丈夫です。これからも一緒にがんばりましょう！（奥松）"
+    )
+
+
+def _maybe_queue_photo_nudge(cur, uid):
+    """減量希望で、直近30日の体重が減っておらず、直近7日の食事写真が少ない会員へ1通送る。
+    送ったら True。条件に合わない・読めないときは何もしない（False）。"""
+    cur.execute(f"SELECT goal FROM user_profile WHERE user_id={PH}", (uid,))
+    row = cur.fetchone()
+    if not row or row[0] != "cut":
+        return False
+    now = datetime.datetime.now(JST)
+    cool = (now - datetime.timedelta(days=PHOTO_NUDGE_COOLDOWN_DAYS)).isoformat()
+    cur.execute(f"SELECT 1 FROM coach_messages WHERE user_id={PH} AND reason={PH} "
+                f"AND status='sent' AND sent_at>={PH} LIMIT 1", (uid, PHOTO_NUDGE_REASON, cool))
+    if cur.fetchone():
+        return False
+    quiet = (now - datetime.timedelta(days=PHOTO_NUDGE_QUIET_DAYS)).isoformat()
+    cur.execute(f"SELECT 1 FROM coach_messages WHERE user_id={PH} AND status='sent' AND sent_at>={PH} "
+                f"AND (reason IS NULL OR reason<>{PH}) LIMIT 1", (uid, quiet, NAME_REQUEST_REASON))
+    if cur.fetchone():
+        return False
+    d30 = (now - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    cur.execute(f"SELECT date, weight FROM daily_weight WHERE user_id={PH} AND date>={PH} AND weight>0 "
+                f"ORDER BY date", (uid, d30))
+    w = cur.fetchall()
+    if len(w) < 2 or float(w[-1][1]) - float(w[0][1]) < REPORT_PHOTO_BAD_MIN:
+        return False                          # 減っている（または判断できない）人には送らない
+    rate = _member_record_rate(cur, uid)
+    if not rate or rate["record_days"] < PHOTO_NUDGE_MIN_RECORD_DAYS:
+        return False
+    photos_per_day = (rate["by_kind"].get("photo") or 0) / rate["record_days"]
+    if photos_per_day >= PHOTO_NUDGE_MAX_PHOTOS_PER_DAY:
+        return False
+    ts = now.isoformat()
+    cur.execute(
+        f"""INSERT INTO coach_messages (user_id, name, reason, message, status, created_at, sent_at)
+           VALUES ({PH},NULL,{PH},{PH},'sent',{PH},{PH})""",
+        (uid, PHOTO_NUDGE_REASON, _photo_nudge_message(photos_per_day), ts, ts)
+    )
+    return True
+
+
 @app.route("/api/coach-messages")
 def get_coach_messages():
     """会員本人向け：自分あての送信済みメッセージ（下書きは絶対に返さない）。"""
@@ -5212,6 +5317,10 @@ def get_coach_messages():
             try:
                 cur = conn.cursor()
                 if _maybe_queue_name_request(cur, uid):
+                    conn.commit()
+                # 減量希望で体重が減っておらず、写真が少ない人へ「強いて言えば」の写真のお願い
+                # （お名前のお願いと同じ日には重ねない）
+                elif _maybe_queue_photo_nudge(cur, uid):
                     conn.commit()
             finally:
                 conn.close()
@@ -7532,6 +7641,32 @@ def _meal_points_of(uid):
         conn.close()
 
 
+def _bonus_points_by_user(cur, uid=None):
+    """{user_id: ボーナスの合計}。表が読めなくても例外にしない（ポイントの表示を止めない）。"""
+    try:
+        if uid is None:
+            cur.execute("SELECT user_id, SUM(points) FROM meal_point_bonus GROUP BY user_id")
+        else:
+            cur.execute(f"SELECT user_id, SUM(points) FROM meal_point_bonus WHERE user_id={PH} GROUP BY user_id", (uid,))
+        return {r[0]: int(r[1] or 0) for r in cur.fetchall()}
+    except Exception as e:
+        if USE_PG:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+        app.logger.warning("meal_point_bonus read skipped: %s", e)
+        return {}
+
+
+def _bonus_points_of(uid):
+    conn = _get_conn()
+    try:
+        return _bonus_points_by_user(conn.cursor(), uid).get(uid, 0)
+    finally:
+        conn.close()
+
+
 def _special_message_url():
     try:
         return (_get_setting(SPECIAL_MESSAGE_URL_KEY, "") or "").strip()
@@ -7541,10 +7676,13 @@ def _special_message_url():
 
 def _meal_points_payload(uid):
     dates = _meal_points_of(uid)
-    unlocked = len(dates) >= MEAL_POINTS_GOAL
+    bonus = _bonus_points_of(uid)
+    points = len(dates) + bonus           # 3食そろった日の数＋ボーナス（はじめの3ステップなど）
+    unlocked = points >= MEAL_POINTS_GOAL
     url = _special_message_url()
     return {
-        "points": len(dates),
+        "points": points,
+        "bonus": bonus,
         "goal": MEAL_POINTS_GOAL,
         "dates": dates[-60:],
         "unlocked": unlocked,
@@ -7572,6 +7710,11 @@ def _mame_points_stats(target_date, days=7):
                         f"SUM(CASE WHEN date>={PH} THEN 1 ELSE 0 END) "
                         f"FROM meal_points WHERE date<={PH} GROUP BY user_id", (start, target_date))
             per_user = [(r[0], int(r[1]), str(r[2])[:10], int(r[3] or 0)) for r in cur.fetchall()]
+            # ボーナス（はじめの3ステップなど）も累計に入れる。ボーナスだけの人も「持っている人」に数える
+            bonus = _bonus_points_by_user(cur)
+            seen = {r[0] for r in per_user}
+            per_user = [(u, c + bonus.get(u, 0), l, w) for u, c, l, w in per_user]
+            per_user += [(u, b, "", 0) for u, b in bonus.items() if u not in seen and b > 0]
             counts = [c for _u, c, _l, _w in per_user]
             names = {}
             if per_user:
@@ -7590,7 +7733,7 @@ def _mame_points_stats(target_date, days=7):
     for i, (uid, pts, last, week) in enumerate(ranked[:5]):
         rank = i + 1 if i == 0 or pts != top[-1]["points"] else top[-1]["rank"]
         top.append({"rank": rank, "name": (names.get(uid) or f"会員{uid[:4]}")[:12],
-                    "points": pts, "week": week, "last": last})
+                    "points": pts, "week": week, "last": last or None})
     trend = [{"date": (end - datetime.timedelta(days=i)).isoformat(),
               "earned": by_day.get((end - datetime.timedelta(days=i)).isoformat(), 0)}
              for i in range(days - 1, -1, -1)]
@@ -7647,6 +7790,125 @@ def api_meal_points():
         return jsonify({"error": "読み込めませんでした"}), 500
 
 
+# ══════════════════════════════════════════════════════════════
+#  はじめの3ステップ（オーナー指示 2026-11-08）
+#  新規登録から7日以内の会員の記録画面の上部にチェックリストを出す：
+#    ①食事を写真で1枚記録 ②体重を記録 ③運動を1件記録
+#  3つそろったらお祝いと、こまめポイント＋1（meal_point_bonus。1人1回だけ）。
+#  7日たつか、3つそろって受け取ったら出さない。
+#  「新規登録」は billing と同じ _first_activity_date()（記録・解析のいちばん古い日。無ければ今日）。
+#  ポイントは端末の申告だけでは付けない：写真（action_log の photo）・体重（daily_weight）・
+#  運動（daily_exercise）がサーバーに届いているかを確かめてから付ける。
+# ══════════════════════════════════════════════════════════════
+ONBOARDING_DAYS = 7
+ONBOARDING_BONUS_POINTS = 1
+ONBOARDING_BONUS_REASON = "onboarding-3steps"
+ONBOARDING_STEPS = ("photo", "weight", "exercise")
+
+
+def _onboarding_steps(uid):
+    """サーバーに届いている記録から、3つのステップが済んでいるかを返す。"""
+    out = {k: False for k in ONBOARDING_STEPS}
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT 1 FROM action_log WHERE user_id={PH} AND action='photo' LIMIT 1", (uid,))
+        out["photo"] = cur.fetchone() is not None
+        cur.execute(f"SELECT 1 FROM daily_weight WHERE user_id={PH} LIMIT 1", (uid,))
+        out["weight"] = cur.fetchone() is not None
+        # 運動：消費Bがある日か、内容（種類・時間など）が残っている日。削除して空になった日は数えない
+        cur.execute(f"SELECT ex_b_count, detail FROM daily_exercise WHERE user_id={PH}", (uid,))
+        for ex_b, detail in cur.fetchall():
+            items = []
+            try:
+                items = json.loads(detail) if detail else []
+            except (TypeError, ValueError):
+                items = []
+            if (ex_b or 0) > 0 or (isinstance(items, list) and len(items) > 0):
+                out["exercise"] = True
+                break
+    finally:
+        conn.close()
+    return out
+
+
+def _onboarding_claimed(uid):
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT 1 FROM meal_point_bonus WHERE user_id={PH} AND reason={PH}",
+                    (uid, ONBOARDING_BONUS_REASON))
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _onboarding_state(uid, today=None):
+    today = today or datetime.datetime.now(JST).date()
+    first = _first_activity_date(uid) or today
+    ends = first + datetime.timedelta(days=ONBOARDING_DAYS)
+    claimed = _onboarding_claimed(uid)
+    steps = _onboarding_steps(uid)
+    return {
+        "eligible": today < ends,             # 登録から7日以内
+        "show": today < ends and not claimed,  # 画面に出すか
+        "start": first.isoformat(),
+        "ends": ends.isoformat(),              # この日から出さない
+        "days_left": max(0, (ends - today).days),
+        "steps": steps,
+        "done": all(steps.values()),
+        "claimed": claimed,
+        "bonus_points": ONBOARDING_BONUS_POINTS,
+    }
+
+
+@app.route("/api/onboarding", methods=["GET"])
+def api_onboarding():
+    """はじめの3ステップの状態。読めないときは出さない（show=False）。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    try:
+        return jsonify(_onboarding_state(uid))
+    except Exception as e:
+        app.logger.warning("onboarding state failed: %s", e)
+        return jsonify({"show": False, "eligible": False, "error": "読み込めませんでした"}), 500
+
+
+@app.route("/api/onboarding/claim", methods=["POST"])
+def api_onboarding_claim():
+    """3つそろったら、こまめポイントのボーナスを付ける（1人1回）。
+    200＝付けた（または付け済み）／409＝まだそろっていない・期間が過ぎた。"""
+    body = request.get_json(silent=True) or {}
+    uid = str(body.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    try:
+        st = _onboarding_state(uid)
+        if not st["claimed"]:
+            if not st["eligible"]:
+                return jsonify({"claimed": False, "error": "期間が終わっています", **st}), 409
+            if not st["done"]:
+                return jsonify({"claimed": False, "error": "まだそろっていません", **st}), 409
+            with _db_lock:
+                conn = _get_conn()
+                try:
+                    cur = conn.cursor()
+                    cur.execute(
+                        f"INSERT INTO meal_point_bonus (user_id, reason, points, created_at) "
+                        f"VALUES ({PH},{PH},{PH},{PH}) ON CONFLICT DO NOTHING",
+                        (uid, ONBOARDING_BONUS_REASON, ONBOARDING_BONUS_POINTS,
+                         datetime.datetime.now(JST).isoformat()))
+                    conn.commit()
+                finally:
+                    conn.close()
+            st = _onboarding_state(uid)
+        return jsonify({"claimed": True, **st, "meal_points": _meal_points_payload(uid)})
+    except Exception as e:
+        app.logger.warning("onboarding claim failed: %s", e)
+        return jsonify({"claimed": False, "error": "保存できませんでした"}), 500
+
+
 @app.route("/api/admin/special-message", methods=["GET", "POST"])
 @_admin_required
 def admin_special_message():
@@ -7660,7 +7922,10 @@ def admin_special_message():
     try:
         cur = conn.cursor()
         cur.execute("SELECT user_id, COUNT(*) FROM meal_points GROUP BY user_id")
-        counts = [r[1] for r in cur.fetchall()]
+        per = {r[0]: int(r[1]) for r in cur.fetchall()}
+        for u, b in _bonus_points_by_user(cur).items():
+            per[u] = per.get(u, 0) + b
+        counts = [c for c in per.values() if c > 0]
     finally:
         conn.close()
     return jsonify({

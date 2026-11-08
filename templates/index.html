@@ -705,6 +705,24 @@
        記録画面を開いた瞬間に「あと何食」が見える場所を作る。 */
     /* こまめ記録ポイント（オーナー指示 2026-10-15。2026-10-18 に「3食」を外した） */
     /* 2026-10-19 オーナー指示：「写真を追加」の下に置き、1〜2行に縮める。ルールの説明は「？」で開く */
+    /* はじめの3ステップ（新規登録から7日以内だけ。オーナー指示 2026-11-08） */
+    #onboard { display:none; margin:12px 16px 0; padding:12px 14px; border-radius:var(--radius-md); background:#F1FAF4; border:1px solid #BFE3CB; color:#1F5135; }
+    #onboard .ob-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    #onboard .ob-title { flex:1; min-width:0; font-size:17px; font-weight:800; }
+    #onboard .ob-left { font-size:14px; font-weight:700; color:#3E7A55; white-space:nowrap; }
+    #onboard .ob-step { display:flex; align-items:center; gap:10px; width:100%; margin-top:6px; padding:10px 12px; border-radius:var(--radius-sm); border:1px solid #CFE9D8; background:#fff; color:#1F5135; font-size:16px; font-weight:700; text-align:left; cursor:pointer; }
+    #onboard .ob-check { flex-shrink:0; width:26px; height:26px; border-radius:50%; border:2px solid #9CCFAE; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:900; color:#fff; }
+    #onboard .ob-label { flex:1; min-width:0; }
+    #onboard .ob-go { flex-shrink:0; color:#3E7A55; font-size:18px; }
+    #onboard .ob-step.done { background:#E4F5EA; cursor:default; }
+    #onboard .ob-step.done .ob-check { background:#2E9E5B; border-color:#2E9E5B; }
+    #onboard .ob-step.done .ob-label { color:#3E7A55; }
+    #onboard .ob-step.done .ob-go { visibility:hidden; }
+    #onboard .ob-note { margin-top:8px; font-size:14px; color:#3E7A55; line-height:1.5; }
+    #onboard.celebrate { background:#FFF6E5; border-color:#F5D08A; color:#7A4B00; text-align:center; }
+    #onboard .ob-cele-title { font-size:19px; font-weight:900; margin:2px 0 6px; }
+    #onboard .ob-cele-msg { font-size:16px; line-height:1.6; font-weight:600; }
+    #onboard .ob-close { margin-top:10px; padding:10px 22px; border:none; border-radius:999px; background:#E8622C; color:#fff; font-size:16px; font-weight:800; cursor:pointer; }
     .mpt { margin:12px 0 0; padding:10px 12px; border-radius:var(--radius-md); background:#F4F1FF; border:1px solid #D9D0FB; }
     .mpt .mpt-head { display:flex; align-items:center; gap:8px; }
     .mpt .mpt-title { font-size:16px; font-weight:800; color:#4C3A9E; flex:1; min-width:0; }
@@ -938,6 +956,8 @@
     <button class="rsub-btn" id="rsub-exercise" onclick="switchRecordSub('exercise')"><span class="rsub-emoji">🏃</span>運動</button>
     <button class="rsub-btn" id="rsub-weight" onclick="switchRecordSub('weight')"><span class="rsub-emoji">⚖️</span>体重/日記</button>
   </div>
+  <!-- はじめの3ステップ（新規登録から7日以内・3つそろって受け取るまで。オーナー指示 2026-11-08） -->
+  <div id="onboard" aria-live="polite"></div>
   <div id="past-edit-banner" style="display:none">
     <span>📝 <span id="past-edit-date"></span> の記録を編集中</span>
     <button onclick="exitPastEdit()">編集を終える</button>
@@ -1532,6 +1552,7 @@ function openFileInput(mealId) {
 // 食事の明細は5日で消えるので、こちらに軽い記録だけを残す。
 // 失敗してもアプリの動作には一切影響させない（送りっぱなし）。
 function logAction(action) {
+  if (action === 'photo') { try { markOnboardPhoto(); renderOnboarding(); } catch (e) {} }
   try {
     fetch('/api/log-action', {
       method: 'POST',
@@ -2156,15 +2177,26 @@ function todayMealPointSlots() {
   return got;
 }
 
+// サーバーの応答を端末のポイントに合わせる。日付は和集合（送信がまだ届いていない日を残す）、
+// ボーナス（はじめの3ステップなど・日付を持たない）は一度もらったら減らさない。
+// 古い応答（受け取り前に出したGETなど）が後から届いても、獲得済みのポイントが消えないようにするため。
+function mergeMealPoints(d) {
+  const mp = getMealPoints();
+  const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
+  const bonus = Math.max(Number(d.bonus) || 0, Number(mp.bonus) || 0);
+  const points = Math.max(Number(d.points) || 0, dates.length + bonus);
+  const merged = Object.assign(mp, d, { dates, bonus, points });
+  if (points >= (merged.goal || 10)) merged.unlocked = true;
+  saveMealPoints(merged);
+  return merged;
+}
+
 async function fetchMealPoints() {
   try {
     const res = await fetch(`/api/meal-points?user_id=${encodeURIComponent(USER_ID)}`);
     if (!res.ok) return;
-    const d = await res.json();
-    const mp = getMealPoints();
     // 送信がまだ届いていない日（電波が悪かった等）は端末側の記録も残す
-    const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
-    saveMealPoints(Object.assign(mp, d, { dates, points: Math.max(d.points || 0, dates.length) }));
+    mergeMealPoints(await res.json());
     renderMealPoints();
   } catch {}
 }
@@ -2177,12 +2209,7 @@ async function sendMealPoint(date) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: USER_ID, date }),
     });
-    if (res.ok) {
-      const d = await res.json();
-      const mp = getMealPoints();
-      const dates = Array.from(new Set([...(d.dates || []), ...(mp.dates || [])])).sort();
-      saveMealPoints(Object.assign(mp, d, { dates, points: Math.max(d.points || 0, dates.length) }));
-    }
+    if (res.ok) mergeMealPoints(await res.json());
   } catch {} finally {
     _mealPointsSending = false;
     renderMealPoints();
@@ -2235,6 +2262,170 @@ function renderMealPoints() {
   } else {
     msg.textContent = `${MEAL_POINTS_RULE}${goal}ポイント貯まると、リオールジムから特別メッセージが見られます！`;
   }
+}
+
+// ═══════════════════════════════════════════
+//  はじめの3ステップ（オーナー指示 2026-11-08）
+//  新規登録から7日以内の会員の記録画面の上部に出すチェックリスト：
+//    ①食事を写真で1枚記録 ②体重を記録 ③運動を1件記録
+//  3つそろったらお祝いと、こまめポイント＋1（サーバーが記録を確かめてから付ける。1人1回）。
+//  7日たつか、3つそろって受け取ったら出さない。出すかどうかはサーバー（/api/onboarding）が決め、
+//  サーバーに一度もつながっていない端末では出さない（既存の会員に誤って出さないため）。
+// ═══════════════════════════════════════════
+const ONBOARD_KEY = 'ab-diet-onboarding-v1';
+const ONBOARD_STEPS = [
+  { key: 'photo',    label: '食事を写真で1枚記録', sub: 'food' },
+  { key: 'weight',   label: '体重を記録',          sub: 'weight' },
+  { key: 'exercise', label: '運動を1件記録',        sub: 'exercise' },
+];
+let _onboardFetched = false;
+let _onboardClaiming = false;
+let _onboardClaimTries = 0;
+const ONBOARD_CLAIM_MAX_TRIES = 4;
+
+function getOnboard() {
+  const def = { show: false, ends: null, steps: {}, claimed: false, bonus_points: 1, photo_local: false, celebrate: false };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem(ONBOARD_KEY)) || {}); }
+  catch { return def; }
+}
+function saveOnboard(o) {
+  try { localStorage.setItem(ONBOARD_KEY, JSON.stringify(o)); } catch {}
+}
+
+// 写真の解析が終わったとき（logAction('photo')）に、この端末でも「写真で記録した」印を付ける
+function markOnboardPhoto() {
+  const o = getOnboard();
+  if (o.photo_local) return;
+  o.photo_local = true;
+  saveOnboard(o);
+}
+
+// 済んだステップ：サーバーに届いている記録か、この端末の記録のどちらかにあれば済み
+function onboardSteps(o) {
+  let ex = [];
+  try { ex = JSON.parse(localStorage.getItem(EXERCISE_KEY)) || []; } catch {}
+  const local = {
+    photo: !!o.photo_local,
+    weight: Object.keys(getWeightLog()).length > 0,
+    exercise: Array.isArray(ex) && ex.length > 0,
+  };
+  const out = {};
+  ONBOARD_STEPS.forEach(st => { out[st.key] = !!((o.steps || {})[st.key] || local[st.key]); });
+  return out;
+}
+
+async function fetchOnboarding() {
+  try {
+    const res = await fetch(`/api/onboarding?user_id=${encodeURIComponent(USER_ID)}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    const o = getOnboard();
+    Object.assign(o, { show: !!d.show, ends: d.ends || null, steps: d.steps || {},
+                       claimed: !!d.claimed, bonus_points: d.bonus_points || 1 });
+    saveOnboard(o);
+    // 受け取りに失敗したまま（サーバーの不調など）なら、前面に戻ってきたときにやり直す
+    if (o.celebrate && !o.claimed && !_onboardClaiming && _onboardClaimTries >= ONBOARD_CLAIM_MAX_TRIES) {
+      _onboardClaimTries = 0;
+    }
+    renderOnboarding();
+  } catch {}
+}
+
+async function claimOnboarding() {
+  if (_onboardClaiming) return;
+  _onboardClaiming = true;
+  _onboardClaimTries++;
+  let retry = false;
+  try {
+    const res = await fetch('/api/onboarding/claim', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID }),
+    });
+    const d = await res.json().catch(() => ({}));
+    const o = getOnboard();
+    if (res.ok && d.claimed) {
+      Object.assign(o, { claimed: true, steps: d.steps || o.steps });
+      saveOnboard(o);
+      if (d.meal_points) {   // こまめ記録ポイントの表示にもすぐ反映する
+        mergeMealPoints(d.meal_points);
+        renderMealPoints();
+      }
+    } else if (res.status === 409 && d.eligible === false) {
+      // 7日の期間が過ぎていた：お祝いは閉じる（ポイントは付かない）
+      Object.assign(o, { show: false, celebrate: false });
+      saveOnboard(o);
+    } else if (res.status === 409 || res.status >= 500) {
+      // 409：写真の記録（集計用の送信）がサーバーに届く前に確かめた場合など
+      // 5xx：サーバー側の一時的な不具合。どちらも少し待ってもう一度（最大4回）
+      retry = _onboardClaimTries < ONBOARD_CLAIM_MAX_TRIES;
+    }
+  } catch { retry = _onboardClaimTries < ONBOARD_CLAIM_MAX_TRIES; }
+  finally {
+    _onboardClaiming = false;
+    renderOnboarding();
+  }
+  if (retry) setTimeout(claimOnboarding, 5000);
+}
+
+function renderOnboarding() {
+  const box = document.getElementById('onboard');
+  if (!box) return;
+  if (!_onboardFetched) { _onboardFetched = true; fetchOnboarding(); }
+  const o = getOnboard();
+  const today = getTodayJST();
+  const expired = !!(o.ends && today >= o.ends);
+  if (!o.celebrate && (!o.show || o.claimed || expired)) { box.style.display = 'none'; return; }
+
+  const steps = onboardSteps(o);
+  const allDone = ONBOARD_STEPS.every(st => steps[st.key]);
+  if (allDone && !o.claimed && !o.celebrate && !expired) {
+    o.celebrate = true;            // 3つそろった：お祝いを出して、ポイントを受け取りに行く
+    saveOnboard(o);
+  }
+  if (o.celebrate && !o.claimed && !_onboardClaiming && _onboardClaimTries === 0) claimOnboarding();
+
+  box.style.display = 'block';
+  if (o.celebrate) {
+    box.classList.add('celebrate');
+    const pts = o.bonus_points || 1;
+    const pointMsg = o.claimed
+      ? `こまめ記録ポイントを <b>${pts}pt</b> プレゼントしました🎁`
+      : (_onboardClaiming || _onboardClaimTries < ONBOARD_CLAIM_MAX_TRIES
+          ? 'こまめ記録ポイントを付けています…'
+          : 'こまめ記録ポイントをうまく付けられませんでした。次にアプリを開いたときに、もう一度付けにいきます。');
+    box.innerHTML = `<div class="ob-cele-title">🎉 はじめの3ステップ達成！</div>
+      <div class="ob-cele-msg">写真・体重・運動の記録ができました。すばらしいスタートです！<br>${pointMsg}</div>
+      <button class="ob-close" onclick="dismissOnboarding()">閉じる</button>`;
+    return;
+  }
+  box.classList.remove('celebrate');
+  let left = '';
+  if (o.ends) {
+    const days = Math.round((new Date(o.ends + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+    if (days > 0) left = `あと${days}日`;
+  }
+  const doneCount = ONBOARD_STEPS.filter(st => steps[st.key]).length;
+  box.innerHTML = `<div class="ob-head"><span class="ob-title">🔰 はじめの3ステップ（${doneCount}/3）</span>`
+    + (left ? `<span class="ob-left">${left}</span>` : '') + `</div>`
+    + ONBOARD_STEPS.map((st, i) => {
+        const done = steps[st.key];
+        return `<button class="ob-step${done ? ' done' : ''}" ${done ? 'disabled' : `onclick="goOnboardStep('${st.sub}')"`}>
+          <span class="ob-check">${done ? '✓' : ''}</span>
+          <span class="ob-label">${'①②③'[i]} ${st.label}</span><span class="ob-go">›</span></button>`;
+      }).join('')
+    + `<div class="ob-note">3つそろうと、こまめ記録ポイントを${o.bonus_points || 1}ptプレゼント🎁</div>`;
+}
+
+function goOnboardStep(sub) {
+  switchRecordSub(sub);
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { window.scrollTo(0, 0); }
+}
+
+function dismissOnboarding() {
+  const o = getOnboard();
+  o.celebrate = false;
+  saveOnboard(o);
+  renderOnboarding();
 }
 
 // 「？」で、こまめ記録ポイントのルール説明を開く／閉じる
@@ -2306,6 +2497,7 @@ function updateDailyTotal() {
   // キャラカレンダー用：その時点の進捗スコアも保存（1日の最後の値がその日のキャラになる）
   { const cs = calcCharaScore(); if (cs.count > 0) setCharaLogEntry(currentDate(), cs.score); }
   renderMealPoints();      // こまめ記録ポイント
+  renderOnboarding();      // はじめの3ステップ
   const bar   = document.getElementById('ex-deduct-bar');
   const numEl = document.getElementById('ex-deduct-num');
   if (bar && numEl) {
@@ -4907,6 +5099,7 @@ function saveTodayWeight() {
   const note = document.getElementById('weight-current-note');
   if (note) note.textContent = `✅ ${_editingDate ? _fmtMD(date) : '今日'}の体重を ${w} kg で保存しました`;
   updateWeightNudge();   // 記録できたら進捗タブの誘導を消す
+  renderOnboarding();    // はじめの3ステップ
 }
 
 async function submitDailyWeight(weight, date) {
@@ -6702,6 +6895,7 @@ document.addEventListener('visibilitychange', () => {
     checkCoachMessages();
     checkMemberGate();
     checkBilling();
+    fetchOnboarding();
   }
 });
 

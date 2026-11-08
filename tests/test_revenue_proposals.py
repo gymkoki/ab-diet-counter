@@ -413,3 +413,30 @@ def test_report_polls_while_generating(monkeypatch):
     monkeypatch.setattr(sr.requests, "get", fake_get)
     d = sr.fetch_revenue_proposals()
     assert d["proposals"] and len(seen) == 3 and seen[0] == {"wait": 20}
+
+
+# ── 「カット中」ではなく「減量希望者」と書く（オーナー指摘 2026-11-08） ─────────────────
+def test_metrics_and_prompt_use_weight_loss_goal_wording():
+    """AIに渡す数字のキーが cut のままだと、AIが「カット中」と書いた。"""
+    src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
+    body = src[src.index("def _collect_revenue_metrics"):src.index("def _revenue_wording")]
+    assert '"cut_members_active"' not in body and '"cut_members_losing_30d"' not in body
+    assert '"weight_loss_goal_members_active"' in body
+    p = m.REVENUE_PROPOSAL_PROMPT
+    assert "減量希望者" in p and "「カット中」" in p and "使わない" in p
+
+
+def test_kattochu_is_rewritten_in_new_and_cached_proposals(client, monkeypatch):
+    item = {"title": "停滞24人の食事をチェック", "kind": "アプリ",
+            "why": "カット中37人のうち30日で痩せたのは13人。カット中の会員の停滞が多い。",
+            "effect": "コストカットで月−500円", "prompt": "カット会員の停滞者に食事のふり返りを出してください。"}
+    _stub_ai(monkeypatch, json.dumps({"proposals": [item]}, ensure_ascii=False))
+    p = client.get("/api/admin/revenue-proposals", headers=ADMIN).get_json()["proposals"][0]
+    assert p["why"] == "減量希望者37人のうち30日で痩せたのは13人。減量希望者の停滞が多い。"
+    assert p["prompt"].startswith("減量希望者の停滞者に")
+    assert p["effect"] == "コストカットで月−500円", "別の意味の「カット」には触らない"
+    # すでに「カット中」のまま保存されたその日の提案も、出すときに言い換える
+    today = datetime.datetime.now(m.JST).date().isoformat()
+    m._set_setting(f"revenue-proposals-{today}", json.dumps([item], ensure_ascii=False))
+    c = client.get("/api/admin/revenue-proposals", headers=ADMIN).get_json()["proposals"][0]
+    assert "カット中" not in c["why"] and "減量希望者37人" in c["why"]

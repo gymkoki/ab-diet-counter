@@ -288,7 +288,15 @@ def test_checkout_creates_monthly_1100_yen(on, monkeypatch):
     assert "解約" in p["custom_text"]["submit"]["message"]
 
 
+def _future_start(monkeypatch):
+    """「開始日前」を試すテスト用に、開始日を常に未来へ置く（固定の START は 2026-11-01 を過ぎると過去になる）。"""
+    future = datetime.datetime.now(m.JST).date() + datetime.timedelta(days=30)
+    monkeypatch.setattr(m, "BILLING_START", future.isoformat())
+    return future
+
+
 def test_checkout_closed_before_start_unless_preorder(on, monkeypatch):
+    _future_start(monkeypatch)
     with m.app.test_client() as c:
         r = c.post("/api/billing/checkout", json={"user_id": "u-1", "agree": True})
     assert r.status_code == 403
@@ -298,11 +306,12 @@ def test_preorder_first_charge_on_start_date(on, monkeypatch):
     fake = _FakeCheckout()
     monkeypatch.setattr(m, "_stripe_lib", lambda: fake)
     monkeypatch.setattr(m, "_billing_preorder_open", lambda today=None: True)
+    start = _future_start(monkeypatch)
     with m.app.test_client() as c:
         r = c.post("/api/billing/checkout", json={"user_id": "u-1", "agree": True})
     assert r.status_code == 200
     trial_end = fake.params["subscription_data"]["trial_end"]
-    assert datetime.datetime.fromtimestamp(trial_end, m.JST).date() == START
+    assert datetime.datetime.fromtimestamp(trial_end, m.JST).date() == start
 
 
 # ── ⑨ ページと管理API ─────────────────────────────────────
