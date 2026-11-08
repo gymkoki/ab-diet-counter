@@ -879,6 +879,18 @@ def init_db():
                 PRIMARY KEY (user_id, date)
             )
         """)
+        # こまめポイントの「日付に付かない」ボーナス（はじめの3ステップ達成など。2026-11-08）。
+        # meal_points は1人1日1行で「その日に3食記録できたか」の集計にも使うため、別の表に分ける。
+        # 同じ理由（reason）では1人1回だけ。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS meal_point_bonus (
+                user_id    TEXT    NOT NULL,
+                reason     TEXT    NOT NULL,
+                points     INTEGER NOT NULL,
+                created_at TEXT    NOT NULL,
+                PRIMARY KEY (user_id, reason)
+            )
+        """)
         # リオールジム会員限定化（2026-09-15〜）：合言葉を入れた端末を記録する。
         # 端末ごとに1行。token は端末が毎回の解析リクエストに付けてくる通行証。
         cur.execute("""
@@ -7532,6 +7544,32 @@ def _meal_points_of(uid):
         conn.close()
 
 
+def _bonus_points_by_user(cur, uid=None):
+    """{user_id: ボーナスの合計}。表が読めなくても例外にしない（ポイントの表示を止めない）。"""
+    try:
+        if uid is None:
+            cur.execute("SELECT user_id, SUM(points) FROM meal_point_bonus GROUP BY user_id")
+        else:
+            cur.execute(f"SELECT user_id, SUM(points) FROM meal_point_bonus WHERE user_id={PH} GROUP BY user_id", (uid,))
+        return {r[0]: int(r[1] or 0) for r in cur.fetchall()}
+    except Exception as e:
+        if USE_PG:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+        app.logger.warning("meal_point_bonus read skipped: %s", e)
+        return {}
+
+
+def _bonus_points_of(uid):
+    conn = _get_conn()
+    try:
+        return _bonus_points_by_user(conn.cursor(), uid).get(uid, 0)
+    finally:
+        conn.close()
+
+
 def _special_message_url():
     try:
         return (_get_setting(SPECIAL_MESSAGE_URL_KEY, "") or "").strip()
@@ -7541,10 +7579,13 @@ def _special_message_url():
 
 def _meal_points_payload(uid):
     dates = _meal_points_of(uid)
-    unlocked = len(dates) >= MEAL_POINTS_GOAL
+    bonus = _bonus_points_of(uid)
+    points = len(dates) + bonus           # 3食そろった日の数＋ボーナス（はじめの3ステップなど）
+    unlocked = points >= MEAL_POINTS_GOAL
     url = _special_message_url()
     return {
-        "points": len(dates),
+        "points": points,
+        "bonus": bonus,
         "goal": MEAL_POINTS_GOAL,
         "dates": dates[-60:],
         "unlocked": unlocked,
@@ -7572,6 +7613,11 @@ def _mame_points_stats(target_date, days=7):
                         f"SUM(CASE WHEN date>={PH} THEN 1 ELSE 0 END) "
                         f"FROM meal_points WHERE date<={PH} GROUP BY user_id", (start, target_date))
             per_user = [(r[0], int(r[1]), str(r[2])[:10], int(r[3] or 0)) for r in cur.fetchall()]
+            # ボーナス（はじめの3ステップなど）も累計に入れる。ボーナスだけの人も「持っている人」に数える
+            bonus = _bonus_points_by_user(cur)
+            seen = {r[0] for r in per_user}
+            per_user = [(u, c + bonus.get(u, 0), l, w) for u, c, l, w in per_user]
+            per_user += [(u, b, "", 0) for u, b in bonus.items() if u not in seen and b > 0]
             counts = [c for _u, c, _l, _w in per_user]
             names = {}
             if per_user:
@@ -7590,7 +7636,7 @@ def _mame_points_stats(target_date, days=7):
     for i, (uid, pts, last, week) in enumerate(ranked[:5]):
         rank = i + 1 if i == 0 or pts != top[-1]["points"] else top[-1]["rank"]
         top.append({"rank": rank, "name": (names.get(uid) or f"会員{uid[:4]}")[:12],
-                    "points": pts, "week": week, "last": last})
+                    "points": pts, "week": week, "last": last or None})
     trend = [{"date": (end - datetime.timedelta(days=i)).isoformat(),
               "earned": by_day.get((end - datetime.timedelta(days=i)).isoformat(), 0)}
              for i in range(days - 1, -1, -1)]
@@ -7647,6 +7693,125 @@ def api_meal_points():
         return jsonify({"error": "読み込めませんでした"}), 500
 
 
+# ══════════════════════════════════════════════════════════════
+#  はじめの3ステップ（オーナー指示 2026-11-08）
+#  新規登録から7日以内の会員の記録画面の上部にチェックリストを出す：
+#    ①食事を写真で1枚記録 ②体重を記録 ③運動を1件記録
+#  3つそろったらお祝いと、こまめポイント＋1（meal_point_bonus。1人1回だけ）。
+#  7日たつか、3つそろって受け取ったら出さない。
+#  「新規登録」は billing と同じ _first_activity_date()（記録・解析のいちばん古い日。無ければ今日）。
+#  ポイントは端末の申告だけでは付けない：写真（action_log の photo）・体重（daily_weight）・
+#  運動（daily_exercise）がサーバーに届いているかを確かめてから付ける。
+# ══════════════════════════════════════════════════════════════
+ONBOARDING_DAYS = 7
+ONBOARDING_BONUS_POINTS = 1
+ONBOARDING_BONUS_REASON = "onboarding-3steps"
+ONBOARDING_STEPS = ("photo", "weight", "exercise")
+
+
+def _onboarding_steps(uid):
+    """サーバーに届いている記録から、3つのステップが済んでいるかを返す。"""
+    out = {k: False for k in ONBOARDING_STEPS}
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT 1 FROM action_log WHERE user_id={PH} AND action='photo' LIMIT 1", (uid,))
+        out["photo"] = cur.fetchone() is not None
+        cur.execute(f"SELECT 1 FROM daily_weight WHERE user_id={PH} LIMIT 1", (uid,))
+        out["weight"] = cur.fetchone() is not None
+        # 運動：消費Bがある日か、内容（種類・時間など）が残っている日。削除して空になった日は数えない
+        cur.execute(f"SELECT ex_b_count, detail FROM daily_exercise WHERE user_id={PH}", (uid,))
+        for ex_b, detail in cur.fetchall():
+            items = []
+            try:
+                items = json.loads(detail) if detail else []
+            except (TypeError, ValueError):
+                items = []
+            if (ex_b or 0) > 0 or (isinstance(items, list) and len(items) > 0):
+                out["exercise"] = True
+                break
+    finally:
+        conn.close()
+    return out
+
+
+def _onboarding_claimed(uid):
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT 1 FROM meal_point_bonus WHERE user_id={PH} AND reason={PH}",
+                    (uid, ONBOARDING_BONUS_REASON))
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _onboarding_state(uid, today=None):
+    today = today or datetime.datetime.now(JST).date()
+    first = _first_activity_date(uid) or today
+    ends = first + datetime.timedelta(days=ONBOARDING_DAYS)
+    claimed = _onboarding_claimed(uid)
+    steps = _onboarding_steps(uid)
+    return {
+        "eligible": today < ends,             # 登録から7日以内
+        "show": today < ends and not claimed,  # 画面に出すか
+        "start": first.isoformat(),
+        "ends": ends.isoformat(),              # この日から出さない
+        "days_left": max(0, (ends - today).days),
+        "steps": steps,
+        "done": all(steps.values()),
+        "claimed": claimed,
+        "bonus_points": ONBOARDING_BONUS_POINTS,
+    }
+
+
+@app.route("/api/onboarding", methods=["GET"])
+def api_onboarding():
+    """はじめの3ステップの状態。読めないときは出さない（show=False）。"""
+    uid = (request.args.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    try:
+        return jsonify(_onboarding_state(uid))
+    except Exception as e:
+        app.logger.warning("onboarding state failed: %s", e)
+        return jsonify({"show": False, "eligible": False, "error": "読み込めませんでした"}), 500
+
+
+@app.route("/api/onboarding/claim", methods=["POST"])
+def api_onboarding_claim():
+    """3つそろったら、こまめポイントのボーナスを付ける（1人1回）。
+    200＝付けた（または付け済み）／409＝まだそろっていない・期間が過ぎた。"""
+    body = request.get_json(silent=True) or {}
+    uid = str(body.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    try:
+        st = _onboarding_state(uid)
+        if not st["claimed"]:
+            if not st["eligible"]:
+                return jsonify({"claimed": False, "error": "期間が終わっています", **st}), 409
+            if not st["done"]:
+                return jsonify({"claimed": False, "error": "まだそろっていません", **st}), 409
+            with _db_lock:
+                conn = _get_conn()
+                try:
+                    cur = conn.cursor()
+                    cur.execute(
+                        f"INSERT INTO meal_point_bonus (user_id, reason, points, created_at) "
+                        f"VALUES ({PH},{PH},{PH},{PH}) ON CONFLICT DO NOTHING",
+                        (uid, ONBOARDING_BONUS_REASON, ONBOARDING_BONUS_POINTS,
+                         datetime.datetime.now(JST).isoformat()))
+                    conn.commit()
+                finally:
+                    conn.close()
+            st = _onboarding_state(uid)
+        return jsonify({"claimed": True, **st, "meal_points": _meal_points_payload(uid)})
+    except Exception as e:
+        app.logger.warning("onboarding claim failed: %s", e)
+        return jsonify({"claimed": False, "error": "保存できませんでした"}), 500
+
+
 @app.route("/api/admin/special-message", methods=["GET", "POST"])
 @_admin_required
 def admin_special_message():
@@ -7660,7 +7825,10 @@ def admin_special_message():
     try:
         cur = conn.cursor()
         cur.execute("SELECT user_id, COUNT(*) FROM meal_points GROUP BY user_id")
-        counts = [r[1] for r in cur.fetchall()]
+        per = {r[0]: int(r[1]) for r in cur.fetchall()}
+        for u, b in _bonus_points_by_user(cur).items():
+            per[u] = per.get(u, 0) + b
+        counts = [c for c in per.values() if c > 0]
     finally:
         conn.close()
     return jsonify({
