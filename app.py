@@ -4508,6 +4508,8 @@ REVENUE_PROPOSAL_PROMPT = """あなたはABダイエットアプリ（リオー�
   掲示物づくりなど Claude Code に頼めることを書く。
 - 良い提案が無い日は1件でよい。数合わせで弱い提案を足さない。
 - 直近に出した提案（下に見出しを渡す）と同じ内容は出さない。
+- 会員の目的は「減量希望者」「体重維持の人」「増量希望者」と書く。「カット中」「cut」「バルク」などの内部の言葉は使わない
+  （オーナーに通じない）。weight_loss_goal_members_active は「減量希望者（直近14日に記録がある人）」の人数。
 
 【禁止】
 - 離脱者・休眠会員の呼び戻し（復帰キャンペーン、再開うながし通知、安否確認）。取り戻すのが難しく優先度が低いと判断済み。
@@ -4592,8 +4594,9 @@ def _collect_revenue_metrics():
     try:
         members = _active_members(_collect_cut_member_stats())
         changes = [x["change_30d_kg"] for x in members if isinstance(x.get("change_30d_kg"), (int, float))]
-        m["cut_members_active"] = len(members)
-        m["cut_members_losing_30d"] = sum(1 for c in changes if c < 0)
+        # キー名は日本語の呼び名に合わせる（cut のままだと AI が「カット中」と書いた。オーナー指摘 2026-11-08）
+        m["weight_loss_goal_members_active"] = len(members)
+        m["weight_loss_goal_members_losing_30d"] = sum(1 for c in changes if c < 0)
     except Exception as e:
         app.logger.warning("revenue metric cut members skipped: %s", e)
     try:
@@ -4624,6 +4627,28 @@ def _recent_revenue_titles(today, days=REVENUE_PROPOSAL_HISTORY_DAYS):
     return titles
 
 
+# AIが内部の言葉（goal="cut"）のまま「カット中」と書いても、オーナーが読む文面では「減量希望者」にそろえる
+# （オーナー指摘 2026-11-08：「カット中って何？減量希望者の事であれば、減量希望者と書いて」）。
+# 「コストカット」など別の意味の「カット」には触らないよう、会員を指す言い方だけを置き換える。
+_REVENUE_WORDING = (("カット中の会員", "減量希望者"), ("カット中の人", "減量希望者"), ("カット中", "減量希望者"),
+                    ("カット会員", "減量希望者"), ("減量希望者の人", "減量希望者"))
+
+
+def _revenue_wording(text):
+    text = str(text or "")
+    for a, b in _REVENUE_WORDING:
+        text = text.replace(a, b)
+    return text
+
+
+def _revenue_clean_items(items):
+    """保存済みの提案（その日のキャッシュ）にも同じ言い換えを当てる。形が違うものはそのまま返す。"""
+    if not isinstance(items, list):
+        return items
+    return [{k: (_revenue_wording(v) if isinstance(v, str) else v) for k, v in it.items()}
+            if isinstance(it, dict) else it for it in items]
+
+
 def _parse_revenue_proposals(raw):
     match = re.search(r"\{.*\}", raw or "", re.S)
     if not match:
@@ -4638,11 +4663,11 @@ def _parse_revenue_proposals(raw):
             continue
         kind = str(item.get("kind") or "").strip()
         proposals.append({
-            "title":  title[:40],
-            "why":    str(item.get("why") or "").strip()[:240],
-            "effect": str(item.get("effect") or "").strip()[:80],
+            "title":  _revenue_wording(title)[:40],
+            "why":    _revenue_wording(str(item.get("why") or "").strip())[:240],
+            "effect": _revenue_wording(str(item.get("effect") or "").strip())[:80],
             "kind":   kind if kind in ("アプリ", "運営") else "アプリ",
-            "prompt": prompt[:500],
+            "prompt": _revenue_wording(prompt)[:500],
         })
     return proposals[:3]
 
@@ -4754,7 +4779,7 @@ def _revenue_today():
 def _revenue_cached(day):
     try:
         raw = _get_setting(f"revenue-proposals-{day}", "")
-        return json.loads(raw) if raw else None
+        return _revenue_clean_items(json.loads(raw)) if raw else None
     except Exception:
         return None
 
