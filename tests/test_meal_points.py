@@ -26,6 +26,7 @@ def client():
     conn = m._get_conn()
     cur = conn.cursor()
     cur.execute("DELETE FROM meal_points")
+    cur.execute("DELETE FROM meal_point_bonus")   # はじめの3ステップのボーナスも人数・合計に入るため
     cur.execute(f"DELETE FROM settings WHERE key={m.PH}", (m.SPECIAL_MESSAGE_URL_KEY,))
     conn.commit()
     conn.close()
