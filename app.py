@@ -260,6 +260,49 @@ def _fill_sushi_rice(foods):
             f["sushi_rice_g"] = round(float(mm.group(1)) * SUSHI_RICE_PER_PIECE_G)
 
 
+# ── 果物ジュースの1日累積ルール（オーナー指示 2026-11-08：「果物ジュースは寿司などの特別ルールを適用して、
+#    1本ではなく、1日当たりの総カロリーに合わせてBカウントを追加」） ──
+# 果汁100%の200mlは1本ではB0でも、何本も飲めば糖質はご飯並みになる。各ジュースの項目に
+# 飲んだ分のkcal（juice_kcal）を持たせ、1日の合計で STEP2 を当てる（_day_juice_bonus）。
+# 野菜だけのジュース・スムージー（トマトジュース・青汁など）はこれまでどおりA食材で対象外。
+# AIが juice_kcal を入れ忘れても、名前が果物のジュースなら kcal_per_serving で補う。
+_JUICE_DRINK_RE = re.compile(r"ジュース|スムージー|果汁|ネクター")
+_JUICE_FRUIT_RE = re.compile(
+    r"果汁|フルーツ|ミックスジュース|オレンジ|みかん|ミカン|蜜柑|りんご|リンゴ|林檎|アップル|ぶどう|ブドウ|葡萄|"
+    r"グレープ|パイン|マンゴー|ピーチ|もも|桃|いちご|イチゴ|苺|ストロベリー|ベリー|キウイ|バナナ|メロン|"
+    r"すいか|スイカ|ライチ|ゆず|柚子|グァバ|グアバ|アセロラ|ざくろ|ザクロ|プルーン")
+# 果物味のお菓子・お酒・調味料はジュースではない
+_JUICE_NOT_RE = re.compile(r"ゼリー|グミ|アイス|シャーベット|キャンディ|飴|ソース|ドレッシング|"
+                           r"チューハイ|酎ハイ|サワー|カクテル|ワイン|梅酒")
+
+
+def _is_fruit_juice_name(text):
+    import unicodedata
+    t = unicodedata.normalize("NFKC", str(text or ""))
+    if not _JUICE_DRINK_RE.search(t) or _JUICE_NOT_RE.search(t):
+        return False
+    if "野菜" in t and not _JUICE_FRUIT_RE.search(t.replace("ミックスジュース", "")):
+        return False      # 「野菜ミックスジュース」のような野菜だけのジュース
+    return bool(_JUICE_FRUIT_RE.search(t))
+
+
+def _fill_juice_kcal(foods):
+    """果物ジュースの項目に juice_kcal（飲んだ分のkcal）を持たせる。
+    AIの値があればそれを使い、無ければ名前が果物のジュースのとき kcal_per_serving を使う。"""
+    for f in foods:
+        if not isinstance(f, dict):
+            continue
+        v = f.get("juice_kcal")
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            f["juice_kcal"] = max(0, round(v))
+            continue
+        kcal = f.get("kcal_per_serving")
+        if not isinstance(kcal, (int, float)) or isinstance(kcal, bool) or kcal <= 0:
+            continue
+        if _is_fruit_juice_name(f"{f.get('name') or ''} {f.get('amount') or ''}"):
+            f["juice_kcal"] = round(kcal)
+
+
 # ── バナナの本数でBを決める（会員の声 2026-10-24：「バナナ4分の1が、B0の時と0.5の時がある。統一して」） ──
 # AIの判定がぶれても、バナナだけの項目は本数の早見表で付け直す：
 #   1本未満（1/4本・半分）→ B0 ／ 1〜1.5本 → B0.5 ／ 2本以上 → B1（以降はkcalのSTEP2。ただし最低B1）
@@ -343,6 +386,7 @@ def recompute_totals(result):
     if isinstance(foods, list):
         _sanitize_veg(foods)
         _fill_sushi_rice(foods)
+        _fill_juice_kcal(foods)
         _sanitize_banana(foods)
         # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
         b_sum = sum(_num(f.get("b_count")) for f in foods)
@@ -352,6 +396,7 @@ def recompute_totals(result):
         result["total_fruit_g"] = round(sum(_num(f.get("fruit_g")) for f in foods))
         result["total_sweet_kcal"] = round(sum(_num(f.get("sweet_kcal")) for f in foods))
         result["total_sushi_rice_g"] = round(sum(_num(f.get("sushi_rice_g")) for f in foods))
+        result["total_juice_kcal"] = round(sum(_num(f.get("juice_kcal")) for f in foods))
     return result
 
 
@@ -2261,6 +2306,19 @@ total_veg_g は 0〜10g 程度が正しい。
   1項目ごとの判定（b_count）はこれまで通り実kcalで行い、変更しない（二重計上はアプリ側で差し引く）。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+■ 果物ジュース(juice_kcal)の推定ルール【1日累積判定に使う】
+━━━━━━━━━━━━━━━━━━━━━━━
+果汁100%ジュースは1本（200ml≒90kcal）ではB0でも、何本も飲めば糖質はご飯並みになる。
+そのため、果物のジュースの各項目には、実際に飲んだ分の推定kcalを juice_kcal に整数で入れる（それ以外は必ず0）。
+- 対象：果汁100%ジュース・果汁入り飲料（オレンジ・りんご・ぶどう・パイン等）・ミックスジュース・
+  果物を使ったスムージー・野菜と果物のミックスジュース（果汁が入っているもの）。値は kcal_per_serving と同じ実kcal。
+- 対象外（juice_kcal=0）：野菜だけのジュース・スムージー（トマトジュース・野菜100%・青汁など。これまでどおりA食材）、
+  果物そのもの、コーラ・サイダー・スポーツドリンク等の果汁を使わない甘い飲み物、果物味のお酒・お菓子。
+- 果物ジュースも sweet_kcal はこれまでどおり入れる（お菓子・スイーツ・ジュースの1日累積ルールとの調整はアプリ側で行う）。
+- ※これは「1本ずつはB0の果物ジュースでも、その日の果物ジュースの合計kcalでSTEP2を当てはめ、既に付けたジュースのBとの差を足す」
+  特別ルールの集計に使う（集計と加算はアプリ側で行う）。1項目ごとの判定（b_count）はこれまで通り実kcalで行い、変更しない。
+
+━━━━━━━━━━━━━━━━━━━━━━━
 ■【最重要】量が不確かなときは「厳しめ（多め）」に見積もる — 過小評価の禁止
 ━━━━━━━━━━━━━━━━━━━━━━━
 このアプリはユーザーに追加質問をせず、この1回の解析だけでBカウントを確定する。
@@ -2320,6 +2378,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
       "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
+      "juice_kcal": この食材が果物のジュース（果汁100%・果汁入り飲料・ミックスジュース・果物のスムージー）なら、実際に飲んだ分の推定kcal（整数。kcal_per_servingと同じ値）。野菜だけのジュース・それ以外は必ず0,
       "amount": "写真での量（例：たっぷり、1人前、少量など）",
       "b_count": 0,
       "reason": "A食材のため（1人前約○kcal、120kcal未満）Bカウント0"
@@ -2333,6 +2392,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
       "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
+      "juice_kcal": この食材が果物のジュース（果汁100%・果汁入り飲料・ミックスジュース・果物のスムージー）なら、実際に飲んだ分の推定kcal（整数。kcal_per_servingと同じ値）。野菜だけのジュース・それ以外は必ず0,
       "amount": "写真での量と推定kcal（例：1人前・約250kcal）",
       "b_count": 1,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが200kcal超のためB1"
@@ -2346,6 +2406,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
       "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
+      "juice_kcal": この食材が果物のジュース（果汁100%・果汁入り飲料・ミックスジュース・果物のスムージー）なら、実際に飲んだ分の推定kcal（整数。kcal_per_servingと同じ値）。野菜だけのジュース・それ以外は必ず0,
       "amount": "写真での量と推定kcal（例：約150kcal相当）",
       "b_count": 0.5,
       "reason": "B食材（1人前約○kcal）、実際の摂取量約○kcalが120〜200kcalのためB0.5"
@@ -2359,6 +2420,7 @@ total_veg_g は 0〜10g 程度が正しい。
       "fruit_g": この食材のうち果物の重量（g・整数。実際の摂取量ぶん。果物のみ。果物以外は0）,
       "sweet_kcal": この食材がお菓子・スイーツ・スナック菓子（チョコ・クッキー・ビスケット・ケーキ・ドーナツ・アイス・スナック菓子・ポテチ・せんべい・飴・グミ・和菓子・菓子パン等）またはジュース（果汁ジュース・炭酸飲料・スポーツドリンク・加糖の缶コーヒー等の甘い飲み物）の場合、実際に食べた／飲んだ分の推定kcal（整数）。該当しなければ必ず0,
       "sushi_rice_g": この食材が寿司（握り・軍艦・巻き寿司・手巻き・いなり・ちらし等）なら、含まれるシャリ（酢飯）の推定重量（g・整数。握り・軍艦1貫≒18g×貫数）。寿司以外は必ず0,
+      "juice_kcal": この食材が果物のジュース（果汁100%・果汁入り飲料・ミックスジュース・果物のスムージー）なら、実際に飲んだ分の推定kcal（整数。kcal_per_servingと同じ値）。野菜だけのジュース・それ以外は必ず0,
       "amount": "写真での量と推定kcal（例：少量・約70kcal）",
       "b_count": 0,
       "reason": "B食材だが実際の摂取量約○kcalが120kcal未満のためノーカウント"
@@ -8865,11 +8927,14 @@ SWEET_DAY_HALF_KCAL = 120
 SWEET_DAY_FULL_KCAL = 200
 
 
-def _day_sweet_b0_kcal(foods_iter):
-    """その日の「B0のお菓子・スイーツ・ジュース」の実kcal合計。"""
+def _day_sweet_b0_kcal(foods_iter, exclude_juice=False):
+    """その日の「B0のお菓子・スイーツ・ジュース」の実kcal合計。
+    exclude_juice=True のときは果物ジュース（juice_kcal あり）を除く（果物ジュースの1日ルールで数える分）。"""
     total = 0.0
     for f in foods_iter:
         if not isinstance(f, dict):
+            continue
+        if exclude_juice and _num(f.get("juice_kcal")) > 0:
             continue
         sk = f.get("sweet_kcal")
         bc = f.get("b_count")
@@ -8919,6 +8984,44 @@ def _day_sushi_bonus(foods_iter):
         return 0.0, 0.0
     bonus = _b_from_kcal(rice_g * SUSHI_RICE_KCAL_PER_G) - already
     return rice_g, (round(bonus * 2) / 2 if bonus > 0 else 0.0)
+
+
+def _day_juice_bonus(foods_iter):
+    """果物ジュースの1日累積ルール（オーナー指示 2026-11-08）。寿司のシャリと同じ考え方で、
+    その日の果物ジュースの合計kcalに STEP2 を当て、ジュースの項目に既に付いているBとの差を足す。
+    戻り値は (ジュース合計kcal, 追加B)。アプリ側（index.html の dayJuiceBonus）と同じ計算にすること。"""
+    kcal = 0.0
+    already = 0.0
+    for f in foods_iter:
+        if not isinstance(f, dict):
+            continue
+        jk = _num(f.get("juice_kcal"))
+        if jk > 0:
+            kcal += jk
+            already += _num(f.get("b_count"))
+    if kcal <= 0:
+        return 0.0, 0.0
+    bonus = _b_from_kcal(kcal) - already
+    return kcal, (round(bonus * 2) / 2 if bonus > 0 else 0.0)
+
+
+def _day_sweet_and_juice(foods):
+    """お菓子・スイーツ・ジュースの1日ルールと、果物ジュースの1日ルールを合わせた追加B。
+    ①これまでのお菓子ルール（果物ジュースも含めて合計。最大+1）と
+    ②果物ジュースは1日の合計kcalでSTEP2＋残りのお菓子だけでお菓子ルール
+    の大きいほうを採る（ジュースを飲み過ぎた日は②で多く数え、少量のジュース＋お菓子の日は①のまま。
+    果物ジュースのルールを入れたことで、以前より少なく数える日が出ないようにする）。
+    戻り値は dict（sweet_kcal / sweet_bonus / juice_kcal / juice_bonus）。
+    アプリ側（index.html の daySweetAndJuice）と同じ計算にすること。"""
+    foods = list(foods)
+    all_kcal = _day_sweet_b0_kcal(foods)
+    s_all = _day_sweet_bonus_b(all_kcal)
+    juice_kcal, j = _day_juice_bonus(foods)
+    nj_kcal = _day_sweet_b0_kcal(foods, exclude_juice=True)
+    s_nj = _day_sweet_bonus_b(nj_kcal)
+    if j > 0 and j + s_nj >= s_all:
+        return {"sweet_kcal": nj_kcal, "sweet_bonus": s_nj, "juice_kcal": juice_kcal, "juice_bonus": j}
+    return {"sweet_kcal": all_kcal, "sweet_bonus": s_all, "juice_kcal": juice_kcal, "juice_bonus": 0.0}
 
 
 # ── 1回の食事に写っている「皿（小鉢）の数」を数える（オーナーの仮説の検証用 2026-10-03） ──
@@ -9053,10 +9156,10 @@ def _summarize_day_meals(payload_str):
             small_b_kcal += sbk
     if not count:
         return None
-    # アプリの「今日のB合計」と同じく、お菓子・スイーツ・ジュースの累積分を足す
-    sweet_kcal = _day_sweet_b0_kcal(day_foods)
-    sweet_bonus = _day_sweet_bonus_b(sweet_kcal)
-    b_total += sweet_bonus
+    # アプリの「今日のB合計」と同じく、お菓子・スイーツ・ジュース／果物ジュースの累積分を足す
+    sj = _day_sweet_and_juice(day_foods)
+    sweet_kcal, sweet_bonus = sj["sweet_kcal"], sj["sweet_bonus"]
+    b_total += sweet_bonus + sj["juice_bonus"]
     # 寿司のシャリの1日累積ルール（オーナー指示 2026-10-13）
     sushi_rice_g, sushi_bonus = _day_sushi_bonus(day_foods)
     b_total += sushi_bonus
@@ -9068,7 +9171,8 @@ def _summarize_day_meals(payload_str):
             "small_b_count": small_b, "small_b_kcal": round(small_b_kcal, 1),
             # お菓子・スイーツ・ジュースの1日累積ルール（デイリーレポートで適用人数を出す）
             "sweet_kcal": round(sweet_kcal, 1), "sweet_bonus": sweet_bonus,
-            "sushi_rice_g": round(sushi_rice_g, 1), "sushi_bonus": sushi_bonus}
+            "sushi_rice_g": round(sushi_rice_g, 1), "sushi_bonus": sushi_bonus,
+            "juice_kcal": round(sj["juice_kcal"], 1), "juice_bonus": sj["juice_bonus"]}
 
 
 # 記録件数に数える操作（action_log）。写真・文章・コピーご飯・Bだけ追加（廃止前の分）。
