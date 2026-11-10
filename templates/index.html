@@ -178,6 +178,14 @@
     .recalc-form label { font-size:17px; font-weight:700; color:#44449B; display:block; margin-bottom:6px; }
     .recalc-textarea { width:100%; min-height:80px; padding:11px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; resize:vertical; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
     .recalc-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
+    /* 「計算し直す」フォーム上段：食材＋B回数をAIを介さずそのまま追加（オーナー依頼） */
+    .recalc-add-row { display:flex; gap:6px; }
+    .recalc-food-input { flex:1; min-width:0; padding:10px 12px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; outline:none; background:white; transition:border-color 0.15s, box-shadow 0.15s; }
+    .recalc-food-input:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
+    .recalc-bcnt-select { padding:10px 8px; border:1px solid var(--indigo-line); border-radius:var(--radius-sm); font-size:18px; font-family:inherit; background:white; outline:none; }
+    .btn-recalc.btn-addb { background:linear-gradient(135deg,#10B981,#059669); }
+    .recalc-divider { display:flex; align-items:center; gap:8px; margin:14px 0 8px; color:#44449B; font-size:13px; font-weight:700; }
+    .recalc-divider::before, .recalc-divider::after { content:''; flex:1; height:1px; background:var(--indigo-line); }
     .btn-recalc { width:100%; margin-top:10px; padding:13px; border-radius:var(--radius-md); border:none; background:var(--indigo); color:white; font-size:18px; font-weight:700; cursor:pointer; transition:opacity 0.2s, transform 0.1s; }
     .btn-recalc:active { transform:scale(0.985); }
     .btn-recalc:disabled { opacity:0.45; cursor:not-allowed; }
@@ -4540,9 +4548,23 @@ function renderResults(mealId) {
         ${(item.previewSrc || (item.text && item.text.trim())) ? `
         <button class="recalc-btn" onclick="toggleRecalcForm('${mealId}',${item.id})">✏️ 計算し直す</button>
         <div class="recalc-form" id="recalc-form-${mealId}-${item.id}">
-          <label>気になる点・訂正を入力（より高精度なAIで計算し直します）</label>
-          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：シュークリームは1個ではなく2個です"></textarea>
-          <button class="btn-recalc" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
+          <label>食べた食材とBカウントを入力（そのまま追加されます）</label>
+          <div class="recalc-add-row">
+            <input type="text" class="recalc-food-input" id="recalc-food-${mealId}-${item.id}" placeholder="例：白米一杯">
+            <select class="recalc-bcnt-select" id="recalc-bcnt-${mealId}-${item.id}">
+              <option value="0.5">B0.5回</option>
+              <option value="1" selected>B1回</option>
+              <option value="1.5">B1.5回</option>
+              <option value="2">B2回</option>
+              <option value="2.5">B2.5回</option>
+              <option value="3">B3回</option>
+            </select>
+          </div>
+          <button class="btn-recalc btn-addb" onclick="addManualFoodB('${mealId}',${item.id})">➕ Bカウントを追加</button>
+          <div class="recalc-divider">または文章で訂正</div>
+          <label>気になる点・訂正を入力</label>
+          <textarea class="recalc-textarea" id="recalc-text-${mealId}-${item.id}" placeholder="例：白米を一杯食べているので、B1回追加"></textarea>
+          <button class="btn-recalc btn-recalc-text" onclick="reanalyzeItem('${mealId}',${item.id})">🔄 再計算する</button>
         </div>` : ''}
         <button class="recalc-btn" id="copysave-${mealId}-${item.id}" onclick="saveItemAsCopyMeal('${mealId}',${item.id})">🍚 コピーご飯に登録</button>
       </div>
@@ -4941,7 +4963,28 @@ function toggleRecalcForm(mealId, itemId) {
   const form = document.getElementById(`recalc-form-${mealId}-${itemId}`);
   if (!form) return;
   form.classList.toggle('open');
-  if (form.classList.contains('open')) document.getElementById(`recalc-text-${mealId}-${itemId}`)?.focus();
+  if (form.classList.contains('open')) document.getElementById(`recalc-food-${mealId}-${itemId}`)?.focus();
+}
+
+// 「食べた食材＋B何回分」をAIを介さずそのまま食材リストに追加してBカウントを加算する
+function addManualFoodB(mealId, itemId) {
+  const item = state[mealId].items.find(i => i.id === itemId);
+  // 文章訂正の再計算中は追加しない：応答で item.result が丸ごと置き換わり、追加した行が消えるため
+  if (!item || !item.result || item.loading) return;
+  const nameEl = document.getElementById(`recalc-food-${mealId}-${itemId}`);
+  const cntEl  = document.getElementById(`recalc-bcnt-${mealId}-${itemId}`);
+  const name = nameEl?.value?.trim();
+  if (!name) { nameEl?.focus(); return; }
+  const bc = parseFloat(cntEl?.value) || 0;
+  // kcal は数値で持つ（サーバーの1日集計は数値しか足さない）。B×300 は bFromKcal で選んだBに戻る目安値。
+  // reason の「訂正反映」は、バナナ早見表・サーバーの安全網に会員の指定Bを書き換えさせないための印。
+  item.result.foods = item.result.foods || [];
+  item.result.foods.push({ name, category:'B', kcal_per_serving:Math.round(bc * 300), amount:'', b_count:bc,
+                           reason:`訂正反映：ユーザーの申告により追加（B${fmtCount(bc)}）` });
+  recalcResultTotals(item.result);
+  renderResults(mealId);
+  updateDailyTotal();
+  saveState();
 }
 
 function dataURLtoBlob(dataUrl) {
@@ -4958,7 +5001,8 @@ async function reanalyzeItem(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
   if (!item) return;
   const textarea = document.getElementById(`recalc-text-${mealId}-${itemId}`);
-  const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
+  const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc-text`);
+  const addBtn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-addb`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
   // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残し、体重を保存したらそのまま再計算する）
@@ -4971,6 +5015,7 @@ async function reanalyzeItem(mealId, itemId) {
   item.loadingStartedAt = Date.now();
   renderStrip(mealId);
   if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0%'; }
+  if (addBtn) addBtn.disabled = true;
   const timer = setInterval(() => {
     _advanceProgress(item);
     if (btn) btn.textContent = `🔄 再計算中… ${fmtPct(item.loadingPct)}%`;
@@ -5005,6 +5050,7 @@ async function reanalyzeItem(mealId, itemId) {
       renderStrip(mealId);
       if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
       if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
+      if (addBtn) addBtn.disabled = false;
     } else {
       item.result = data;
       renderStrip(mealId);
@@ -5017,6 +5063,7 @@ async function reanalyzeItem(mealId, itemId) {
     renderStrip(mealId);
     showError(mealId, _analyzeFailureMessage(e, 'reanalyze'));
     if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
+    if (addBtn) addBtn.disabled = false;
   }
 }
 
