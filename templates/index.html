@@ -1310,7 +1310,14 @@
       <input class="setting-input" type="password" id="acc-reg-pw" autocomplete="new-password" maxlength="128">
       <label class="setting-label" for="acc-reg-pw2">パスワード（確認のためもう一度）</label>
       <input class="setting-input" type="password" id="acc-reg-pw2" autocomplete="new-password" maxlength="128">
-      <button class="btn-save" id="acc-reg-btn" style="margin-top:12px" onclick="registerAccount()">登録する</button>
+      <button class="btn-save" id="acc-reg-btn" style="margin-top:12px" onclick="registerAccount()">確認コードを送って登録する</button>
+      <div id="acc-reg-code-box" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg)">
+        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">入力したメールアドレスに6桁の確認コードを送りました。届いたコードを入力すると登録が完了します（迷惑メールのフォルダもご確認ください）。</p>
+        <label class="setting-label" for="acc-reg-code">確認コード（6桁）</label>
+        <input class="setting-input" type="text" id="acc-reg-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
+               onkeydown="if(event.key==='Enter')confirmRegistration()">
+        <button class="btn-save" style="margin-top:12px" onclick="confirmRegistration()">登録を完了する</button>
+      </div>
     </div>
     <div style="border-top:1px solid var(--border);margin:18px 0 10px"></div>
     <details id="account-login-box">
@@ -1992,17 +1999,52 @@ async function registerAccount() {
       body: JSON.stringify({ user_id: USER_ID, email, password: pw }),
     });
     const d = await r.json().catch(() => ({}));
-    if (_handledMemberGate(d)) { _setAccountStatus('', false); return; }
+    if (d.unlock_required && _handledMemberGate(d)) { _setAccountStatus('', false); return; }
     if (!r.ok) throw new Error(d.error || '登録に失敗しました');
-    document.getElementById('acc-reg-pw').value = '';
-    document.getElementById('acc-reg-pw2').value = '';
-    _setAccountStatus('✅ 登録しました。機種変更しても、このメールアドレスとパスワードで記録を引き継げます。', false);
-    loadAccountStatus();
+    // メールに届く確認コードで登録を仕上げる（本人のメールであることを確かめる）
+    const box = document.getElementById('acc-reg-code-box');
+    if (box) box.style.display = '';
+    _setAccountStatus(d.message || '確認コードをメールで送りました。', false);
+    const inp = document.getElementById('acc-reg-code');
+    if (inp) inp.focus();
   } catch (e) {
     _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+async function confirmRegistration() {
+  const code = (document.getElementById('acc-reg-code').value || '').trim();
+  if (!/^\d{6}$/.test(code)) { _setAccountStatus('メールに届いた6桁の確認コードを入力してください', true); return; }
+  _setAccountStatus('確認中…', false);
+  try {
+    const r = await fetch('/api/account/register/confirm', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, memberHeaders()),
+      body: JSON.stringify({ user_id: USER_ID, code }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || '登録できませんでした');
+    if (d.token) setMemberToken(d.token);
+    ['acc-reg-pw', 'acc-reg-pw2', 'acc-reg-code'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const box = document.getElementById('acc-reg-code-box');
+    if (box) box.style.display = 'none';
+    _setAccountStatus('✅ 登録しました。機種変更しても、このメールアドレスとパスワードで記録を引き継げます。', false);
+    loadAccountStatus();
+  } catch (e) {
+    _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+  }
+}
+
+// 有料化後、アカウントが必要と言われたとき：設定のアカウントの欄へ案内する
+function openAccountRequired(msg) {
+  closeMemberGate();
+  switchView('settings');
+  setTimeout(() => {
+    const card = document.getElementById('account-card');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    _setAccountStatus(msg || 'ご利用には、メールアドレスとパスワードのアカウント登録（またはログイン）が必要です。', true);
+  }, 300);
 }
 
 // ログイン・パスワード再設定で受け取った記録へ、この端末を切り替える。
@@ -3411,7 +3453,9 @@ function _memberGateError(msg) {
 
 // サーバーが「会員限定」を理由に断ったとき（403 + unlock_required）。出したら true。
 function _handledMemberGate(data) {
-  if (!data || !data.unlock_required) return false;
+  if (!data) return false;
+  if (data.account_required) { openAccountRequired(data.error); return true; }   // 有料化後はアカウントで守る
+  if (!data.unlock_required) return false;
   openMemberGate();
   return true;
 }
@@ -3452,7 +3496,8 @@ async function checkMemberGate() {
     const r = await fetch(`/api/member-status?${q}`);
     if (!r.ok) return;
     const d = await r.json();
-    if (d.gate_active && !d.unlocked) openMemberGate();
+    if (d.account_required) openAccountRequired();
+    else if (d.gate_active && !d.unlocked) openMemberGate();
   } catch (e) {}
 }
 
