@@ -267,3 +267,14 @@ def test_resume_resets_deadline_and_counts_text_record():
     assert "item.pickedAt = Date.now();" in _fn(html, "resumeWeightWaitingItems"), \
         "体重を入れていた時間が解析の持ち時間から引かれる"
     assert "logAction('text')" in _fn(html, "resumeTextItem"), "再開した文章の記録が集計に入らない"
+
+
+def test_no_double_submit_while_waiting_for_weight_save():
+    """体重の送信を待つ前に、入力欄を空にする／ボタンを止める（待っている間の2回目の送信で二重に記録しない）。"""
+    html = _html()
+    body = _fn(html, "submitTextEntry")
+    assert body.index("ta.value = '';") < body.index("await _awaitWeightSave();"), \
+        "体重の送信を待っている間に、同じ文章をもう一度送れてしまう"
+    re_ = _fn(html, "reanalyzeItem")
+    assert re_.index("btn.disabled = true") < re_.index("await _awaitWeightSave();")
+    assert "if (item.loading) return;" in re_

@@ -4344,13 +4344,14 @@ async function submitTextEntry(mealId) {
   if (!text) { ta && ta.focus(); return; }
   // 体重が1週間以上未記録なら、入力内容は消さずに案内を出し、体重を保存したらそのまま送る
   if (!(await ensureWeightForAnalysis({ after: () => submitTextEntry(mealId) }))) return;
-  await _awaitWeightSave();
+  // ensureWeightForAnalysis の待ちのあいだに同じ文章がもう一度送られていたら、二重に記録しない
+  if (!ta.value || ta.value.trim() !== text) return;
 
   const id = nextItemId();
   const item = { id, file:null, previewSrc:null, result:null, loading:true, error:null, isText:true, text };
   state[mealId].items.push(item);
 
-  // フォームを閉じる
+  // フォームを閉じる（体重の送信を待つより先に空にする：待っている間に送信をもう一度押しても二重にならない）
   ta.value = '';
   document.getElementById(`textform-${mealId}`).style.display = 'none';
 
@@ -4358,6 +4359,7 @@ async function submitTextEntry(mealId) {
   _startProgress(mealId, id);
   renderStrip(mealId);
   saveState();   // 解析前に文章を保存（計算中に再読み込みされても消えないように）
+  await _awaitWeightSave();
 
   const formData = new FormData();
   formData.append('text', text);
@@ -4884,7 +4886,7 @@ async function reanalyzeItem(mealId, itemId) {
   if (!correction) { textarea?.focus(); return; }
   // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残し、体重を保存したらそのまま再計算する）
   if (!(await ensureWeightForAnalysis({ after: () => reanalyzeItem(mealId, itemId) }))) return;
-  await _awaitWeightSave();
+  if (item.loading) return;   // 待ちのあいだに再計算がもう一度押されていたら二重にしない
 
   // 進捗％を表示（写真のサムネイルとボタンの両方）
   item.loading = true;
@@ -4897,6 +4899,7 @@ async function reanalyzeItem(mealId, itemId) {
     if (btn) btn.textContent = `🔄 再計算中… ${fmtPct(item.loadingPct)}%`;
     renderStrip(mealId);
   }, 200);
+  await _awaitWeightSave();   // ボタンを止めて進捗を出してから、直前に保存した体重の送信を待つ（最大8秒）
 
   const formData = new FormData();
   // 写真がある食事は画像を、文章入力の食事は元の入力文を送る（画像は任意）
