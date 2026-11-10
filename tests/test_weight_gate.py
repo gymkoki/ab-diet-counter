@@ -225,3 +225,45 @@ def test_analysis_waits_for_weight_save():
     html = _html()
     for fn in ("analyzeItem", "resumeTextItem", "submitTextEntry", "reanalyzeItem"):
         assert "await _awaitWeightSave();" in _fn(html, fn), f"{fn} が体重の送信を待っていない"
+
+
+# ── Codex レビューの指摘（PR #258）────────────────────────────
+def test_weight_save_wait_has_deadline():
+    """体重の送信が応答しなくても、解析は期限つきで先へ進む（P1：有限時間で結論へ）。"""
+    import shutil
+    import subprocess
+    import tempfile
+    if shutil.which("node") is None:
+        pytest.skip("node が見つからない")
+    html = _html()
+    fn = _fn(html, "_awaitWeightSave")
+    assert "Promise.race" in fn and "WEIGHT_SAVE_WAIT_MS" in fn
+    js = ("const WEIGHT_SAVE_WAIT_MS = 50;\nlet _weightSavePromise = new Promise(() => {});\n" + fn + """
+const t0 = Date.now();
+_awaitWeightSave().then(() => {
+  console.log(JSON.stringify({ ms: Date.now() - t0, cleared: _weightSavePromise === null }));
+});
+""")
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+        f.write(js)
+        path = f.name
+    try:
+        p = subprocess.run(["node", path], capture_output=True, text=True, timeout=10)
+    finally:
+        os.unlink(path)
+    import json as _json
+    out = _json.loads(p.stdout)
+    assert out["ms"] < 1000 and out["cleared"], "応答しない体重の送信を待ち続けている"
+
+
+def test_weight_screen_save_also_resumes_waiting_items():
+    body = _fn(_html(), "saveTodayWeight")
+    assert "_weightSavePromise = submitDailyWeight(" in body
+    assert "resumeWeightWaitingItems()" in body, "体重/日記の画面で保存しても体重待ちが再開しない"
+
+
+def test_resume_resets_deadline_and_counts_text_record():
+    html = _html()
+    assert "item.pickedAt = Date.now();" in _fn(html, "resumeWeightWaitingItems"), \
+        "体重を入れていた時間が解析の持ち時間から引かれる"
+    assert "logAction('text')" in _fn(html, "resumeTextItem"), "再開した文章の記録が集計に入らない"

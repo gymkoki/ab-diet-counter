@@ -3531,15 +3531,27 @@ function resumeWeightWaitingItems() {
     if (!item.waitingWeight || item.result || item.loading) return;
     item.waitingWeight = false;
     item.error = null;
+    // 体重を入れていた時間は解析の持ち時間から引かない（写真を選んだ時点を起点にすると、待った分だけ締め切りが迫る）
+    item.pickedAt = Date.now();
     if (item.isText && item.text) resumeTextItem(m.id, item);
     else if (item.file || item.previewSrc) analyzeItem(m.id, item.id);
   }));
 }
 
-// 体重をサーバーへ送っている途中なら、それを待ってから解析を送る（先に解析が届くと止められるため）
+// 体重をサーバーへ送っている途中なら、それを待ってから解析を送る（先に解析が届くと止められるため）。
+// 【重要】待つのは最大 WEIGHT_SAVE_WAIT_MS まで：回線が黙って切れると fetch は終わらないので、
+// 期限が無いと解析が始まらず、結果もエラーも出ないまま止まる（「解析は必ず有限時間で結論へ」の約束）。
+const WEIGHT_SAVE_WAIT_MS = 8000;
 async function _awaitWeightSave() {
-  if (!_weightSavePromise) return;
-  try { await _weightSavePromise; } catch (e) {}
+  const pending = _weightSavePromise;
+  if (!pending) return;
+  let timer = null;
+  try {
+    await Promise.race([pending.catch(() => {}), new Promise(r => { timer = setTimeout(r, WEIGHT_SAVE_WAIT_MS); })]);
+  } finally {
+    clearTimeout(timer);
+    if (_weightSavePromise === pending) _weightSavePromise = null;   // 次の解析まで巻き込まない
+  }
 }
 
 // サーバーが体重未記録を理由に解析を断ったとき（403 + weight_required）。
@@ -3858,7 +3870,11 @@ async function addFiles(mealId, files) {
     renderStrip(mealId);
     saveState();   // 解析前にサムネを保存（計算中に再読み込みされても写真が消えないように）
     // 撮影したらそのまま解析する。体重待ちのあいだに体重が保存されていたら、その場で解析する
-    if (!item.waitingWeight || hasWeightForGate()) { item.waitingWeight = false; analyzeItem(mealId, id); }
+    if (!item.waitingWeight || hasWeightForGate()) {
+      if (item.waitingWeight) item.pickedAt = Date.now();   // 体重を入れていた時間は持ち時間から引かない
+      item.waitingWeight = false;
+      analyzeItem(mealId, id);
+    }
   }
 }
 
@@ -4813,7 +4829,11 @@ async function resumeTextItem(mealId, item) {
     } else if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== item.id);
       if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
-    } else { item.result = data; }
+    } else {
+      item.result = data;
+      // 「文章で記録」の集計。最初の送信は成功していない（成功していればここで再開しない）ので二重にならない
+      logAction('text');
+    }
   } catch(e) {
     _stopProgress(mealId, item.id);
     item.loading = false;
@@ -5175,7 +5195,9 @@ function saveTodayWeight() {
     p.weight = w;
     localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
   }
-  submitDailyWeight(w, date);
+  _weightSavePromise = submitDailyWeight(w, date);
+  // 体重待ちで止めていた写真・文章があれば、この画面で保存したときも続きを解析する
+  if (hasWeightForGate()) resumeWeightWaitingItems();
   const note = document.getElementById('weight-current-note');
   if (note) note.textContent = `✅ ${_editingDate ? _fmtMD(date) : '今日'}の体重を ${w} kg で保存しました`;
   updateWeightNudge();   // 記録できたら進捗タブの誘導を消す
