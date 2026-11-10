@@ -405,3 +405,20 @@ def test_admin_card_shows_account_count():
     with open(os.path.join(ROOT, "templates", "admin.html"), encoding="utf-8") as f:
         a = f.read()
     assert "アカウント登録（メール・パスワード）" in a and "d.accounts" in a
+
+
+def test_passphrase_cannot_issue_pass_after_billing(client, monkeypatch):
+    """有料化後は合言葉で通行証を出さない（他人のIDで本人になりすませないように。Codex 指摘）。"""
+    monkeypatch.setattr(m, "MEMBER_GATE_START", "2020-01-01")
+    monkeypatch.setattr(m, "_billing_active", lambda today=None: True)
+    victim = m._device_token_for("acc-1")
+    r = client.post("/api/unlock", json={"user_id": "acc-1", "password": m._member_password()})
+    assert r.status_code == 403 and r.get_json()["account_required"] is True and "token" not in r.get_json()
+    assert m._device_token("acc-1") == victim, "本人の通行証は上書きされない"
+
+
+def test_passphrase_still_works_before_billing(client, monkeypatch):
+    monkeypatch.setattr(m, "MEMBER_GATE_START", "2020-01-01")
+    monkeypatch.setattr(m, "_billing_active", lambda today=None: False)
+    r = client.post("/api/unlock", json={"user_id": "acc-1", "password": m._member_password()})
+    assert r.status_code == 200 and r.get_json()["token"]

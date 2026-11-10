@@ -1387,6 +1387,11 @@ def member_unlock():
     if not uid:
         return jsonify({"error": "端末を識別できませんでした。アプリを開き直してください。"}), 400
 
+    # 有料化後は合言葉を使わない。合言葉で通行証を出すと、IDを知っている人が他人として使えてしまうため、
+    # 通行証はアカウントのログイン・登録からだけ受け取れるようにする（Codex 指摘 2026-11-10）。
+    if _gate_mode() == "account":
+        return jsonify({"error": ACCOUNT_GATE_MESSAGE, "account_required": True}), 403
+
     if not given or not secrets.compare_digest(given, _member_password()):
         _record_unlock_fail(ip)
         left = max(0, MEMBER_UNLOCK_MAX_FAILS - len(_unlock_fails.get(ip, [])))

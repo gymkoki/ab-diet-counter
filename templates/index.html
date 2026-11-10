@@ -3479,6 +3479,7 @@ async function submitMemberGate() {
       if (inp) inp.value = '';
       return;
     }
+    if (d.account_required) { openAccountRequired(d.error); return; }   // 有料化後は合言葉ではなくアカウントで
     _memberGateError(d.error || 'パスワードが違います');
   } catch (e) {
     _memberGateError('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
