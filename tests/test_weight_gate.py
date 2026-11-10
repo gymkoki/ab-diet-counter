@@ -171,3 +171,110 @@ def test_members_are_told_why_analysis_stops():
     block = m_.group(0)
     assert "1週間以上" in block, "何日で止まるのかが会員に伝わりません"
     assert "解析" in block and "体重" in block
+
+
+# ── 体重の入力を先に・選んだ写真を消さない（オーナー指示 2026-11-10）────────────
+# 指摘：「食事の写真をアップして解析ボタンを押すと『体重を記録しろ』と出て、さっきまで
+# あげた食事の写真をまたもう一度やり直さないといけない。体重の記録がないときは、まず体重を
+# 入力させてから次の画面に移れるようにして」。
+def _fn(html, name):
+    m_ = re.search(rf"(?:async )?function {name}\(.*?\n\}}", html, re.S)
+    assert m_, f"{name} が無い"
+    return m_.group(0)
+
+
+def test_weight_is_asked_before_picking_photos_or_typing():
+    html = _html()
+    for fn, label in (("openFileInput", "写真を選ぶ"), ("chooseManualText", "入力へ進む")):
+        body = _fn(html, fn)
+        assert "hasWeightForGate()" in body and "openWeightGate({ after:" in body, \
+            f"{fn}：体重が無いときに先に体重を入れてもらっていない"
+        assert label in body
+    # 写真の選択はタップの流れのまま開く必要がある（await を挟むとブラウザに止められる）
+    save = _fn(html, "saveWeightFromGate")
+    assert not save.startswith("async"), "saveWeightFromGate を async にすると写真の選択が開かなくなる"
+    assert "after()" in save and "await" not in save
+    assert "submitDailyWeight(" in save and "resumeWeightWaitingItems()" in save
+
+
+def test_gate_modal_has_inline_weight_input():
+    html = _html()
+    block = re.search(r'id="weight-gate-overlay".*?</div>\s*</div>\s*</div>', html, re.S).group(0)
+    assert 'id="weight-gate-input"' in block and "saveWeightFromGate()" in block
+    assert 'id="weight-gate-save"' in block
+
+
+def test_photos_are_kept_while_waiting_for_weight():
+    html = _html()
+    add = _fn(html, "addFiles")
+    assert "if (!(await ensureWeightForAnalysis())) return;" not in add, "体重が無いと選んだ写真を捨てている"
+    assert "waitingWeight: !weightOk" in add
+    # サーバーが weight_required を返しても、写真・文章は消さずに体重待ちで残す
+    for fn in ("analyzeItem", "resumeTextItem", "submitTextEntry"):
+        body = _fn(html, fn)
+        assert "weight_required" in body and "item.waitingWeight = true" in body, f"{fn}：体重待ちで残していない"
+    # 体重を保存したら自動で解析を続ける・再読み込みしても体重待ちを覚えている
+    resume = _fn(html, "resumeWeightWaitingItems")
+    assert "analyzeItem(" in resume and "resumeTextItem(" in resume
+    assert "waitingWeight: (!i.result && i.waitingWeight) || undefined" in _fn(html, "buildMealsPayload")
+    assert "if (item.waitingWeight && !hasWeightForGate()) return;" in _fn(html, "resumePendingAnalyses")
+
+
+def test_analysis_waits_for_weight_save():
+    """保存した体重がサーバーに届く前に解析を送ると、また止められてしまう。"""
+    html = _html()
+    for fn in ("analyzeItem", "resumeTextItem", "submitTextEntry", "reanalyzeItem"):
+        assert "await _awaitWeightSave();" in _fn(html, fn), f"{fn} が体重の送信を待っていない"
+
+
+# ── Codex レビューの指摘（PR #258）────────────────────────────
+def test_weight_save_wait_has_deadline():
+    """体重の送信が応答しなくても、解析は期限つきで先へ進む（P1：有限時間で結論へ）。"""
+    import shutil
+    import subprocess
+    import tempfile
+    if shutil.which("node") is None:
+        pytest.skip("node が見つからない")
+    html = _html()
+    fn = _fn(html, "_awaitWeightSave")
+    assert "Promise.race" in fn and "WEIGHT_SAVE_WAIT_MS" in fn
+    js = ("const WEIGHT_SAVE_WAIT_MS = 50;\nlet _weightSavePromise = new Promise(() => {});\n" + fn + """
+const t0 = Date.now();
+_awaitWeightSave().then(() => {
+  console.log(JSON.stringify({ ms: Date.now() - t0, cleared: _weightSavePromise === null }));
+});
+""")
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
+        f.write(js)
+        path = f.name
+    try:
+        p = subprocess.run(["node", path], capture_output=True, text=True, timeout=10)
+    finally:
+        os.unlink(path)
+    import json as _json
+    out = _json.loads(p.stdout)
+    assert out["ms"] < 1000 and out["cleared"], "応答しない体重の送信を待ち続けている"
+
+
+def test_weight_screen_save_also_resumes_waiting_items():
+    body = _fn(_html(), "saveTodayWeight")
+    assert "_weightSavePromise = submitDailyWeight(" in body
+    assert "resumeWeightWaitingItems()" in body, "体重/日記の画面で保存しても体重待ちが再開しない"
+
+
+def test_resume_resets_deadline_and_counts_text_record():
+    html = _html()
+    assert "item.pickedAt = Date.now();" in _fn(html, "resumeWeightWaitingItems"), \
+        "体重を入れていた時間が解析の持ち時間から引かれる"
+    assert "logAction('text')" in _fn(html, "resumeTextItem"), "再開した文章の記録が集計に入らない"
+
+
+def test_no_double_submit_while_waiting_for_weight_save():
+    """体重の送信を待つ前に、入力欄を空にする／ボタンを止める（待っている間の2回目の送信で二重に記録しない）。"""
+    html = _html()
+    body = _fn(html, "submitTextEntry")
+    assert body.index("ta.value = '';") < body.index("await _awaitWeightSave();"), \
+        "体重の送信を待っている間に、同じ文章をもう一度送れてしまう"
+    re_ = _fn(html, "reanalyzeItem")
+    assert re_.index("btn.disabled = true") < re_.index("await _awaitWeightSave();")
+    assert "if (item.loading) return;" in re_
