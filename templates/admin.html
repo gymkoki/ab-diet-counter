@@ -700,6 +700,8 @@
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       アプリの「設定 → 修正希望・ご要望」から届いたメッセージです。返信を書いて送信すると、<b>送ってくれた本人のアプリにだけ</b>「運営からの返信」として表示されます（他の利用者には見えません）。
     </div>
+    <!-- アプリ内アンケートの集計（オーナー指示 2026-11-10） -->
+    <div id="survey-summary" style="margin-bottom:16px"></div>
     <div id="fb-list"><div class="spinner"></div></div>
   </div>
 
@@ -1344,6 +1346,39 @@
     const d = new Date(iso);
     if (isNaN(d)) return iso.slice(0, 16).replace('T', ' ');
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  // ── アプリ内アンケート（1人1回・3択＋自由記入）の集計 ──
+  async function loadSurveyResults() {
+    const box = document.getElementById('survey-summary');
+    if (!box) return;
+    try {
+      const r = await fetch('/api/admin/survey-results');
+      if (!r.ok) throw new Error('survey');
+      const d = await r.json();
+      const colors = ['#FF6B35', '#6366F1', '#7C5CE0'];
+      const bars = d.results.map((x, i) => `
+        <div style="margin:6px 0">
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:#374151">
+            <span>${escapeHtml(x.label)}</span><span>${x.count}人（${x.pct}%）</span></div>
+          <div style="height:10px;border-radius:6px;background:#F3F4F6;overflow:hidden;margin-top:3px">
+            <div style="height:100%;width:${x.pct}%;background:${colors[i % colors.length]}"></div></div>
+        </div>`).join('');
+      const comments = d.comments.length ? `
+        <details style="margin-top:8px" ${d.comments.length <= 5 ? 'open' : ''}>
+          <summary style="cursor:pointer;font-size:13px;font-weight:800;color:#374151">ひとこと（${d.comments.length}件）</summary>
+          ${d.comments.map(c => `<div style="font-size:13px;line-height:1.6;padding:6px 0;border-bottom:1px solid #F3F4F6">
+            <b>${escapeHtml(c.name)}</b> <span style="color:#9CA3AF">${escapeHtml(c.choice)}・${escapeHtml(fmtDateTime(c.at))}</span><br>${escapeHtml(c.comment)}</div>`).join('')}
+        </details>` : '';
+      box.innerHTML = `
+        <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:12px 14px">
+          <div style="font-size:14px;font-weight:800;color:#111827;margin-bottom:2px">📊 アンケート「${escapeHtml(d.survey.question)}」</div>
+          <div style="font-size:12px;color:#6B7280;margin-bottom:6px">回答 <b>${d.answered}</b>人 ／ スキップ ${d.skipped}人 ／ 表示した人 ${d.shown}人（1人1回だけ表示）</div>
+          ${d.answered ? bars : '<div style="font-size:13px;color:#9CA3AF">まだ回答がありません。</div>'}${comments}
+        </div>`;
+    } catch (e) {
+      box.innerHTML = '<div style="font-size:12px;color:#9CA3AF">アンケートの集計を読み込めませんでした。</div>';
+    }
   }
 
   async function loadFeedback() {
@@ -2481,7 +2516,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

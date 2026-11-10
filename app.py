@@ -936,6 +936,20 @@ def init_db():
                 PRIMARY KEY (user_id, reason)
             )
         """)
+        # アプリ内の1回だけのアンケート（オーナー指示 2026-11-10）。1人1アンケート1行。
+        # status: shown=表示した（未回答）／skipped=答えずに閉じた／answered=回答した
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS survey_responses (
+                user_id    TEXT NOT NULL,
+                survey_id  TEXT NOT NULL,
+                status     TEXT NOT NULL,
+                choice     TEXT,
+                comment    TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, survey_id)
+            )
+        """)
         # リオールジム会員限定化（2026-09-15〜）：合言葉を入れた端末を記録する。
         # 端末ごとに1行。token は端末が毎回の解析リクエストに付けてくる通行証。
         cur.execute("""
@@ -7261,6 +7275,141 @@ def _resolve_report_to():
     if not to or to.lower() in REPORT_TO_BLOCKED:
         return REPORT_TO_DEFAULT
     return to
+
+
+# ══════════════════════════════════════════════════════════════
+#  アプリ内アンケート（1人1回だけ・3択＋自由記入1行・スキップ可。オーナー指示 2026-11-10）
+#  「いちばん手放せない機能は？」。表示した時点で記録し、閉じても答えても二度と出さない
+#  （通知の連投にならないように）。回答は管理画面の「修正希望・ご要望」の上に集計して出す。
+# ══════════════════════════════════════════════════════════════
+SURVEY_ID = "favorite-feature-2026-11"
+SURVEY_QUESTION = "いちばん手放せない機能は？"
+SURVEY_OPTIONS = (
+    ("ai", "🤖 AI解析（写真・文章）"),
+    ("weight", "⚖️ 体重とグラフ"),
+    ("points", "🎁 こまめ記録ポイント"),
+)
+SURVEY_COMMENT_MAX = 100
+
+
+def _survey_payload():
+    return {"id": SURVEY_ID, "question": SURVEY_QUESTION,
+            "options": [{"key": k, "label": l} for k, l in SURVEY_OPTIONS],
+            "comment_max": SURVEY_COMMENT_MAX}
+
+
+@app.route("/api/survey", methods=["GET", "POST"])
+def api_survey():
+    """GET：この会員にアンケートを出すか（show）。まだ一度も表示しておらず、前日までに記録がある人だけ
+    （入会したその日の人には出さない）。
+    POST {user_id, action}：claim＝表示する直前の確保（まだ誰も表示していなければ記録して claimed=true。
+    同じ会員の別の端末・別のタブが同時に開いても、確保できた1つだけが表示する）／
+    answer＝回答（choice・comment）／skip＝答えずに閉じた。
+    DBが読めないときは出さない（会員の操作を止めない）。"""
+    if request.method == "GET":
+        uid = (request.args.get("user_id") or "").strip()
+        if not uid or len(uid) > 100:
+            return jsonify({"show": False})
+        try:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(f"SELECT 1 FROM survey_responses WHERE user_id={PH} AND survey_id={PH}",
+                            (uid, SURVEY_ID))
+                if cur.fetchone():
+                    return jsonify({"show": False, "done": True})   # 表示済み・回答済み
+                today = datetime.datetime.now(JST).date().isoformat()
+                cur.execute(f"SELECT 1 FROM daily_b_count WHERE user_id={PH} AND date<{PH} LIMIT 1", (uid, today))
+                if not cur.fetchone():
+                    return jsonify({"show": False})
+            finally:
+                conn.close()
+        except Exception as e:
+            app.logger.warning("survey check skipped: %s", e)
+            return jsonify({"show": False})
+        return jsonify({"show": True, "survey": _survey_payload()})
+
+    data = request.get_json(silent=True) or {}
+    uid = str(data.get("user_id") or "").strip()
+    action = data.get("action")
+    if not uid or len(uid) > 100 or action not in ("claim", "answer", "skip"):
+        return jsonify({"error": "bad request"}), 400
+    choice = comment = None
+    if action == "answer":
+        choice = data.get("choice")
+        if choice not in {k for k, _ in SURVEY_OPTIONS}:
+            return jsonify({"error": "選択肢を選んでください"}), 400
+        comment = " ".join(str(data.get("comment") or "").split())[:SURVEY_COMMENT_MAX] or None
+    ts = datetime.datetime.now(JST).isoformat()
+    status = {"claim": "shown", "answer": "answered", "skip": "skipped"}[action]
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                if action == "claim":
+                    # (user_id, survey_id) が主キーなので、同時に来ても入るのは1件だけ（＝表示できるのは1画面だけ）
+                    cur.execute(
+                        f"INSERT INTO survey_responses (user_id, survey_id, status, choice, comment, created_at, updated_at) "
+                        f"VALUES ({PH},{PH},'shown',NULL,NULL,{PH},{PH}) ON CONFLICT DO NOTHING",
+                        (uid, SURVEY_ID, ts, ts))
+                    claimed = cur.rowcount == 1
+                    conn.commit()
+                    return jsonify({"ok": True, "claimed": claimed})
+                cur.execute(f"SELECT status FROM survey_responses WHERE user_id={PH} AND survey_id={PH}",
+                            (uid, SURVEY_ID))
+                row = cur.fetchone()
+                if row is None:
+                    cur.execute(
+                        f"INSERT INTO survey_responses (user_id, survey_id, status, choice, comment, created_at, updated_at) "
+                        f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+                        (uid, SURVEY_ID, status, choice, comment, ts, ts))
+                elif row[0] != "answered":
+                    # 回答済みは上書きしない（二重送信・遅れて届いたスキップで答えが消えないように）
+                    cur.execute(
+                        f"UPDATE survey_responses SET status={PH}, choice={PH}, comment={PH}, updated_at={PH} "
+                        f"WHERE user_id={PH} AND survey_id={PH}",
+                        (status, choice, comment, ts, uid, SURVEY_ID))
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.warning("survey save failed: %s", e)
+        # 確保できなかったときは表示しない（claimed=false）。回答の保存失敗は端末が入力を残して再送できるよう 503
+        if action == "claim":
+            return jsonify({"ok": False, "claimed": False}), 200
+        return jsonify({"ok": False}), 503
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/survey-results")
+@_admin_required
+def admin_survey_results():
+    """【管理者専用】アンケートの集計（選択肢ごとの人数と割合・自由記入の一覧）。"""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT user_id, status, choice, comment, updated_at FROM survey_responses "
+                    f"WHERE survey_id={PH} ORDER BY updated_at DESC", (SURVEY_ID,))
+        rows = cur.fetchall()
+        cur.execute("SELECT user_id, display_name FROM user_profile")
+        names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+    finally:
+        conn.close()
+    labels = dict(SURVEY_OPTIONS)
+    answered = [r for r in rows if r[1] == "answered"]
+    counts = {k: sum(1 for r in answered if r[2] == k) for k, _ in SURVEY_OPTIONS}
+    n = len(answered)
+    return jsonify({
+        "survey": _survey_payload(),
+        "shown": len(rows),
+        "answered": n,
+        "skipped": sum(1 for r in rows if r[1] == "skipped"),
+        "results": [{"key": k, "label": l, "count": counts[k],
+                     "pct": round(counts[k] / n * 100) if n else 0} for k, l in SURVEY_OPTIONS],
+        "comments": [{"name": names.get(r[0]) or f"会員{r[0][:4]}", "choice": labels.get(r[2], ""),
+                      "comment": r[3], "at": r[4]} for r in answered if r[3]],
+    })
 
 
 @app.route("/api/feedback", methods=["POST"])
