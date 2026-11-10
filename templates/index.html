@@ -4751,7 +4751,8 @@ function toggleRecalcForm(mealId, itemId) {
 // 「食べた食材＋B何回分」をAIを介さずそのまま食材リストに追加してBカウントを加算する
 function addManualFoodB(mealId, itemId) {
   const item = state[mealId].items.find(i => i.id === itemId);
-  if (!item || !item.result) return;
+  // 文章訂正の再計算中は追加しない：応答で item.result が丸ごと置き換わり、追加した行が消えるため
+  if (!item || !item.result || item.loading) return;
   const nameEl = document.getElementById(`recalc-food-${mealId}-${itemId}`);
   const cntEl  = document.getElementById(`recalc-bcnt-${mealId}-${itemId}`);
   const name = nameEl?.value?.trim();
@@ -4783,6 +4784,7 @@ async function reanalyzeItem(mealId, itemId) {
   if (!item) return;
   const textarea = document.getElementById(`recalc-text-${mealId}-${itemId}`);
   const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc-text`);
+  const addBtn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-addb`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
   // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残す）
@@ -4794,6 +4796,7 @@ async function reanalyzeItem(mealId, itemId) {
   item.loadingStartedAt = Date.now();
   renderStrip(mealId);
   if (btn) { btn.disabled = true; btn.textContent = '🔄 再計算中… 0%'; }
+  if (addBtn) addBtn.disabled = true;
   const timer = setInterval(() => {
     _advanceProgress(item);
     if (btn) btn.textContent = `🔄 再計算中… ${fmtPct(item.loadingPct)}%`;
@@ -4827,6 +4830,7 @@ async function reanalyzeItem(mealId, itemId) {
       renderStrip(mealId);
       if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
       if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
+      if (addBtn) addBtn.disabled = false;
     } else {
       item.result = data;
       renderStrip(mealId);
@@ -4839,6 +4843,7 @@ async function reanalyzeItem(mealId, itemId) {
     renderStrip(mealId);
     showError(mealId, _analyzeFailureMessage(e, 'reanalyze'));
     if (btn) { btn.disabled = false; btn.textContent = '🔄 再計算する'; }
+    if (addBtn) addBtn.disabled = false;
   }
 }
 

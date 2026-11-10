@@ -125,6 +125,24 @@ def test_empty_food_name_does_nothing():
     assert len(out["r"]["foods"]) == 2 and out["r"]["total_b_count"] == 1 and out["saved"] == 0
 
 
+@needs_node
+def test_add_is_blocked_while_text_correction_is_running():
+    """文章訂正の再計算中（item.loading）は追加しない。応答で item.result が丸ごと置き換わり、
+    追加した行が黙って消えるため（Codex 指摘 PR #255）。"""
+    body = (_ADD_WHITE_RICE % "1").replace("state.food.items.push({ id: 1, result:",
+                                           "state.food.items.push({ id: 1, loading: true, result:")
+    out = _run(body)
+    assert len(out["r"]["foods"]) == 2 and out["r"]["total_b_count"] == 1 and out["saved"] == 0
+
+
+def test_reanalyze_disables_the_add_button_until_done():
+    """再計算の送信中は追加ボタンも押せない。失敗時は押せる状態に戻す（成功時は再描画で戻る）。"""
+    body = _fn("reanalyzeItem")
+    assert ".btn-addb`)" in body
+    assert body.count("addBtn.disabled = true") == 1
+    assert body.count("addBtn.disabled = false") == 2, "エラー応答・通信失敗の両方で戻すこと"
+
+
 def test_server_safety_nets_skip_member_corrections():
     """サーバーの安全網（バナナ・野菜）が「訂正反映」の行に触らないこと（印の前提）。"""
     import sys
@@ -148,7 +166,7 @@ def test_text_correction_button_is_distinct_from_add_button():
     追加ボタンも .btn-recalc を持つため、汎用の .btn-recalc で選ぶと先に追加ボタンが取れてしまう。"""
     html = _html()
     assert re.search(r'class="btn-recalc btn-recalc-text" onclick="reanalyzeItem\(', html)
-    assert not re.search(r'class="[^"]*btn-addb[^"]*btn-recalc-text|btn-recalc-text[^"]*btn-addb', html)
+    assert not re.search(r'class="[^"]*(btn-addb[^"]*btn-recalc-text|btn-recalc-text[^"]*btn-addb)[^"]*"', html)
     assert ".btn-recalc-text`)" in _fn("reanalyzeItem")
 
 
