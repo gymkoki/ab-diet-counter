@@ -422,3 +422,12 @@ def test_passphrase_still_works_before_billing(client, monkeypatch):
     monkeypatch.setattr(m, "_billing_active", lambda today=None: False)
     r = client.post("/api/unlock", json={"user_id": "acc-1", "password": m._member_password()})
     assert r.status_code == 200 and r.get_json()["token"]
+
+
+def test_unknown_email_still_runs_password_check(client, mails, monkeypatch):
+    """未登録のアドレスでもパスワードの照合を同じようにする（応答時間で登録の有無が分からないように。Codex 指摘）。"""
+    seen = []
+    real = m.check_password_hash
+    monkeypatch.setattr(m, "check_password_hash", lambda h, p: seen.append(h) or real(h, p))
+    client.post("/api/account/login", json={"email": "nobody@example.com", "password": "whatever1"})
+    assert seen == [m._DUMMY_PASSWORD_HASH]

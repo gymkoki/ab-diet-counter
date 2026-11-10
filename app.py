@@ -1453,6 +1453,7 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _login_fails = {}                    # ip -> [失敗時刻(epoch), ...]
 _login_fails_lock = threading.Lock()
 _mail_sends = {}                     # ("email"|"ip", 値) -> [送信時刻(epoch), ...]
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(16))   # 未登録のときに照合する見せかけ
 _mail_sends_lock = threading.Lock()
 
 
@@ -1746,7 +1747,9 @@ def api_account_login():
     except Exception as e:
         app.logger.error("account login lookup failed: %s", type(e).__name__)
         return jsonify({"error": "ログインできませんでした。時間をおいてもう一度お試しください。"}), 503
-    if not acc or not pw or not check_password_hash(acc["password_hash"], pw):
+    # 未登録のアドレスでも同じ重さの照合をする（応答時間の差から登録の有無が分からないように）
+    ok = check_password_hash(acc["password_hash"] if acc else _DUMMY_PASSWORD_HASH, pw)
+    if not acc or not pw or not ok:
         _login_fail(ip)
         return jsonify({"error": "メールアドレスかパスワードが違います。"}), 401
     # 成功しても、このIPの失敗の記録は消さない（自分のアカウントで成功を挟めばロックを避けられてしまうため）。
