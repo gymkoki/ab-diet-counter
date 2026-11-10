@@ -58,10 +58,32 @@ def test_three_choices_with_the_owners_wording(c):
     assert d["survey"]["question"] == "いちばん手放せない機能は？"
 
 
+def test_only_one_screen_can_claim(c):
+    """Codex 指摘（PR #259）：同じ会員が2つの端末・タブで同時に開いても、表示できるのは1画面だけ。"""
+    _member("u1")
+    assert _show(c, "u1")["show"] is True
+    first = c.post("/api/survey", json={"user_id": "u1", "action": "claim"}).get_json()
+    second = c.post("/api/survey", json={"user_id": "u1", "action": "claim"}).get_json()
+    assert first["claimed"] is True and second["claimed"] is False
+
+
+def test_answer_save_failure_is_reported(c, monkeypatch):
+    """Codex 指摘（PR #259）：回答の保存に失敗したら ok を返さない（端末は入力を残して再送できる）。"""
+    _member("u1")
+    c.post("/api/survey", json={"user_id": "u1", "action": "claim"})
+
+    def boom():
+        raise RuntimeError("db down")
+    monkeypatch.setattr(m, "_get_conn", boom)
+    r = c.post("/api/survey", json={"user_id": "u1", "action": "answer", "choice": "ai"})
+    monkeypatch.undo()          # 後片づけ（_clean）は本物のDBで行う
+    assert r.status_code == 503 and r.get_json()["ok"] is False
+
+
 def test_shown_once_even_if_closed_without_answer(c):
     """表示した時点で記録し、閉じても（答えなくても）二度と出さない。"""
     _member("u1")
-    c.post("/api/survey", json={"user_id": "u1", "action": "shown"})
+    c.post("/api/survey", json={"user_id": "u1", "action": "claim"})
     assert _show(c, "u1") == {"show": False, "done": True}
     c.post("/api/survey", json={"user_id": "u1", "action": "skip"})
     assert _show(c, "u1")["show"] is False
@@ -76,7 +98,7 @@ def test_not_shown_on_the_first_day(c):
 
 def test_answer_is_saved_and_not_overwritten(c):
     _member("u1")
-    c.post("/api/survey", json={"user_id": "u1", "action": "shown"})
+    c.post("/api/survey", json={"user_id": "u1", "action": "claim"})
     r = c.post("/api/survey", json={"user_id": "u1", "action": "answer", "choice": "points",
                                     "comment": "  ポイントが\n楽しい " + "あ" * 200})
     assert r.get_json()["ok"] is True
@@ -98,10 +120,10 @@ def test_rejects_unknown_choice(c):
 def test_admin_summary(c):
     for uid, ch, cm, nm in (("a", "ai", "写真が便利", "佐藤"), ("b", "ai", "", None), ("d", "weight", "<b>x</b>", "鈴木")):
         _member(uid, name=nm)
-        c.post("/api/survey", json={"user_id": uid, "action": "shown"})
+        c.post("/api/survey", json={"user_id": uid, "action": "claim"})
         c.post("/api/survey", json={"user_id": uid, "action": "answer", "choice": ch, "comment": cm})
     _member("e")
-    c.post("/api/survey", json={"user_id": "e", "action": "shown"})
+    c.post("/api/survey", json={"user_id": "e", "action": "claim"})
     c.post("/api/survey", json={"user_id": "e", "action": "skip"})
     assert c.get("/api/admin/survey-results").status_code in (401, 403, 404)
     d = c.get("/api/admin/survey-results", headers=ADMIN).get_json()
@@ -120,7 +142,27 @@ def _html():
 
 def test_app_marks_shown_before_user_acts():
     body = re.search(r"function showSurvey\(sv\) \{.*?\n\}", _html(), re.S).group(0)
-    assert "localStorage.setItem(SURVEY_LOCAL_KEY" in body and "action: 'shown'" in body
+    assert "localStorage.setItem(SURVEY_LOCAL_KEY" in body
+
+
+def test_app_claims_on_server_right_before_showing():
+    body = re.search(r"async function maybeShowSurvey\(\) \{.*?\n\}", _html(), re.S).group(0)
+    assert body.index("action: 'claim'") < body.index("showSurvey(d.survey)")
+    assert "if (!c.claimed)" in body
+
+
+def test_app_waits_for_startup_notice_checks():
+    """Codex 指摘（PR #259）：コーチメッセージ・運営からの返信などの確認が終わるまでアンケートを出さない。"""
+    html = _html()
+    body = re.search(r"async function maybeShowSurvey\(\) \{.*?\n\}", html, re.S).group(0)
+    assert "Promise.allSettled(_startupNoticeChecks" in body and "if (!settled) return;" in body
+    for fn in ("checkMemberGate()", "checkFeedbackReplies()", "checkCoachMessages", "checkBilling"):
+        assert re.search(r"_trackStartupCheck\([^;]*" + re.escape(fn), html), f"{fn} の完了を待っていない"
+
+
+def test_app_keeps_input_when_answer_fails():
+    body = re.search(r"async function submitSurvey\(\) \{.*?\n\}", _html(), re.S).group(0)
+    assert "res && res.ok" in body and body.index("res && res.ok") < body.index("_closeSurvey()")
 
 
 def test_app_waits_for_other_popups():

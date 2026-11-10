@@ -7302,7 +7302,9 @@ def _survey_payload():
 def api_survey():
     """GET：この会員にアンケートを出すか（show）。まだ一度も表示しておらず、前日までに記録がある人だけ
     （入会したその日の人には出さない）。
-    POST {user_id, action}：shown＝表示した／answer＝回答（choice・comment）／skip＝答えずに閉じた。
+    POST {user_id, action}：claim＝表示する直前の確保（まだ誰も表示していなければ記録して claimed=true。
+    同じ会員の別の端末・別のタブが同時に開いても、確保できた1つだけが表示する）／
+    answer＝回答（choice・comment）／skip＝答えずに閉じた。
     DBが読めないときは出さない（会員の操作を止めない）。"""
     if request.method == "GET":
         uid = (request.args.get("user_id") or "").strip()
@@ -7330,7 +7332,7 @@ def api_survey():
     data = request.get_json(silent=True) or {}
     uid = str(data.get("user_id") or "").strip()
     action = data.get("action")
-    if not uid or len(uid) > 100 or action not in ("shown", "answer", "skip"):
+    if not uid or len(uid) > 100 or action not in ("claim", "answer", "skip"):
         return jsonify({"error": "bad request"}), 400
     choice = comment = None
     if action == "answer":
@@ -7339,12 +7341,21 @@ def api_survey():
             return jsonify({"error": "選択肢を選んでください"}), 400
         comment = " ".join(str(data.get("comment") or "").split())[:SURVEY_COMMENT_MAX] or None
     ts = datetime.datetime.now(JST).isoformat()
-    status = {"shown": "shown", "answer": "answered", "skip": "skipped"}[action]
+    status = {"claim": "shown", "answer": "answered", "skip": "skipped"}[action]
     try:
         with _db_lock:
             conn = _get_conn()
             try:
                 cur = conn.cursor()
+                if action == "claim":
+                    # (user_id, survey_id) が主キーなので、同時に来ても入るのは1件だけ（＝表示できるのは1画面だけ）
+                    cur.execute(
+                        f"INSERT INTO survey_responses (user_id, survey_id, status, choice, comment, created_at, updated_at) "
+                        f"VALUES ({PH},{PH},'shown',NULL,NULL,{PH},{PH}) ON CONFLICT DO NOTHING",
+                        (uid, SURVEY_ID, ts, ts))
+                    claimed = cur.rowcount == 1
+                    conn.commit()
+                    return jsonify({"ok": True, "claimed": claimed})
                 cur.execute(f"SELECT status FROM survey_responses WHERE user_id={PH} AND survey_id={PH}",
                             (uid, SURVEY_ID))
                 row = cur.fetchone()
@@ -7353,8 +7364,8 @@ def api_survey():
                         f"INSERT INTO survey_responses (user_id, survey_id, status, choice, comment, created_at, updated_at) "
                         f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH})",
                         (uid, SURVEY_ID, status, choice, comment, ts, ts))
-                elif row[0] != "answered" and action != "shown":
-                    # 回答済みは上書きしない（二重送信で答えが消えないように）。「表示した」は記録を戻さない。
+                elif row[0] != "answered":
+                    # 回答済みは上書きしない（二重送信・遅れて届いたスキップで答えが消えないように）
                     cur.execute(
                         f"UPDATE survey_responses SET status={PH}, choice={PH}, comment={PH}, updated_at={PH} "
                         f"WHERE user_id={PH} AND survey_id={PH}",
@@ -7364,7 +7375,10 @@ def api_survey():
                 conn.close()
     except Exception as e:
         app.logger.warning("survey save failed: %s", e)
-        return jsonify({"ok": False}), 200
+        # 確保できなかったときは表示しない（claimed=false）。回答の保存失敗は端末が入力を残して再送できるよう 503
+        if action == "claim":
+            return jsonify({"ok": False, "claimed": False}), 200
+        return jsonify({"ok": False}), 503
     return jsonify({"ok": True})
 
 
