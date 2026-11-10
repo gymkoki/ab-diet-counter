@@ -45,12 +45,12 @@ def _seed(uid, action, days_ago, times=1):
 
 
 # ── 会員アプリからの記録 ────────────────────────────────────────
-def test_app_can_record_a_manual_b_use(client):
-    """アプリから「Bだけ追加」の利用を1件記録できること。"""
-    r = client.post("/api/log-action", json={"user_id": "u1", "action": "manual_b"})
+def test_app_can_record_a_photo_use(client):
+    """アプリから記録方法の利用を1件記録でき、集計に出ること。"""
+    r = client.post("/api/log-action", json={"user_id": "u1", "action": "photo"})
     assert r.status_code == 200 and r.get_json()["ok"] is True
     d = m._collect_action_usage(30)
-    assert any(s["key"] == "manual_b" and s["total_count"] >= 0 for s in d["summary"])
+    assert any(s["key"] == "photo" and s["total_count"] == 1 for s in d["summary"])
 
 
 def test_unknown_action_is_rejected(client):
@@ -69,48 +69,48 @@ def test_counts_users_per_day_not_total(client):
     """『1日あたり何人』が、期間の延べ人数ではなく日ごとの人数の平均であること。"""
     # 3日間、毎日2人ずつが使った（のべ6人だが、1日あたりは2人）
     for back in (1, 2, 3):
-        _seed("a", "manual_b", back)
-        _seed("b", "manual_b", back)
+        _seed("a", "photo", back)
+        _seed("b", "photo", back)
     d = m._collect_action_usage(30)
-    row = next(s for s in d["summary"] if s["key"] == "manual_b")
+    row = next(s for s in d["summary"] if s["key"] == "photo")
     assert row["avg_users_per_day"] == 2.0, row
     assert row["total_users"] == 2
 
 
 def test_same_user_twice_a_day_is_one_person(client):
     """同じ人が1日に2回使っても、その日の人数は1人と数えること。"""
-    _seed("a", "manual_b", 1, times=3)
+    _seed("a", "photo", 1, times=3)
     d = m._collect_action_usage(30)
-    row = next(s for s in d["summary"] if s["key"] == "manual_b")
+    row = next(s for s in d["summary"] if s["key"] == "photo")
     assert row["avg_users_per_day"] == 1.0
     assert row["avg_count_per_day"] == 3.0     # 回数は3回
 
 
 def test_methods_are_counted_separately(client):
-    """写真・文章・Bだけ追加・コピーご飯を取り違えないこと。"""
+    """写真・文章・コピーご飯を取り違えないこと。"""
     _seed("a", "photo", 1)
     _seed("b", "text", 1)
-    _seed("c", "manual_b", 1)
     _seed("d", "copy", 1)
+    _seed("d", "copy", 2)
     d = m._collect_action_usage(30)
-    got = {s["key"]: s["avg_users_per_day"] for s in d["summary"]}
-    assert got == {"photo": 1.0, "text": 1.0, "manual_b": 1.0, "copy": 1.0}
+    got = {s["key"]: s["total_count"] for s in d["summary"]}
+    assert got == {"photo": 1, "text": 1, "copy": 2}
 
 
 def test_today_is_excluded(client):
     """当日はまだ途中なので、1日あたりの平均に混ぜないこと。"""
-    _seed("a", "manual_b", 0, times=5)      # 今日だけ記録
+    _seed("a", "photo", 0, times=5)      # 今日だけ記録
     d = m._collect_action_usage(30)
     assert d["counted_days"] == 0, "当日が平均に入っている"
 
 
 def test_daily_table_has_recent_days(client):
-    """日ごとの表が返り、日付と4種類の人数が入っていること。"""
-    _seed("a", "manual_b", 1)
+    """日ごとの表が返り、日付と3種類の人数が入っていること。"""
+    _seed("a", "photo", 1)
     d = m._collect_action_usage(30)
     assert d["daily"], "日ごとのデータが空"
     last = d["daily"][-1]
-    for k in ("photo", "text", "manual_b", "copy"):
+    for k in ("photo", "text", "copy"):
         assert "users" in last[k] and "count" in last[k]
 
 
@@ -163,3 +163,51 @@ def test_dashboard_shows_it():
     assert 'id="action-usage"' in html
     assert "loadActionUsage()" in html
     assert "1日あたり" in html
+
+
+# ── 廃止した「Bだけ追加」はダッシュボードに出さない（オーナー指示 2026-11-10） ──
+# 「🍙 Bを手動追加 が使われていない」と出て、今ある「文章で手動入力」のことと紛らわしかった。
+def test_retired_manual_b_is_hidden_from_action_usage(client):
+    """過去の manual_b の記録があっても、記録方法の集計（平均・日ごとの表）に出ないこと。"""
+    _seed("a", "manual_b", 1, times=2)
+    _seed("b", "photo", 1)
+    d = m._collect_action_usage(30)
+    assert {s["key"] for s in d["summary"]} == {"photo", "text", "copy"}
+    assert all("manual_b" not in row for row in d["daily"])
+
+
+def test_retired_manual_b_is_hidden_from_feature_usage(client):
+    """機能別の利用状況（AIの改善提案にも渡る）の記録方法の内訳にも出さないこと。"""
+    import json
+    today = datetime.datetime.now(m.JST).strftime("%Y-%m-%d")
+    payload = {"food": {"items": [
+        {"id": 1, "isOil": True, "result": {"total_b_count": 1}},
+        {"id": 2, "isText": True, "result": {"total_b_count": 1}},
+    ]}}
+    with m._db_lock:
+        conn = m._get_conn(); cur = conn.cursor()
+        cur.execute(f"DELETE FROM daily_meals WHERE user_id={m.PH}", ("fu-oil",))
+        cur.execute(
+            f"INSERT INTO daily_meals (user_id, date, payload, created_at) VALUES ({m.PH},{m.PH},{m.PH},{m.PH})",
+            ("fu-oil", today, json.dumps(payload), today))
+        conn.commit(); conn.close()
+    try:
+        d = m._collect_feature_usage()
+        keys = {t["key"] for t in d["meal_types"]}
+        assert "manual_b" not in keys
+        assert not any("Bを手動" in t["label"] or "Bだけ" in t["label"] for t in d["meal_types"])
+        assert next(t for t in d["meal_types"] if t["key"] == "text")["records"] >= 1
+    finally:
+        with m._db_lock:
+            conn = m._get_conn(); cur = conn.cursor()
+            cur.execute(f"DELETE FROM daily_meals WHERE user_id={m.PH}", ("fu-oil",))
+            conn.commit(); conn.close()
+
+
+def test_dashboard_has_no_manual_b_column():
+    """管理画面の表に「Bだけ」の列・説明が残っていないこと。"""
+    with open(os.path.join(ROOT, "templates", "admin.html"), encoding="utf-8") as f:
+        html = f.read()
+    assert "x.manual_b" not in html
+    assert "🍙Bだけ" not in html
+    assert "「Bだけ追加」" not in html

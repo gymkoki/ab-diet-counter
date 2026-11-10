@@ -5607,6 +5607,9 @@ ACTION_KINDS = {
     "manual_b": "🍙 Bだけ追加",
     "copy":     "🍚 コピーご飯",
 }
+# 「Bだけ追加」は 2026-08 に廃止した。過去の分は受け付けて会員の記録回数にも数えるが、
+# ダッシュボードの集計には出さない（オーナー指示 2026-11-10：赤枠の「文章で手動入力」と紛らわしい）。
+ACTION_KINDS_SHOWN = tuple(k for k in ACTION_KINDS if k != "manual_b")
 ACTION_RETAIN_DAYS = 400   # 1年以上さかのぼれるようにする（行が小さいので負担は小さい）
 
 
@@ -5659,7 +5662,7 @@ def _collect_action_usage(days: int = 30):
     # 日付 → 方法 → その日に使った人の集合
     by_day: dict = {}
     for dt, action, uid in rows:
-        if action not in ACTION_KINDS:
+        if action not in ACTION_KINDS_SHOWN:
             continue
         by_day.setdefault(dt, {}).setdefault(action, {"users": set(), "count": 0})
         by_day[dt][action]["users"].add(uid)
@@ -5680,14 +5683,14 @@ def _collect_action_usage(days: int = 30):
             "partial": dt == today,          # 今日はまだ途中
             **{k: {"users": len(by_day.get(dt, {}).get(k, {}).get("users", ())),
                    "count": by_day.get(dt, {}).get(k, {}).get("count", 0)}
-               for k in ACTION_KINDS},
+               for k in ACTION_KINDS_SHOWN},
         }
         for dt in dates
     ]
     # 平均は「終わった日」かつ「記録が1件でもあった日」だけで出す。
     # 誰も使っていない日や、途中の今日で平均が薄まらないようにする。
     active_days = [row for row in daily
-                   if not row["partial"] and any(row[k]["count"] for k in ACTION_KINDS)]
+                   if not row["partial"] and any(row[k]["count"] for k in ACTION_KINDS_SHOWN)]
     n = len(active_days) or 1
     summary = [
         {
@@ -5699,7 +5702,7 @@ def _collect_action_usage(days: int = 30):
             "total_users": len({uid for _dt, a, uid in rows if a == k}),
             "total_count": sum(row[k]["count"] for row in daily),
         }
-        for k in ACTION_KINDS
+        for k in ACTION_KINDS_SHOWN
     ]
     summary.sort(key=lambda s: -s["avg_users_per_day"])
     return {
@@ -5817,7 +5820,6 @@ def _collect_feature_usage():
     types = {
         "photo":    {"label": "📷 写真で記録",     "users": set(), "records": 0},
         "text":     {"label": "✏️ 文章で記録",     "users": set(), "records": 0},
-        "manual_b": {"label": "🍙 Bを手動追加",    "users": set(), "records": 0},
         "copy":     {"label": "🍚 コピーご飯",     "users": set(), "records": 0},
     }
     meal_type_uids = set()
@@ -5835,10 +5837,11 @@ def _collect_feature_usage():
             for it in (sec.get("items") or []):
                 if not isinstance(it, dict) or not it.get("result"):
                     continue
-                # 判定順：手動B → コピーご飯 → 文章 → 写真（フラグが無いものは写真扱い）
+                # 廃止した「Bだけ追加」(isOil) の記録は記録方法の内訳に出さない（ACTION_KINDS_SHOWN と同じ理由）
                 if it.get("isOil"):
-                    key = "manual_b"
-                elif it.get("isCopy"):
+                    continue
+                # 判定順：コピーご飯 → 文章 → 写真（フラグが無いものは写真扱い）
+                if it.get("isCopy"):
                     key = "copy"
                 elif it.get("isText"):
                     key = "text"
