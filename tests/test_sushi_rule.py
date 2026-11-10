@@ -205,7 +205,7 @@ console.log(JSON.stringify(days.map(foods => daySushiBonus([{{ result: {{ foods 
 def test_daily_total_includes_sushi_everywhere():
     """Bの合計を出すすべての箇所で寿司の分も足す（1か所でも漏れると画面ごとに合計が変わる）。"""
     html = _html()
-    assert "daySweetBonusB(allItems);\n  foodTotal += sweetBonus;" in html
+    assert "const sweetBonus = sj.sweetBonus;\n  foodTotal += sweetBonus;" in html
     assert "foodTotal += sushi.bonus;" in html
     assert html.count("daySpecialBonusB(") >= 5
     assert "foodTotal += daySweetBonusB(" not in html, "寿司の分を足していない合計がある"
