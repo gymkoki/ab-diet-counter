@@ -1308,6 +1308,54 @@
       <button class="btn-save" id="copy-text-save-btn" onclick="saveCopyMealText()">🤖 この内容で登録する</button>
     </div>
   </div>
+  <!-- アカウント（メールアドレス＋パスワード。2026-11-10）：今の記録にメールとパスワードを結びつける。
+       記録は移さないので、登録しても履歴はそのまま。機種変更・別の端末ではログインで同じ記録に入れる。 -->
+  <div class="setting-card" id="account-card">
+    <h2>📧 アカウント（メールアドレス・パスワード）</h2>
+    <div id="account-registered" style="display:none">
+      <p style="font-size:17px;line-height:1.7;margin-bottom:6px">✅ 登録済み：<b id="account-email"></b></p>
+      <p style="font-size:16px;color:var(--text-muted);line-height:1.6;margin:0">機種変更や別の端末では、下の「ログイン」から同じメールアドレスとパスワードで入ると、今までの記録がそのまま使えます。</p>
+    </div>
+    <div id="account-register-form">
+      <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:6px">メールアドレスとパスワードを登録すると、機種変更しても<strong>今までの記録をそのまま引き継げます</strong>（登録しても今の記録は変わりません）。</p>
+      <label class="setting-label" for="acc-reg-email">メールアドレス</label>
+      <input class="setting-input" type="email" id="acc-reg-email" autocomplete="email" inputmode="email" placeholder="例：name@example.com">
+      <label class="setting-label" for="acc-reg-pw">パスワード（8文字以上）</label>
+      <input class="setting-input" type="password" id="acc-reg-pw" autocomplete="new-password" maxlength="128">
+      <label class="setting-label" for="acc-reg-pw2">パスワード（確認のためもう一度）</label>
+      <input class="setting-input" type="password" id="acc-reg-pw2" autocomplete="new-password" maxlength="128">
+      <button class="btn-save" id="acc-reg-btn" style="margin-top:12px" onclick="registerAccount()">確認コードを送って登録する</button>
+      <div id="acc-reg-code-box" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg)">
+        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">入力したメールアドレスに6桁の確認コードを送りました。届いたコードを入力すると登録が完了します（迷惑メールのフォルダもご確認ください）。</p>
+        <label class="setting-label" for="acc-reg-code">確認コード（6桁）</label>
+        <input class="setting-input" type="text" id="acc-reg-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
+               onkeydown="if(event.key==='Enter')confirmRegistration()">
+        <button class="btn-save" style="margin-top:12px" onclick="confirmRegistration()">登録を完了する</button>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:18px 0 10px"></div>
+    <details id="account-login-box">
+      <summary style="font-size:17px;font-weight:700;cursor:pointer;padding:4px 0">🔑 機種変更・別の端末の方：ログイン</summary>
+      <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:8px 0 0">登録したメールアドレスとパスワードで入ると、この端末でも同じ記録を使えます。この端末にだけある記録も一緒に合わせます。</p>
+      <label class="setting-label" for="acc-login-email">メールアドレス</label>
+      <input class="setting-input" type="email" id="acc-login-email" autocomplete="email" inputmode="email">
+      <label class="setting-label" for="acc-login-pw">パスワード</label>
+      <input class="setting-input" type="password" id="acc-login-pw" autocomplete="current-password" maxlength="128"
+             onkeydown="if(event.key==='Enter')loginAccount()">
+      <button class="btn-save" id="acc-login-btn" style="margin-top:12px;background:#6366F1" onclick="loginAccount()">ログインする</button>
+      <button type="button" onclick="togglePasswordReset()" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--text-muted);font-size:15px;text-decoration:underline;cursor:pointer">パスワードを忘れた方はこちら</button>
+      <div id="account-reset-box" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg)">
+        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">上の欄にメールアドレスを入れて「確認コードを送る」を押すと、6桁の確認コードがメールで届きます。</p>
+        <button class="btn-save" style="background:#6B7280" onclick="requestPasswordReset()">確認コードを送る</button>
+        <label class="setting-label" for="acc-reset-code">確認コード（6桁）</label>
+        <input class="setting-input" type="text" id="acc-reset-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        <label class="setting-label" for="acc-reset-pw">新しいパスワード（8文字以上）</label>
+        <input class="setting-input" type="password" id="acc-reset-pw" autocomplete="new-password" maxlength="128">
+        <button class="btn-save" style="margin-top:12px" onclick="confirmPasswordReset()">新しいパスワードにしてログイン</button>
+      </div>
+    </details>
+    <div id="account-status" style="display:none;text-align:center;margin-top:10px;font-size:17px;font-weight:700;line-height:1.6"></div>
+  </div>
   <div class="setting-card">
     <h2>🔗 スマホ・パソコンでデータを共有</h2>
     <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">スマホとパソコンなど、複数の端末で<strong>同じ記録</strong>を見たり編集したりできるようにします。<br><strong>① いつも記録している端末</strong>で連携コードを発行し、<strong>② もう一方の端末</strong>でそのコードを入力してください。</p>
@@ -1463,6 +1511,8 @@
     <div id="member-gate-error" style="display:none;margin-top:10px;font-size:15px;color:#DC2626;line-height:1.6"></div>
     <button id="member-gate-btn" onclick="submitMemberGate()"
             style="width:100%;margin-top:14px;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">認証する</button>
+    <button type="button" onclick="openAccountLoginFromGate()"
+            style="width:100%;margin-top:10px;padding:12px;border-radius:14px;border:1.5px solid #6366F1;background:white;color:#4F46E5;font-size:16px;font-weight:700;cursor:pointer">📧 アカウントをお持ちの方はログイン</button>
     <div style="margin-top:14px;font-size:14px;color:#85807A;line-height:1.7">
       パスワードが分からない場合は、リオールジムのスタッフまでお問い合わせください。
     </div>
@@ -1946,6 +1996,188 @@ async function checkUnderRecording() {
     el.style.display = 'flex';
     localStorage.setItem(UNDERREC_KEY, today);
   } catch (e) { /* 失敗しても通常利用には影響させない */ }
+}
+
+// ═══════════════════════════════════════════
+//  アカウント（メールアドレス＋パスワード）2026-11-10
+//  登録＝今の端末の記録（USER_ID）にメールとパスワードを結びつけるだけ。記録は動かさない。
+//  ログイン＝その記録へこの端末を切り替える（連携コードと同じ adoptLinkedAccount を使う）。
+//  ログインで受け取った通行証を保存するので、合言葉の入力は要らない。
+// ═══════════════════════════════════════════
+function _setAccountStatus(msg, isError) {
+  const el = document.getElementById('account-status');
+  if (!el) return;
+  el.style.display = msg ? '' : 'none';
+  el.style.color = isError ? '#DC2626' : 'var(--primary-dark)';
+  el.textContent = msg || '';
+}
+
+async function loadAccountStatus() {
+  try {
+    const r = await fetch(`/api/account/status?user_id=${encodeURIComponent(USER_ID)}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const reg = document.getElementById('account-registered');
+    const form = document.getElementById('account-register-form');
+    if (reg) reg.style.display = d.registered ? '' : 'none';
+    if (form) form.style.display = d.registered ? 'none' : '';
+    const em = document.getElementById('account-email');
+    if (em) em.textContent = d.email || '';
+  } catch (e) { /* 読めなくても他の設定は使える */ }
+}
+
+async function registerAccount() {
+  const email = (document.getElementById('acc-reg-email').value || '').trim();
+  const pw = document.getElementById('acc-reg-pw').value || '';
+  const pw2 = document.getElementById('acc-reg-pw2').value || '';
+  if (!email) { _setAccountStatus('メールアドレスを入力してください', true); return; }
+  if (pw.length < 8) { _setAccountStatus('パスワードは8文字以上にしてください', true); return; }
+  if (pw !== pw2) { _setAccountStatus('確認のパスワードが一致しません', true); return; }
+  const btn = document.getElementById('acc-reg-btn');
+  if (btn) btn.disabled = true;
+  _setAccountStatus('登録中…', false);
+  try {
+    const r = await fetch('/api/account/register', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, memberHeaders()),
+      body: JSON.stringify({ user_id: USER_ID, email, password: pw }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.unlock_required && _handledMemberGate(d)) { _setAccountStatus('', false); return; }
+    if (!r.ok) throw new Error(d.error || '登録に失敗しました');
+    // メールに届く確認コードで登録を仕上げる（本人のメールであることを確かめる）
+    const box = document.getElementById('acc-reg-code-box');
+    if (box) box.style.display = '';
+    _setAccountStatus(d.message || '確認コードをメールで送りました。', false);
+    const inp = document.getElementById('acc-reg-code');
+    if (inp) inp.focus();
+  } catch (e) {
+    _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function confirmRegistration() {
+  const code = (document.getElementById('acc-reg-code').value || '').trim();
+  if (!/^\d{6}$/.test(code)) { _setAccountStatus('メールに届いた6桁の確認コードを入力してください', true); return; }
+  _setAccountStatus('確認中…', false);
+  try {
+    const r = await fetch('/api/account/register/confirm', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, memberHeaders()),
+      body: JSON.stringify({ user_id: USER_ID, code }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || '登録できませんでした');
+    if (d.token) setMemberToken(d.token);
+    ['acc-reg-pw', 'acc-reg-pw2', 'acc-reg-code'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const box = document.getElementById('acc-reg-code-box');
+    if (box) box.style.display = 'none';
+    _setAccountStatus('✅ 登録しました。機種変更しても、このメールアドレスとパスワードで記録を引き継げます。', false);
+    loadAccountStatus();
+  } catch (e) {
+    _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+  }
+}
+
+// 有料化後、アカウントが必要と言われたとき：設定のアカウントの欄へ案内する
+function openAccountRequired(msg) {
+  closeMemberGate();
+  switchView('settings');
+  setTimeout(() => {
+    const card = document.getElementById('account-card');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    _setAccountStatus(msg || 'ご利用には、メールアドレスとパスワードのアカウント登録（またはログイン）が必要です。', true);
+  }, 300);
+}
+
+// ログイン・パスワード再設定で受け取った記録へ、この端末を切り替える。
+async function _adoptAccountLogin(d) {
+  if (d.token) setMemberToken(d.token);
+  if (d.user_id && d.user_id !== USER_ID) await adoptLinkedAccount(d.user_id, d.profile || {});
+}
+
+async function _finishAccountLogin(d) {
+  await _adoptAccountLogin(d);
+  _setAccountStatus('✅ ログインしました！画面を再読み込みします…', false);
+  setTimeout(() => location.reload(), 1000);
+}
+
+async function loginAccount() {
+  const email = (document.getElementById('acc-login-email').value || '').trim();
+  const pw = document.getElementById('acc-login-pw').value || '';
+  if (!email || !pw) { _setAccountStatus('メールアドレスとパスワードを入力してください', true); return; }
+  const btn = document.getElementById('acc-login-btn');
+  if (btn) btn.disabled = true;
+  _setAccountStatus('ログイン中…', false);
+  try {
+    const r = await fetch('/api/account/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pw }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.user_id) throw new Error(d.error || 'ログインできませんでした');
+    await _finishAccountLogin(d);
+  } catch (e) {
+    _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+    if (btn) btn.disabled = false;
+  }
+}
+
+function togglePasswordReset() {
+  const box = document.getElementById('account-reset-box');
+  if (box) box.style.display = box.style.display === 'none' ? '' : 'none';
+}
+
+async function requestPasswordReset() {
+  const email = (document.getElementById('acc-login-email').value || '').trim();
+  if (!email) { _setAccountStatus('上の欄にメールアドレスを入力してください', true); return; }
+  _setAccountStatus('送信中…', false);
+  try {
+    const r = await fetch('/api/account/password-reset/request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || '送信できませんでした');
+    _setAccountStatus(d.message || '確認コードを送りました。メールをご確認ください。', false);
+  } catch (e) {
+    _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+  }
+}
+
+async function confirmPasswordReset() {
+  const email = (document.getElementById('acc-login-email').value || '').trim();
+  const code = (document.getElementById('acc-reset-code').value || '').trim();
+  const pw = document.getElementById('acc-reset-pw').value || '';
+  if (!email) { _setAccountStatus('上の欄にメールアドレスを入力してください', true); return; }
+  if (!/^\d{6}$/.test(code)) { _setAccountStatus('メールに届いた6桁の確認コードを入力してください', true); return; }
+  if (pw.length < 8) { _setAccountStatus('新しいパスワードは8文字以上にしてください', true); return; }
+  _setAccountStatus('確認中…', false);
+  try {
+    const r = await fetch('/api/account/password-reset/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code, password: pw }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.user_id) throw new Error(d.error || '再設定できませんでした');
+    await _finishAccountLogin(d);
+  } catch (e) {
+    _setAccountStatus(`❌ ${e.message || '通信エラーが発生しました'}`, true);
+  }
+}
+
+// 合言葉の画面から「アカウントをお持ちの方はログイン」（機種変更した会員向け）
+function openAccountLoginFromGate() {
+  closeMemberGate();
+  switchView('settings');
+  const box = document.getElementById('account-login-box');
+  if (box) box.open = true;
+  // 新しい端末で「登録」と取り違えないよう、ログインの欄へ直接移る
+  setTimeout(() => {
+    if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const inp = document.getElementById('acc-login-email');
+    if (inp) inp.focus({ preventScroll: true });
+  }, 300);
 }
 
 async function issueLinkCode() {
@@ -3278,7 +3510,9 @@ function _memberGateError(msg) {
 
 // サーバーが「会員限定」を理由に断ったとき（403 + unlock_required）。出したら true。
 function _handledMemberGate(data) {
-  if (!data || !data.unlock_required) return false;
+  if (!data) return false;
+  if (data.account_required) { openAccountRequired(data.error); return true; }   // 有料化後はアカウントで守る
+  if (!data.unlock_required) return false;
   openMemberGate();
   return true;
 }
@@ -3302,6 +3536,7 @@ async function submitMemberGate() {
       if (inp) inp.value = '';
       return;
     }
+    if (d.account_required) { openAccountRequired(d.error); return; }   // 有料化後は合言葉ではなくアカウントで
     _memberGateError(d.error || 'パスワードが違います');
   } catch (e) {
     _memberGateError('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
@@ -3319,7 +3554,8 @@ async function checkMemberGate() {
     const r = await fetch(`/api/member-status?${q}`);
     if (!r.ok) return;
     const d = await r.json();
-    if (d.gate_active && !d.unlocked) openMemberGate();
+    if (d.account_required) openAccountRequired();
+    else if (d.gate_active && !d.unlocked) openMemberGate();
   } catch (e) {}
 }
 
@@ -3436,6 +3672,18 @@ async function startBillingCheckout() {
     });
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.url) { location.href = d.url; return; }
+    if (d.account_required) {
+      // お申し込みはアカウントから（2026-11-10）。登録画面へ案内する。
+      closeBillingOverlay();
+      switchView('settings');
+      setTimeout(() => {
+        const card = document.getElementById('account-card');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        _setAccountStatus('お申し込みの前に、メールアドレスとパスワードを登録してください。', true);
+      }, 300);
+      btn.disabled = false; btn.textContent = '申し込む（お支払いページへ）';
+      return;
+    }
     _billingError(d.error || 'お支払いページを開けませんでした。');
   } catch (e) {
     _billingError('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
@@ -5443,7 +5691,7 @@ function switchView(view) {
   }
   if (view === 'history') loadHistory();
   if (view === 'chara') renderChara();
-  if (view === 'settings') loadProfileInputs();
+  if (view === 'settings') { loadProfileInputs(); loadAccountStatus(); }
   // タブを切り替えたら、最新の内容（記録・履歴・採点いずれも先頭に最新を表示）が
   // すぐ見えるように画面の一番上へ自動スクロールする。
   window.scrollTo({ top: 0, behavior: 'smooth' });

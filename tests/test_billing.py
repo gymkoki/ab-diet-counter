@@ -38,9 +38,21 @@ def _reset():
     try:
         cur = conn.cursor()
         for t in ("billing_accounts", "daily_b_count", "daily_weight", "daily_meals",
-                  "daily_nutrition", "usage_log"):
+                  "daily_nutrition", "usage_log", "accounts"):
             cur.execute(f"DELETE FROM {t}")
         cur.execute("DELETE FROM settings WHERE key IN ('billing_preorder_open','billing_disabled','legal_business_info')")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _account(uid, email="member@example.com"):
+    """お申し込みはアカウントから（2026-11-10）。テスト用にアカウントを1つ作る。"""
+    conn = m._get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"INSERT INTO accounts (email,user_id,password_hash,created_at,updated_at) "
+                    f"VALUES ({m.PH},{m.PH},'x','x','x')", (email, uid))
         conn.commit()
     finally:
         conn.close()
@@ -274,6 +286,7 @@ def test_checkout_requires_consent(on, monkeypatch):
 
 
 def test_checkout_creates_monthly_1100_yen(on, monkeypatch):
+    _account("u-1")
     fake = _FakeCheckout()
     monkeypatch.setattr(m, "_stripe_lib", lambda: fake)
     monkeypatch.setattr(m, "_billing_active", lambda today=None: True)
@@ -303,6 +316,7 @@ def test_checkout_closed_before_start_unless_preorder(on, monkeypatch):
 
 
 def test_preorder_first_charge_on_start_date(on, monkeypatch):
+    _account("u-1")
     fake = _FakeCheckout()
     monkeypatch.setattr(m, "_stripe_lib", lambda: fake)
     monkeypatch.setattr(m, "_billing_preorder_open", lambda today=None: True)
