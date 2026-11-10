@@ -85,6 +85,7 @@
     .meal-strip { display:flex; gap:10px; padding:4px 0 4px; flex-wrap:wrap; }
     .meal-thumb { position:relative; width:88px; height:88px; flex-shrink:0; border-radius:var(--radius-md); overflow:hidden; background:var(--bg); border:1px solid var(--border); box-shadow:var(--shadow-sm); }
     .meal-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .meal-thumb .th-wait { position:absolute; left:0; right:0; bottom:0; padding:3px 2px; background:rgba(255,107,53,0.92); color:#fff; font-size:12px; font-weight:800; text-align:center; cursor:pointer; }
     .meal-thumb .th-remove { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(20,16,14,0.55); backdrop-filter:blur(2px); color:white; border:none; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
     .meal-thumb .th-badge { position:absolute; bottom:4px; left:4px; right:4px; background:rgba(238,85,32,0.92); color:white; font-size:14px; font-weight:700; border-radius:7px; padding:2px 4px; text-align:center; letter-spacing:0.02em; }
     .meal-thumb .th-spinner { position:absolute; inset:0; background:rgba(20,16,14,0.55); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; }
@@ -1416,10 +1417,19 @@
     <div style="font-size:17px;line-height:1.9;color:#44403B;margin-bottom:22px">
       <div>体重の記録が<b>1週間以上</b>ありません。</div>
       <div style="margin-top:10px">ABダイエットは体重の変化を見ながら判定するため、<b>食事の解析には体重の記録が必要</b>です。</div>
-      <div style="margin-top:10px">今日の体重を入力すると、すぐに解析を再開できます。</div>
+      <div style="margin-top:10px" id="weight-gate-lead">ここに今日の体重を入力すると、そのまま続けられます。</div>
     </div>
-    <button onclick="closeWeightGate(); openWeightRecord();" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">⚖️ 体重を入力する</button>
-    <button onclick="closeWeightGate()" style="width:100%;margin-top:10px;padding:12px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">閉じる</button>
+    <!-- その場で入力して、そのまま写真の選択・解析へ進む（2026-11-10：別の画面へ移ると、選んだ写真をやり直すことになっていた） -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <input type="number" step="any" min="20" max="300" id="weight-gate-input" inputmode="decimal" placeholder="例：60.5"
+             style="flex:1;min-width:0;padding:12px 14px;border:1.5px solid #E5DED6;border-radius:12px;font-size:20px;font-weight:700"
+             onkeydown="if(event.key==='Enter')saveWeightFromGate()">
+      <span style="font-size:18px;font-weight:700;color:#44403B">kg</span>
+    </div>
+    <div id="weight-gate-err" style="display:none;color:#DC2626;font-size:15px;font-weight:700;margin-bottom:8px"></div>
+    <button id="weight-gate-save" onclick="saveWeightFromGate()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">⚖️ 体重を保存して続ける</button>
+    <button onclick="closeWeightGate(); openWeightRecord();" style="width:100%;margin-top:8px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:15px;font-weight:700;cursor:pointer">体重/日記の画面で入力する</button>
+    <button onclick="closeWeightGate()" style="width:100%;margin-top:2px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:15px;font-weight:700;cursor:pointer">閉じる</button>
   </div>
 </div>
 
@@ -1535,6 +1545,11 @@
 let _photoMealId = null;
 
 function openFileInput(mealId) {
+  // 体重が1週間以上無ければ、写真を選ぶ前に体重を入れてもらう（保存したらそのまま写真の選択を開く）
+  if (!hasWeightForGate()) {
+    openWeightGate({ after: () => openFileInput(mealId), label: '⚖️ 体重を保存して写真を選ぶ' });
+    return;
+  }
   _photoMealId = mealId;
   document.getElementById('input-file').click();
 }
@@ -1636,7 +1651,7 @@ function buildMealsPayload(includePending) {
     data[m.id] = {
       items: state[m.id].items
         .filter(i => i.result || (includePending && (i.previewSrc || (i.isText && i.text))))
-        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, note:i.note, isOil:i.isOil, oilLabel:i.oilLabel, isCopy:i.isCopy, pending: i.result ? undefined : true }))
+        .map(i => ({ id:i.id, previewSrc:i.previewSrc, result:i.result, isText:i.isText, text:i.text, note:i.note, isOil:i.isOil, oilLabel:i.oilLabel, isCopy:i.isCopy, pending: i.result ? undefined : true, waitingWeight: (!i.result && i.waitingWeight) || undefined }))
     };
   });
   return data;
@@ -3439,13 +3454,92 @@ function hasWeightForGate() {
   return hasRecentWeight(WEIGHT_GATE_MAX_AGE_DAYS + 1);
 }
 
-function openWeightGate() {
+// ── 体重の入力を先に（オーナー指示 2026-11-10）─────────────────
+// 以前は、写真を選んで解析が始まる段階で「体重を記録して」と止まり、選んだ写真が消えて
+// （体重の画面へ移ったあと）写真を選び直すことになっていた。いまは：
+//   ①「写真を追加」「文章で手動入力」を押した時点で体重が無ければ、先にこのモーダルで体重を入れてもらい、
+//     保存したらそのまま写真の選択・文章の入力へ進む（_weightGateAfter）
+//   ② それでも解析の段階で止まった写真・文章（他の端末とのずれなど）は消さずに「体重待ち」で残し、
+//     体重を保存したら自動で解析を続ける（resumeWeightWaitingItems）
+let _weightGateAfter = null;     // 体重を保存したあとに続ける操作（写真の選択を開く など）
+let _weightSavePromise = null;   // 体重をサーバーへ送っている途中（解析はこれを待ってから送る）
+
+function openWeightGate(opts) {
   const el = document.getElementById('weight-gate-overlay');
-  if (el) el.style.display = 'flex';
+  if (!el) return;
+  _weightGateAfter = (opts && opts.after) || null;
+  const btn = document.getElementById('weight-gate-save');
+  if (btn) btn.textContent = (opts && opts.label) || '⚖️ 体重を保存して続ける';
+  const err = document.getElementById('weight-gate-err');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+  const inp = document.getElementById('weight-gate-input');
+  if (inp) inp.value = '';
+  const lead = document.getElementById('weight-gate-lead');
+  if (lead) lead.textContent = 'ここに今日の体重を入力すると、そのまま続けられます。';
+  el.style.display = 'flex';
+  if (inp) setTimeout(() => { try { inp.focus(); } catch (e) {} }, 50);
+  // 端末に記録が無くても、他の端末で入力済みかもしれないので裏でサーバーを確かめる。
+  // 見つかったら入力なしで進めるようにする（写真の選択は「押した操作」からしか開けないので、ボタンで進んでもらう）
+  if (!(opts && opts.checked)) {
+    syncHistoryFromServer().then(() => {
+      if (el.style.display === 'none' || !hasWeightForGate()) return;
+      updateWeightNudge();
+      const lead = document.getElementById('weight-gate-lead');
+      if (lead) lead.textContent = '✅ 最近の体重の記録が見つかりました。このまま続けられます（今日の体重を入れてもOK）。';
+    }).catch(() => {});
+  }
 }
 function closeWeightGate() {
   const el = document.getElementById('weight-gate-overlay');
   if (el) el.style.display = 'none';
+  _weightGateAfter = null;
+}
+
+// モーダルの「保存して続ける」。押した操作の流れのまま（awaitを挟まずに）写真の選択を開くこと：
+// あとから開こうとすると、ブラウザに止められて選択画面が出ない。
+function saveWeightFromGate() {
+  const inp = document.getElementById('weight-gate-input');
+  const err = document.getElementById('weight-gate-err');
+  const raw = inp ? String(inp.value).trim() : '';
+  const w = parseFloat(raw);
+  const valid = w >= 20 && w <= 300;
+  if (!valid && (raw !== '' || !hasWeightForGate())) {
+    if (err) { err.textContent = '体重を正しく入力してください（例：60.5）'; err.style.display = 'block'; }
+    if (inp) inp.focus();
+    return;
+  }
+  if (valid) {
+    const date = getTodayJST();
+    const log = getWeightLog();
+    log[date] = w;
+    localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(log));
+    const p = getProfile() || {};
+    p.weight = w;                 // 運動の消費カロリー計算用（saveTodayWeight と同じ）
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+    _weightSavePromise = submitDailyWeight(w, date);
+    try { updateWeightNudge(); renderWeightInline(); renderOnboarding(); } catch (e) {}
+  }
+  const after = _weightGateAfter;
+  closeWeightGate();
+  if (after) { try { after(); } catch (e) { console.warn('[weight-gate] after failed', e); } }
+  resumeWeightWaitingItems();
+}
+
+// 体重待ちで止めていた写真・文章を、体重を保存したあとに自動で解析する
+function resumeWeightWaitingItems() {
+  MEALS.forEach(m => (state[m.id].items || []).forEach(item => {
+    if (!item.waitingWeight || item.result || item.loading) return;
+    item.waitingWeight = false;
+    item.error = null;
+    if (item.isText && item.text) resumeTextItem(m.id, item);
+    else if (item.file || item.previewSrc) analyzeItem(m.id, item.id);
+  }));
+}
+
+// 体重をサーバーへ送っている途中なら、それを待ってから解析を送る（先に解析が届くと止められるため）
+async function _awaitWeightSave() {
+  if (!_weightSavePromise) return;
+  try { await _weightSavePromise; } catch (e) {}
 }
 
 // サーバーが体重未記録を理由に解析を断ったとき（403 + weight_required）。
@@ -3459,11 +3553,12 @@ function _handledWeightGate(data) {
 // 解析を始める前の確認。通せるなら true。
 // 端末に記録が無くても、他の端末で入力済みかもしれないので一度サーバーを見に行く
 // （localStorage だけで判断すると、機種変更直後などに誤って止めてしまう）。
-async function ensureWeightForAnalysis() {
+// opts.after：体重を保存したあとに続ける操作（文章の送信・再計算をもう一度押さなくて済むように）
+async function ensureWeightForAnalysis(opts) {
   if (hasWeightForGate()) return true;
   try { await syncHistoryFromServer(); } catch (e) {}
   if (hasWeightForGate()) { updateWeightNudge(); return true; }
-  openWeightGate();
+  openWeightGate(Object.assign({ checked: true }, opts || {}));
   return false;
 }
 
@@ -3746,14 +3841,15 @@ async function doReset() {
 //  File handling
 // ═══════════════════════════════════════════
 async function addFiles(mealId, files) {
-  // 体重が1週間以上未記録なら、写真を取り込む前に案内を出して止める
-  if (!(await ensureWeightForAnalysis())) return;
+  // 体重が1週間以上未記録なら案内を出す。ただし選んだ写真は消さずに「体重待ち」で残し、
+  // 体重を保存したら自動で解析する（以前はここで写真を捨てていたため、選び直しになっていた）
+  const weightOk = await ensureWeightForAnalysis();
   for (const file of files) {
     const id = nextItemId();
     // 写真を選んだ時点を記録する。60秒の締め切りは、圧縮などの前処理も含めて
     // 「利用者が待ち始めてから」で数える（オーナー指示 2026-08）。
     const item = { id, file:null, previewSrc:null, result:null, loading:false, error:null,
-                   pickedAt: Date.now() };
+                   pickedAt: Date.now(), waitingWeight: !weightOk };
     state[mealId].items.push(item);
     renderStrip(mealId);
     const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
@@ -3761,7 +3857,8 @@ async function addFiles(mealId, files) {
     item.previewSrc = thumb;
     renderStrip(mealId);
     saveState();   // 解析前にサムネを保存（計算中に再読み込みされても写真が消えないように）
-    analyzeItem(mealId, id);   // 撮影したらそのまま解析する
+    // 撮影したらそのまま解析する。体重待ちのあいだに体重が保存されていたら、その場で解析する
+    if (!item.waitingWeight || hasWeightForGate()) { item.waitingWeight = false; analyzeItem(mealId, id); }
   }
 }
 
@@ -4201,6 +4298,10 @@ function closeMealInputs(mealId) {
   if (f) f.style.display = 'none';
 }
 function chooseManualText(mealId) {
+  if (!hasWeightForGate()) {   // 文章を書く前に体重を入れてもらう（書いたあとで止めない）
+    openWeightGate({ after: () => chooseManualText(mealId), label: '⚖️ 体重を保存して入力へ進む' });
+    return;
+  }
   closeMealInputs(mealId);
   const f = document.getElementById(`textform-${mealId}`);
   if (f) { f.style.display = 'block'; document.getElementById(`textinput-${mealId}`)?.focus(); }
@@ -4225,8 +4326,9 @@ async function submitTextEntry(mealId) {
   const ta = document.getElementById(`textinput-${mealId}`);
   const text = ta && ta.value ? ta.value.trim() : '';
   if (!text) { ta && ta.focus(); return; }
-  // 体重が1週間以上未記録なら、入力内容は消さずに案内だけ出して止める
-  if (!(await ensureWeightForAnalysis())) return;
+  // 体重が1週間以上未記録なら、入力内容は消さずに案内を出し、体重を保存したらそのまま送る
+  if (!(await ensureWeightForAnalysis({ after: () => submitTextEntry(mealId) }))) return;
+  await _awaitWeightSave();
 
   const id = nextItemId();
   const item = { id, file:null, previewSrc:null, result:null, loading:true, error:null, isText:true, text };
@@ -4253,7 +4355,10 @@ async function submitTextEntry(mealId) {
     renderStrip(mealId);
     await new Promise(r => setTimeout(r, 300));
     item.loading = false;
-    if (data.error) {
+    if (data.error && data.weight_required) {
+      item.waitingWeight = true;   // 書いた文章は消さずに残し、体重を保存したら自動で解析する
+      openWeightGate();
+    } else if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== id);
       if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
     } else {
@@ -4293,6 +4398,7 @@ function renderStrip(mealId) {
           <div class="th-pct">${fmtPct(item.loadingPct)}%</div>
           <div class="th-pbar-wrap"><div class="th-pbar" style="width:${item.loadingPct||0}%"></div></div>
         </div>` : ''}
+        ${!item.loading && item.waitingWeight ? `<div class="th-wait" onclick="openWeightGate()">⚖️ 体重待ち</div>` : ''}
         ${!item.loading ? `<button class="th-remove" onclick="removeItem('${mealId}',${item.id})">✕</button>` : ''}
       </div>`;
   }).join('');
@@ -4591,10 +4697,12 @@ async function analyzeItem(mealId, itemId) {
   let imageBlob = item.file;
   if (!imageBlob && item.previewSrc) { try { imageBlob = dataURLtoBlob(item.previewSrc); } catch(e) {} }
   if (!imageBlob) return;
+  item.waitingWeight = false;
   item.loading = true;
   item.loadingPct = 0;
   _startProgress(mealId, itemId);
   renderStrip(mealId);
+  await _awaitWeightSave();   // 直前に保存した体重がサーバーに届いてから送る
 
   // 初手から高精度AI（Sonnet）で1回だけ解析する。
   // 以前は事前に軽量AI（Haiku）で「大盛り？油は？」と確認してから本解析していたが、
@@ -4656,6 +4764,11 @@ async function analyzeItem(mealId, itemId) {
   if (analyzed) {
     delete data.clarify;   // 確認フラグは保存データに持ち越さない
     item.result = data;
+  } else if (data && data.weight_required) {
+    // 体重の記録が無いと止められた：写真は消さずに「体重待ち」で残し、体重を保存したら自動で解析する
+    item.waitingWeight = true;
+    item.error = null;
+    openWeightGate();
   } else {
     // ここまで来るのは、サーバー側の再試行でも回復しなかった場合だけ。
     // 写真は残るので、次にアプリを開いたとき resumePendingAnalyses が自動で続きを計算する。
@@ -4679,10 +4792,12 @@ async function analyzeItem(mealId, itemId) {
 
 // 文章入力（写真なし）の解析を再開する。リロードで中断された文章項目の復帰に使う。
 async function resumeTextItem(mealId, item) {
+  item.waitingWeight = false;
   item.loading = true;
   item.loadingPct = 0;
   _startProgress(mealId, item.id);
   renderStrip(mealId);
+  await _awaitWeightSave();
   const fd = new FormData();
   fd.append('text', item.text);
   fd.append('user_id', USER_ID);
@@ -4692,7 +4807,10 @@ async function resumeTextItem(mealId, item) {
     const data = await parseAnalyzeResponse(res);
     _stopProgress(mealId, item.id);
     item.loading = false;
-    if (data.error) {
+    if (data.error && data.weight_required) {
+      item.waitingWeight = true;   // 文章は消さずに残し、体重を保存したら自動で解析する
+      openWeightGate();
+    } else if (data.error) {
       state[mealId].items = state[mealId].items.filter(i => i.id !== item.id);
       if (!_handledMemberGate(data) && !_handledBillingGate(data) && !_handledWeightGate(data)) showError(mealId, data.error);
     } else { item.result = data; }
@@ -4713,6 +4831,7 @@ function resumePendingAnalyses() {
   MEALS.forEach(m => {
     (state[m.id].items || []).forEach(item => {
       if (item.result || item.loading) return;      // 完了済み・処理中は対象外
+      if (item.waitingWeight && !hasWeightForGate()) return;   // 体重待ち：体重を保存したら再開する
       if (item.isText && item.text) resumeTextItem(m.id, item);
       else if (item.previewSrc)     analyzeItem(m.id, item.id);
     });
@@ -4743,8 +4862,9 @@ async function reanalyzeItem(mealId, itemId) {
   const btn = document.querySelector(`#recalc-form-${mealId}-${itemId} .btn-recalc`);
   const correction = textarea?.value?.trim();
   if (!correction) { textarea?.focus(); return; }
-  // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残す）
-  if (!(await ensureWeightForAnalysis())) return;
+  // 体重が1週間以上未記録なら、訂正の再計算も止める（入力内容は残し、体重を保存したらそのまま再計算する）
+  if (!(await ensureWeightForAnalysis({ after: () => reanalyzeItem(mealId, itemId) }))) return;
+  await _awaitWeightSave();
 
   // 進捗％を表示（写真のサムネイルとボタンの両方）
   item.loading = true;
