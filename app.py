@@ -18,6 +18,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.header import Header
 from email import encoders
+from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, Response, send_from_directory
 import anthropic
@@ -933,6 +934,27 @@ def init_db():
             )
         """)
 
+        # アカウント（メールアドレス＋パスワード。オーナー指示 2026-11-10）。
+        # 今までの記録はすべて user_id に紐づいているので、アカウントは「今の user_id にメールとパスワードを結びつける」だけ。
+        # 記録を別の場所へ移す処理は無い（＝有料化後もそのまま引き継がれる）。パスワードはハッシュだけを保存する。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                email         TEXT PRIMARY KEY,
+                user_id       TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL
+            )
+        """)
+        # パスワード再設定の確認コード（メールで送る6桁。ハッシュだけを保存し、30分で無効）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS account_reset_codes (
+                email      TEXT PRIMARY KEY,
+                code_hash  TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts   INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         # 端末連携コード（デスクトップ⇔スマホで同じ記録を共有するための一時コード）
         cur.execute("""
             CREATE TABLE IF NOT EXISTS link_codes (
@@ -1194,7 +1216,16 @@ def _member_gate_active(today=None):
         app.logger.warning("MEMBER_GATE_START が不正です: %r", MEMBER_GATE_START)
         return False
     today = today or datetime.datetime.now(JST).date()
-    return today >= start
+    if today < start:
+        return False
+    # 有料化が始まったら合言葉は使わない（オーナー指示 2026-11-10：アカウント制にしたら合言葉は残さない）。
+    # それ以降は「アカウント＋支払い（または無料期間）」で使える人を決める。判定できないときは今までどおり合言葉を使う。
+    try:
+        if _billing_active(today):
+            return False
+    except Exception as e:
+        app.logger.warning("billing check in member gate failed: %s", e)
+    return True
 
 
 def _member_password():
@@ -1347,6 +1378,301 @@ def member_unlock():
 
     _clear_unlock_fails(ip)
     return jsonify({"ok": True, "token": token})
+
+
+# ══════════════════════════════════════════════════════════════
+#  アカウント（メールアドレス＋パスワード）オーナー指示 2026-11-10
+#  ・今の端末の user_id にメールとパスワードを結びつける。記録はすべて user_id に付いているので、
+#    登録しても記録は動かない（＝今までの履歴が有料化後もそのまま使える）。
+#  ・機種変更・別の端末ではメールとパスワードでログインし、その user_id に切り替える
+#    （画面側は連携コードと同じ adoptLinkedAccount() で、その端末にだけある記録も合流させる）。
+#  ・ログインした端末には、その user_id の通行証（合言葉の代わり）を渡す。合言葉の入力は要らない。
+#  ・登録は合言葉を通った端末（＝会員）だけ。合言葉が無いうちに外の人がアカウントを作れないようにする。
+#  ・パスワードはハッシュだけを保存する。メールアドレス・パスワードはログに出さない。
+# ══════════════════════════════════════════════════════════════
+ACCOUNT_PASSWORD_MIN = 8
+ACCOUNT_RESET_TTL_MIN = 30
+ACCOUNT_RESET_MAX_ATTEMPTS = 5
+ACCOUNT_LOGIN_MAX_FAILS = 8          # 同じIPからの失敗がこの回数に達したら一時ロック
+ACCOUNT_LOGIN_WINDOW_SEC = 900
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_login_fails = {}                    # ip -> [失敗時刻(epoch), ...]
+_login_fails_lock = threading.Lock()
+
+
+def _norm_email(v):
+    return str(v or "").strip().lower()
+
+
+def _valid_email(email):
+    return bool(email) and len(email) <= 254 and bool(_EMAIL_RE.match(email))
+
+
+def _mask_email(email):
+    """画面に出すときの伏せ字（例：ta****@gmail.com）。"""
+    name, _, dom = (email or "").partition("@")
+    if not dom:
+        return ""
+    return (name[:2] + "*" * max(2, len(name) - 2)) + "@" + dom
+
+
+def _account_by_uid(uid):
+    uid = (uid or "").strip()
+    if not uid:
+        return None
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT email, user_id, password_hash FROM accounts WHERE user_id={PH}", (uid,))
+        r = cur.fetchone()
+    finally:
+        conn.close()
+    return {"email": r[0], "user_id": r[1], "password_hash": r[2]} if r else None
+
+
+def _account_by_email(email):
+    email = _norm_email(email)
+    if not email:
+        return None
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT email, user_id, password_hash FROM accounts WHERE email={PH}", (email,))
+        r = cur.fetchone()
+    finally:
+        conn.close()
+    return {"email": r[0], "user_id": r[1], "password_hash": r[2]} if r else None
+
+
+def _login_locked(ip):
+    now = time.time()
+    with _login_fails_lock:
+        fails = [t for t in _login_fails.get(ip, []) if now - t < ACCOUNT_LOGIN_WINDOW_SEC]
+        _login_fails[ip] = fails
+        return len(fails) >= ACCOUNT_LOGIN_MAX_FAILS
+
+
+def _login_fail(ip):
+    with _login_fails_lock:
+        _login_fails.setdefault(ip, []).append(time.time())
+
+
+def _password_problem(pw):
+    if len(pw) < ACCOUNT_PASSWORD_MIN:
+        return f"パスワードは{ACCOUNT_PASSWORD_MIN}文字以上にしてください。"
+    if len(pw) > 128:
+        return "パスワードが長すぎます（128文字まで）。"
+    return None
+
+
+def _device_token_for(uid):
+    """その user_id の通行証。あれば同じものを返し（別の端末を締め出さない）、無ければ新しく作る。"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT token FROM member_devices WHERE user_id={PH}", (uid,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+            token = secrets.token_urlsafe(24)
+            cur.execute(f"INSERT INTO member_devices (user_id, token, activated_at) VALUES ({PH},{PH},{PH})",
+                        (uid, token, datetime.datetime.now(JST).isoformat()))
+            conn.commit()
+            return token
+        finally:
+            conn.close()
+
+
+def _profile_brief(uid):
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT display_name, gender, goal FROM user_profile WHERE user_id={PH}", (uid,))
+            p = cur.fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        p = None
+    return {"display_name": p[0] if p else None, "gender": p[1] if p else None, "goal": p[2] if p else None}
+
+
+@app.route("/api/account/status")
+def api_account_status():
+    """この端末（user_id）がアカウント登録済みか。メールは伏せ字で返す。"""
+    uid = (request.args.get("user_id") or "").strip()
+    try:
+        acc = _account_by_uid(uid)
+    except Exception as e:
+        app.logger.warning("account status failed: %s", e)
+        return jsonify({"error": "読み込みに失敗しました"}), 503
+    return jsonify({"registered": bool(acc), "email": _mask_email(acc["email"]) if acc else None,
+                    "password_min": ACCOUNT_PASSWORD_MIN})
+
+
+@app.route("/api/account/register", methods=["POST"])
+def api_account_register():
+    """今の端末の user_id にメールアドレスとパスワードを結びつける（記録はそのまま）。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    email = _norm_email(data.get("email"))
+    pw = str(data.get("password") or "")
+    if not uid:
+        return jsonify({"error": "端末を識別できませんでした。アプリを開き直してください。"}), 400
+    if _member_gate_active() and not _is_unlocked(uid, request.headers.get("X-Device-Token", "")):
+        return jsonify({"error": MEMBER_GATE_MESSAGE, "unlock_required": True}), 403
+    if not _valid_email(email):
+        return jsonify({"error": "メールアドレスの形式が正しくありません。"}), 400
+    problem = _password_problem(pw)
+    if problem:
+        return jsonify({"error": problem}), 400
+    try:
+        if _account_by_uid(uid):
+            return jsonify({"error": "この端末の記録はすでにアカウント登録済みです。"}), 409
+        if _account_by_email(email):
+            return jsonify({"error": "このメールアドレスはすでに登録されています。"
+                                     "別の端末で登録した場合は「ログイン」からお入りください。",
+                            "email_taken": True}), 409
+        ts = datetime.datetime.now(JST).isoformat()
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(f"INSERT INTO accounts (email, user_id, password_hash, created_at, updated_at) "
+                            f"VALUES ({PH},{PH},{PH},{PH},{PH})",
+                            (email, uid, generate_password_hash(pw), ts, ts))
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.error("account register failed: %s", type(e).__name__)
+        return jsonify({"error": "登録に失敗しました。時間をおいてもう一度お試しください。"}), 503
+    return jsonify({"ok": True, "email": _mask_email(email)})
+
+
+def _login_response(acc):
+    try:
+        token = _device_token_for(acc["user_id"])
+    except Exception as e:
+        app.logger.error("account token failed: %s", type(e).__name__)
+        token = None
+    return jsonify({"ok": True, "user_id": acc["user_id"], "token": token,
+                    "email": _mask_email(acc["email"]), "profile": _profile_brief(acc["user_id"])})
+
+
+@app.route("/api/account/login", methods=["POST"])
+def api_account_login():
+    """メールとパスワードでログインし、その記録（user_id）と通行証を返す。"""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    pw = str(data.get("password") or "")
+    ip = _client_ip()
+    if _login_locked(ip):
+        return jsonify({"error": "ログインの失敗が続いたため、しばらくお待ちください（約15分）。"}), 429
+    try:
+        acc = _account_by_email(email)
+    except Exception as e:
+        app.logger.error("account login lookup failed: %s", type(e).__name__)
+        return jsonify({"error": "ログインできませんでした。時間をおいてもう一度お試しください。"}), 503
+    if not acc or not pw or not check_password_hash(acc["password_hash"], pw):
+        _login_fail(ip)
+        return jsonify({"error": "メールアドレスかパスワードが違います。"}), 401
+    with _login_fails_lock:
+        _login_fails.pop(ip, None)
+    return _login_response(acc)
+
+
+def _send_reset_mail(email, code):
+    user, pw = _gmail_creds()
+    if not user or not pw:
+        raise RuntimeError("mail not configured")
+    body = (
+        "ABダイエットのパスワード再設定の確認コードです。\n\n"
+        f"確認コード：{code}\n\n"
+        f"アプリの画面にこの6桁を入力し、新しいパスワードを決めてください（{ACCOUNT_RESET_TTL_MIN}分間有効）。\n"
+        "お心当たりが無い場合は、このメールは破棄してください（パスワードは変わりません）。\n\n"
+        "リオールジム ABダイエット"
+    )
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header("[ABダイエット] パスワード再設定の確認コード", "utf-8")
+    msg["From"] = user
+    msg["To"] = email
+    _smtp_send(user, pw, email, msg.as_bytes())
+
+
+@app.route("/api/account/password-reset/request", methods=["POST"])
+def api_account_reset_request():
+    """パスワード再設定の確認コードをメールで送る。登録の有無は答えない（他人のメールを調べられないように）。"""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    if not _valid_email(email):
+        return jsonify({"error": "メールアドレスの形式が正しくありません。"}), 400
+    ok_msg = {"ok": True, "message": "登録されているメールアドレスなら、確認コードを送りました。メールをご確認ください。"}
+    try:
+        acc = _account_by_email(email)
+    except Exception:
+        return jsonify({"error": "時間をおいてもう一度お試しください。"}), 503
+    if not acc:
+        return jsonify(ok_msg)
+    code = f"{secrets.randbelow(1000000):06d}"
+    expires = (datetime.datetime.now(JST) + datetime.timedelta(minutes=ACCOUNT_RESET_TTL_MIN)).isoformat()
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(f"DELETE FROM account_reset_codes WHERE email={PH}", (email,))
+                cur.execute(f"INSERT INTO account_reset_codes (email, code_hash, expires_at, attempts) "
+                            f"VALUES ({PH},{PH},{PH},0)", (email, generate_password_hash(code), expires))
+                conn.commit()
+            finally:
+                conn.close()
+        _send_reset_mail(email, code)
+    except Exception as e:
+        app.logger.error("account reset mail failed: %s", type(e).__name__)
+        return jsonify({"error": "確認コードのメールを送れませんでした。お手数ですがリオールジムのスタッフにお問い合わせください。"}), 503
+    return jsonify(ok_msg)
+
+
+@app.route("/api/account/password-reset/confirm", methods=["POST"])
+def api_account_reset_confirm():
+    """確認コードを確かめて新しいパスワードにし、そのままログインする。"""
+    data = request.get_json(silent=True) or {}
+    email = _norm_email(data.get("email"))
+    code = str(data.get("code") or "").strip()
+    pw = str(data.get("password") or "")
+    problem = _password_problem(pw)
+    if problem:
+        return jsonify({"error": problem}), 400
+    bad = jsonify({"error": "確認コードが違うか、期限が切れています。もう一度コードを送ってください。"}), 400
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(f"SELECT code_hash, expires_at, attempts FROM account_reset_codes WHERE email={PH}", (email,))
+                row = cur.fetchone()
+                if not row or row[1] < datetime.datetime.now(JST).isoformat() or int(row[2]) >= ACCOUNT_RESET_MAX_ATTEMPTS:
+                    return bad
+                if not (code.isdigit() and len(code) == 6 and check_password_hash(row[0], code)):
+                    cur.execute(f"UPDATE account_reset_codes SET attempts=attempts+1 WHERE email={PH}", (email,))
+                    conn.commit()
+                    return bad
+                ts = datetime.datetime.now(JST).isoformat()
+                cur.execute(f"UPDATE accounts SET password_hash={PH}, updated_at={PH} WHERE email={PH}",
+                            (generate_password_hash(pw), ts, email))
+                cur.execute(f"DELETE FROM account_reset_codes WHERE email={PH}", (email,))
+                conn.commit()
+            finally:
+                conn.close()
+        acc = _account_by_email(email)
+    except Exception as e:
+        app.logger.error("account reset confirm failed: %s", type(e).__name__)
+        return jsonify({"error": "時間をおいてもう一度お試しください。"}), 503
+    if not acc:
+        return bad
+    return _login_response(acc)
 
 
 def _save_user_goal(uid, gender, goal):
@@ -6428,15 +6754,19 @@ def admin_member_gate():
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM member_devices")
             devices = int(cur.fetchone()[0])
+            cur.execute("SELECT COUNT(*) FROM accounts")
+            accounts = int(cur.fetchone()[0])
         finally:
             conn.close()
     except Exception:
-        devices = None
+        devices = accounts = None
     return jsonify({
         "password":    _member_password(),
         "gate_active": _member_gate_active(),
         "start_date":  MEMBER_GATE_START,
         "devices":     devices,
+        "accounts":    accounts,
+        "ends_with_billing": True,
     })
 
 
@@ -9769,6 +10099,15 @@ def api_billing_checkout():
     preview = bool(data.get("preview")) and _billing_start_date() is not None
     if not (_billing_active() or _billing_preorder_open() or (preview and _billing_configured())):
         return jsonify({"error": "現在はお申し込みを受け付けていません。"}), 403
+    # お申し込みはアカウントから（オーナー指示 2026-11-10）。機種変更しても支払いと記録が一緒に引き継がれるように。
+    try:
+        account = _account_by_uid(uid)
+    except Exception:
+        account = None
+    if not account:
+        return jsonify({"error": "お申し込みの前に、メールアドレスとパスワードでアカウントを登録してください"
+                                 "（設定 → アカウント）。機種変更しても記録とお支払いが引き継がれます。",
+                        "account_required": True}), 403
 
     row = _billing_row(uid) or {}
     if row.get("status") in BILLING_OK_STATUSES:
@@ -9806,6 +10145,8 @@ def api_billing_checkout():
     }
     if row.get("customer_id"):
         params["customer"] = row["customer_id"]
+    else:
+        params["customer_email"] = account["email"]
     try:
         session = _stripe_lib().checkout.Session.create(**params)
     except Exception as e:

@@ -2284,7 +2284,9 @@
         ? '<span style="color:#065F46;font-weight:800">稼働中</span>'
         : `<span style="color:#B45309;font-weight:800">${escapeHtml(d.start_date)} から開始</span>`;
       now.innerHTML = `状態：${state}　／　現在のパスワード：<b style="font-size:15px">${escapeHtml(d.password)}</b>`
-        + `　／　認証済みの端末：<b>${d.devices == null ? '—' : d.devices}</b> 台`;
+        + `　／　認証済みの端末：<b>${d.devices == null ? '—' : d.devices}</b> 台`
+        + `　／　アカウント登録（メール・パスワード）：<b>${d.accounts == null ? '—' : d.accounts}</b> 人`
+        + (d.ends_with_billing ? '<br><span style="font-size:12px;color:#6B7280">※有料化が始まると合言葉は自動で使わなくなります（以降はアカウント＋お支払いで利用）。</span>' : '');
       const inp = document.getElementById('member-gate-pw');
       if (inp && !inp.value) inp.value = d.password;
     } catch (e) {
