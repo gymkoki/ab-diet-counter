@@ -191,3 +191,68 @@ def test_lightbox_sits_above_album():
     html = _html()
     lb = int(re.search(r"#lightbox \{[^}]*z-index:(\d+)", html).group(1))
     assert lb > 500, "アルバムの写真を拡大しても、モーダルの裏に隠れてしまう"
+
+
+# ── ⑦ どの食材がBだったかを遡って見られる（会員の声 2026-11-11） ─────────────────
+def _mixed_item(iid):
+    return {"id": iid, "result": {"foods": [
+        {"name": "白米", "category": "B", "b_count": 1},
+        {"name": "鶏むね肉のソテー", "category": "A", "b_count": 0},
+        {"name": "調理油", "category": "B", "b_count": 0.5},
+        {"name": "サラダ", "category": "A", "b_count": 0},
+    ], "total_b_count": 1.5}}
+
+
+def test_album_keeps_food_breakdown(db):
+    uid = PREFIX + "detail"
+    d = datetime.datetime.now(m.JST).date().isoformat()
+    _save(uid, d, [_mixed_item(1700000000001)])
+    it = _album(uid)[d][0]
+    assert it["items"] == [{"n": "白米", "b": 1.0, "c": "B"}, {"n": "鶏むね肉のソテー", "b": 0.0, "c": "A"},
+                           {"n": "調理油", "b": 0.5, "c": "B"}, {"n": "サラダ", "b": 0.0, "c": "A"}]
+    assert it["b_count"] == 1.5
+
+
+def test_breakdown_survives_after_details_are_deleted(db):
+    """明細(daily_meals)が5日で消えたあとも、内訳はアルバムに残る。"""
+    uid = PREFIX + "keep"
+    d = (datetime.datetime.now(m.JST).date() - datetime.timedelta(days=20)).isoformat()
+    _save(uid, d, [_mixed_item(1700000000002)])
+    _exec(f"DELETE FROM daily_meals WHERE user_id={m.PH}", (uid,))
+    it = _album(uid)[d][0]
+    assert [f["n"] for f in it["items"] if f["b"]] == ["白米", "調理油"]
+
+
+def test_rows_from_before_breakdown_are_filled_from_recent_details(db):
+    """内訳を残し始める前にアルバムへ入った直近の日も、明細が残っていれば内訳を補う。"""
+    uid = PREFIX + "old"
+    d = datetime.datetime.now(m.JST).date().isoformat()
+    _save(uid, d, [_mixed_item(1700000000003)])
+    _exec(f"UPDATE meal_album SET detail=NULL WHERE user_id={m.PH}", (uid,))
+    it = _album(uid)[d][0]
+    assert it["items"] and it["items"][0]["n"] == "白米"
+
+
+def test_old_rows_without_breakdown_still_show(db):
+    uid = PREFIX + "legacy"
+    d = (datetime.datetime.now(m.JST).date() - datetime.timedelta(days=30)).isoformat()
+    _exec(f"INSERT INTO meal_album (user_id,date,item_id,slot,foods,b_count,created_at) "
+          f"VALUES ({m.PH},{m.PH},'1','昼','カレーライス',2,'x')", (uid, d))
+    it = _album(uid)[d][0]
+    assert it["items"] is None and it["foods"] == "カレーライス"
+
+
+def test_food_breakdown_is_limited():
+    res = {"foods": [{"name": "x" * 100, "b_count": True, "category": "b"}] * 50}
+    out = json.loads(m._album_food_detail(res))
+    assert len(out) == m.MEAL_ALBUM_DETAIL_MAX and len(out[0]["n"]) == 40
+    assert out[0]["b"] is None and out[0]["c"] == "B"
+    assert m._album_food_detail({"foods": []}) is None
+
+
+def test_album_popup_lists_foods_with_b():
+    with open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    assert "${albumFoodsHtml(it.items)}" in html
+    fn = re.search(r"function albumFoodsHtml\(items\) \{.*?\n\}", html, re.S).group(0)
+    assert "is-b" in fn and "esc(f.n" in fn, "食材名はエスケープし、Bの食材を目立たせる"

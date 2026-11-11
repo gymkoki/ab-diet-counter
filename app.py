@@ -1148,6 +1148,13 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        # 既存DBへの列追加（会員の声 2026-11-11「過去の食事の、どの食材がBカウントだったのか遡っても見られるように」）：
+        # 食事アルバムに、記録ごとの食材の内訳（[{"n":食材名,"b":B,"c":"A"/"B"}] のJSON）を残す。追加前の行は NULL。
+        try:
+            cur.execute("ALTER TABLE meal_album ADD COLUMN detail TEXT")
+            conn.commit()
+        except Exception:
+            conn.rollback()
     finally:
         conn.close()
 
@@ -10054,6 +10061,24 @@ MEAL_ALBUM_THUMB_PX = 200
 MEAL_ALBUM_THUMB_Q = 55
 
 
+MEAL_ALBUM_DETAIL_MAX = 20     # 1件の記録に残す食材の数の上限
+
+
+def _album_food_detail(res):
+    """記録1件の食材の内訳（食材名・B・A/B）をJSON文字列にする。食材が無ければ None。
+    会員が過去の食事で「どの食材がBだったか」を見返すため（会員の声 2026-11-11）。"""
+    out = []
+    for f in (res.get("foods") or [])[:MEAL_ALBUM_DETAIL_MAX]:
+        if not isinstance(f, dict) or not f.get("name"):
+            continue
+        b = f.get("b_count")
+        cat = str(f.get("category") or "").strip().upper()
+        out.append({"n": str(f["name"])[:40],
+                    "b": float(b) if isinstance(b, (int, float)) and not isinstance(b, bool) else None,
+                    "c": cat if cat in ("A", "B") else None})
+    return json.dumps(out, ensure_ascii=False) if out else None
+
+
 def _sync_meal_album(cur, uid, date, payload):
     """1日ぶんの食事payloadをアルバムへ反映する。
     ・新しい写真だけ縮小する（既にサムネがある記録は料理名・Bだけ更新）
@@ -10089,6 +10114,7 @@ def _sync_meal_album(cur, uid, date, payload):
                 names = (item.get("text") or "").strip()
             b = res.get("total_b_count")
             b = float(b) if isinstance(b, (int, float)) else None
+            detail = _album_food_detail(res)
             try:
                 slot = _guess_meal_slot(item, res, date, key)
             except Exception:
@@ -10099,17 +10125,17 @@ def _sync_meal_album(cur, uid, date, payload):
                 thumb = _shrink_data_url(src, MEAL_ALBUM_THUMB_PX, MEAL_ALBUM_THUMB_Q)
             if iid in has_thumb:
                 if thumb:
-                    cur.execute(f"UPDATE meal_album SET slot={PH}, foods={PH}, b_count={PH}, thumb={PH} "
+                    cur.execute(f"UPDATE meal_album SET slot={PH}, foods={PH}, b_count={PH}, detail={PH}, thumb={PH} "
                                 f"WHERE user_id={PH} AND date={PH} AND item_id={PH}",
-                                (slot, names[:300], b, thumb, uid, date, iid))
+                                (slot, names[:300], b, detail, thumb, uid, date, iid))
                 else:
-                    cur.execute(f"UPDATE meal_album SET slot={PH}, foods={PH}, b_count={PH} "
+                    cur.execute(f"UPDATE meal_album SET slot={PH}, foods={PH}, b_count={PH}, detail={PH} "
                                 f"WHERE user_id={PH} AND date={PH} AND item_id={PH}",
-                                (slot, names[:300], b, uid, date, iid))
+                                (slot, names[:300], b, detail, uid, date, iid))
             else:
-                cur.execute(f"INSERT INTO meal_album (user_id, date, item_id, slot, thumb, foods, b_count, created_at) "
-                            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
-                            (uid, date, iid, slot, thumb, names[:300], b, ts))
+                cur.execute(f"INSERT INTO meal_album (user_id, date, item_id, slot, thumb, foods, b_count, detail, created_at) "
+                            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+                            (uid, date, iid, slot, thumb, names[:300], b, detail, ts))
     for iid in set(has_thumb) - keep:
         cur.execute(f"DELETE FROM meal_album WHERE user_id={PH} AND date={PH} AND item_id={PH}",
                     (uid, date, iid))
@@ -10146,7 +10172,9 @@ def get_meal_album():
         conn = _get_conn()
         try:
             cur = conn.cursor()
-            cur.execute(f"SELECT DISTINCT date FROM meal_album WHERE user_id={PH}", (uid,))
+            # 内訳（detail）まで入っている日だけを「取り込み済み」とみなす。内訳の導入前に入った直近の日も、
+            # 明細(daily_meals)が残っていれば取り込み直して、どの食材がBだったかを見られるようにする。
+            cur.execute(f"SELECT DISTINCT date FROM meal_album WHERE user_id={PH} AND detail IS NOT NULL", (uid,))
             have = {r[0] for r in cur.fetchall()}
             cur.execute(f"SELECT date, payload FROM daily_meals WHERE user_id={PH} AND date>={PH}",
                         (uid, since))
@@ -10158,7 +10186,7 @@ def get_meal_album():
         conn = _get_conn()
         try:
             cur = conn.cursor()
-            cur.execute(f"SELECT date, item_id, slot, thumb, foods, b_count FROM meal_album "
+            cur.execute(f"SELECT date, item_id, slot, thumb, foods, b_count, detail FROM meal_album "
                         f"WHERE user_id={PH} AND date>={PH}", (uid, since))
             rows = cur.fetchall()
         finally:
@@ -10173,9 +10201,15 @@ def get_meal_album():
         except (TypeError, ValueError):
             return 0
     days = {}
-    for d, iid, slot, thumb, foods, b in sorted(rows, key=lambda r: (r[0], order(r))):
+    def detail_of(raw):
+        try:
+            v = json.loads(raw) if raw else None
+            return v if isinstance(v, list) else None
+        except Exception:
+            return None
+    for d, iid, slot, thumb, foods, b, detail in sorted(rows, key=lambda r: (r[0], order(r))):
         days.setdefault(d, []).append({"id": iid, "slot": slot, "thumb": thumb,
-                                       "foods": foods or "", "b_count": b})
+                                       "foods": foods or "", "b_count": b, "items": detail_of(detail)})
     return jsonify({"days": days, "retain_days": MEAL_ALBUM_RETAIN_DAYS})
 
 
