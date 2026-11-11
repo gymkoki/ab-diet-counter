@@ -658,6 +658,17 @@
     <div id="action-usage"><div class="spinner"></div></div>
   </div>
 
+  <!-- AI解析回数ランキング（オーナー指示 2026-11-11） -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>🤖 AI解析回数ランキング（直近30日・上位20人）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.7">
+      会員ごとの<b>AI解析の回数</b>（写真・文章。失敗や撮り直しも含む＝費用がかかった回数）と<b>推定費用</b>、
+      そのうち<b>食事記録として残っている件数</b>（消した記録・コピーご飯は数えない）と<b>保存率</b>です。
+      保存率が低い人（<span style="color:#B91C1C;font-weight:800">赤</span>）は、解析しては消している・何度も撮り直している可能性があります。
+    </div>
+    <div id="analysis-ranking"><div class="spinner"></div></div>
+  </div>
+
   <!-- 機能別の利用状況 -->
   <div class="card" style="margin-bottom:20px">
     <h2>🧭 機能別の利用状況（直近30日）</h2>
@@ -1584,6 +1595,59 @@
   }
 
   // ── 記録方法ごとの1日あたり利用人数 ──
+  // ── AI解析回数ランキング（直近30日・上位20人） ──
+  async function loadAnalysisRanking() {
+    const box = document.getElementById('analysis-ranking');
+    if (!box) return;
+    try {
+      const r = await fetch('/api/admin/analysis-ranking');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'analysis-ranking');
+      if (!d.rows.length) { box.innerHTML = '<div class="no-data">直近30日のAI解析はまだありません。</div>'; return; }
+      const style = {
+        low: { bg: '#FEF2F2', fg: '#B91C1C', badge: '#DC2626', label: '低い' },
+        mid: { bg: '#FFFBEB', fg: '#92400E', badge: '#F59E0B', label: 'やや低い' },
+        ok:  { bg: '',        fg: '#065F46', badge: '#10B981', label: '' },
+      };
+      const rows = d.rows.map((x, i) => {
+        const st = style[x.level] || style.ok;
+        const rate = x.save_rate == null ? '—' : `${x.save_rate}%`;
+        return `<tr style="border-bottom:1px solid #F3F4F6;${st.bg ? `background:${st.bg}` : ''}">
+          <td style="padding:7px 6px;font-weight:800;color:#6B7280">${i + 1}</td>
+          <td style="padding:7px 6px;font-weight:700">${escapeHtml(x.name)}</td>
+          <td style="padding:7px 6px;text-align:right;font-weight:800">${x.analyses.toLocaleString()}回</td>
+          <td style="padding:7px 6px;text-align:right">¥${x.cost_yen.toLocaleString()}</td>
+          <td style="padding:7px 6px;text-align:right">${x.saved.toLocaleString()}件</td>
+          <td style="padding:7px 6px;min-width:130px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="flex:1;height:8px;border-radius:4px;background:#E5E7EB;overflow:hidden">
+                <div style="height:100%;width:${x.save_rate || 0}%;background:${st.badge}"></div></div>
+              <span style="font-weight:900;color:${st.fg};min-width:38px;text-align:right">${rate}</span>
+            </div>
+            ${st.label ? `<div style="font-size:10px;font-weight:800;color:${st.fg};margin-top:2px">⚠️ 保存率が${st.label}</div>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+      const low = d.rows.filter(x => x.level === 'low').length;
+      box.innerHTML = `
+        <div style="font-size:12px;color:#6B7280;margin-bottom:8px;line-height:1.7">
+          ${escapeHtml(d.from)}〜${escapeHtml(d.to)}：全体で <b>${d.total_analyses.toLocaleString()}回</b>（推定 <b>¥${d.total_cost_yen.toLocaleString()}</b>・1回¥${d.cost_per_analysis}）／
+          保存 ${d.total_saved.toLocaleString()}件（保存率 <b>${d.total_save_rate == null ? '—' : d.total_save_rate + '%'}</b>）／解析した会員 ${d.members}人
+          ${low ? `<br><span style="color:#B91C1C;font-weight:800">⚠️ 上位20人のうち ${low}人は保存率が${d.low_rate}%未満です</span>` : ''}
+        </div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px">
+          <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:12px">
+            <th style="padding:6px;text-align:left">#</th><th style="padding:6px;text-align:left">名前</th>
+            <th style="padding:6px;text-align:right">解析回数</th><th style="padding:6px;text-align:right">推定費用</th>
+            <th style="padding:6px;text-align:right">保存件数</th><th style="padding:6px;text-align:left">保存率</th>
+          </tr>${rows}
+        </table></div>
+        <div style="font-size:11px;color:#9CA3AF;margin-top:6px">※ 保存率 ${d.low_rate}%未満＝赤、${d.mid_rate}%未満＝黄。保存件数は1日の最終的な記録数からコピーご飯を除いた数です。</div>`;
+    } catch (e) {
+      box.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+    }
+  }
+
   async function loadActionUsage() {
     const box = document.getElementById('action-usage');
     if (!box) return;
@@ -2516,7 +2580,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

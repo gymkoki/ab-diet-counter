@@ -580,6 +580,17 @@
 - 取り消しは `cancel` を明示したときだけ。空の本文を送っても 400 で、送った返信は消さない（以前は空文字で消えていた）。
 - `tests/test_feedback_reply_cancel.py` が回帰を検知する。
 
+## 管理画面「🤖 AI解析回数ランキング」（オーナー指示 2026-11-11）
+
+- 直近30日（`ANALYSIS_RANKING_DAYS`）の会員別：AI解析の回数・推定費用（1回 `COST_PER_ANALYSIS_JPY`＝4円）・
+  そのうち食事記録として残っている件数と保存率を、解析回数の多い順に上位20人（`ANALYSIS_RANKING_TOP`）。
+  `/api/admin/analysis-ranking`（`_analysis_ranking()`）→ 管理画面のカード（`#analysis-ranking`／`loadAnalysisRanking()`）。
+- 解析回数＝`usage_log`（`/analyze`・`/analyze-text` が呼ばれた回数。失敗・捨てた分も含む＝費用がかかった回数）。
+- 保存件数＝`daily_nutrition` の1日の記録件数（その日の最終的な記録。消した記録は入らない）から、AIを使わない
+  コピーご飯（`action_log` の copy）を日ごとに差し引いた数（0未満にはしない）。解析回数を上限にする。
+- 保存率 50%未満＝赤（行の背景と「⚠️ 保存率が低い」）、80%未満＝黄（`ANALYSIS_SAVE_RATE_LOW`／`_MID`）。名前はエスケープ。
+- `tests/test_analysis_ranking.py` が回帰を検知する。
+
 ## 管理画面「🔎 会員を名前で検索（通算の体重の変化）」（オーナー指示 2026-10-25）
 
 - 「名前で検索したら、その人が通算で何キロやせたかが分かるようにして」。管理画面の会員一覧は直近3日に記録した人しか
