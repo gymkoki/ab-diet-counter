@@ -6226,6 +6226,85 @@ def admin_action_usage():
     return jsonify(_collect_action_usage(days))
 
 
+# ══════════════════════════════════════════════════════════════
+#  AI解析回数ランキング（オーナー指示 2026-11-11）
+#  直近30日の会員別：AI解析の回数・推定費用（1回 COST_PER_ANALYSIS_JPY 円）・そのうち食事記録として
+#  保存された件数と保存率。上位20人。保存率が低い＝解析しては消している・失敗して撮り直している人。
+#  ・解析回数＝usage_log（/analyze と /analyze-text が呼ばれた回数。失敗・捨てた分も含む＝費用がかかった回数）
+#  ・保存件数＝daily_nutrition の1日の記録件数（その日の最終的な記録。消した記録は入らない）から、
+#    AIを使わないコピーご飯（action_log の copy）を差し引いた数。日ごとに0未満にはしない。解析回数を上限にする
+# ══════════════════════════════════════════════════════════════
+ANALYSIS_RANKING_DAYS = 30
+ANALYSIS_RANKING_TOP = 20
+ANALYSIS_SAVE_RATE_LOW = 50     # 保存率がこれ未満は赤（解析の半分以上が記録に残っていない）
+ANALYSIS_SAVE_RATE_MID = 80     # これ未満は黄
+
+
+def _analysis_ranking(days=ANALYSIS_RANKING_DAYS, top=ANALYSIS_RANKING_TOP):
+    today = datetime.datetime.now(JST).date()
+    first = today - datetime.timedelta(days=days - 1)
+    since_ts = datetime.datetime.combine(first, datetime.time(0), tzinfo=JST).isoformat()
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT user_id, COUNT(*) FROM usage_log WHERE created_at>={PH} GROUP BY user_id", (since_ts,))
+        analyses = {r[0]: int(r[1]) for r in cur.fetchall()}
+        cur.execute(f"SELECT user_id, date, meal_count FROM daily_nutrition WHERE date>={PH}", (first.isoformat(),))
+        meals = {}
+        for uid, d, n in cur.fetchall():
+            meals.setdefault(uid, {})[str(d)[:10]] = int(n or 0)
+        cur.execute(f"SELECT user_id, created_at FROM action_log WHERE action='copy' AND created_at>={PH}", (since_ts,))
+        copies = {}
+        for uid, ts in cur.fetchall():
+            d = str(ts)[:10]
+            copies.setdefault(uid, {})[d] = copies.setdefault(uid, {}).get(d, 0) + 1
+        cur.execute("SELECT user_id, display_name FROM user_profile")
+        names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    rows = []
+    for uid, n in analyses.items():
+        saved = sum(max(0, cnt - copies.get(uid, {}).get(d, 0)) for d, cnt in meals.get(uid, {}).items())
+        saved = min(saved, n)
+        rate = round(saved / n * 100) if n else None
+        rows.append({
+            "name": names.get(uid) or f"会員{uid[:4]}",
+            "user_id_short": uid[:8],
+            "analyses": n,
+            "cost_yen": round(n * COST_PER_ANALYSIS_JPY),
+            "saved": saved,
+            "save_rate": rate,
+            "level": ("low" if rate is not None and rate < ANALYSIS_SAVE_RATE_LOW
+                      else "mid" if rate is not None and rate < ANALYSIS_SAVE_RATE_MID else "ok"),
+        })
+    rows.sort(key=lambda r: (-r["analyses"], r["save_rate"] if r["save_rate"] is not None else 101))
+    total_n = sum(analyses.values())
+    total_saved = sum(r["saved"] for r in rows)
+    return {
+        "days": days, "from": first.isoformat(), "to": today.isoformat(),
+        "cost_per_analysis": COST_PER_ANALYSIS_JPY,
+        "low_rate": ANALYSIS_SAVE_RATE_LOW, "mid_rate": ANALYSIS_SAVE_RATE_MID,
+        "members": len(rows),
+        "total_analyses": total_n,
+        "total_cost_yen": round(total_n * COST_PER_ANALYSIS_JPY),
+        "total_saved": total_saved,
+        "total_save_rate": round(total_saved / total_n * 100) if total_n else None,
+        "rows": rows[:top],
+    }
+
+
+@app.route("/api/admin/analysis-ranking")
+@_admin_required
+def admin_analysis_ranking():
+    """【管理者専用】AI解析回数ランキング（直近30日・上位20人）。"""
+    try:
+        return jsonify(_analysis_ranking())
+    except Exception as e:
+        app.logger.error("analysis ranking failed: %s", e)
+        return jsonify({"error": "集計に失敗しました。時間をおいてお試しください。"}), 500
+
+
 @app.route("/api/admin/feature-usage")
 @_admin_required
 def admin_feature_usage():
