@@ -692,4 +692,9 @@ python3 app.py          # http://localhost:5001
 - `/api/meal-album`（自分の user_id の分だけ）。導入前の直近の明細は初めて開いたときに取り込む。
 - アプリ：履歴の一覧の各日にサムネの列（`_paintHistoryThumbs()`）、グラフの日付タップ・一覧タップで
   その日の食事（`openMealAlbum()`）、写真タップで拡大（ライトボックスはモーダルより上の z-index）。
+- **食材ごとの内訳も残す（会員の声 2026-11-11：「過去の食事の、どの食材がBカウントだったのか遡っても見られるように」）**。
+  `meal_album.detail`（`init_db` の ALTER TABLE で追加）に `[{"n":食材名,"b":B,"c":"A"/"B"}]`（1件20食材・名前40字まで。
+  `_album_food_detail()`）を保存し、`/api/meal-album` が `items` で返す。アルバムの画面（`albumFoodsHtml()`）は
+  Bが付いた食材を太字・色付きで出す。内訳の導入前の行は、明細（5日）が残っている日だけ取り込み直して補う。
+  それより前の日は料理名とBの合計だけ（さかのぼって作れない）。
 - `tests/test_meal_album.py` が回帰を検知する。

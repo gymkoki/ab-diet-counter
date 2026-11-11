@@ -677,6 +677,12 @@
     .album-item .ai-body { padding:6px 8px 8px; font-size:13px; line-height:1.5; }
     .album-item .ai-slot { display:inline-block; font-size:12px; font-weight:800; color:#fff; background:var(--primary); border-radius:999px; padding:0 7px; margin-right:4px; }
     .album-item .ai-b { font-weight:800; color:var(--b-color); white-space:nowrap; }
+    /* 食材ごとの内訳（会員の声 2026-11-11：どの食材がBだったかを見返せるように） */
+    .album-item .ai-foods { list-style:none; margin:6px 0 0; padding:6px 0 0; border-top:1px dashed var(--border); }
+    .album-item .ai-foods li { display:flex; justify-content:space-between; gap:6px; font-size:12px; line-height:1.5; color:var(--text-muted); }
+    .album-item .ai-foods li.is-b { color:var(--text); font-weight:700; }
+    .album-item .ai-foods .af-b { flex-shrink:0; font-weight:800; white-space:nowrap; }
+    .album-item .ai-foods li.is-b .af-b { color:var(--b-color); }
     .album-empty { font-size:15px; color:var(--text-muted); line-height:1.8; padding:12px 4px; text-align:left; }
     .chart-hint { font-size:14px; color:var(--text-muted); margin-top:4px; }
     #weight-overlay, #hist-edit-overlay, #copy-picker-overlay, #meal-album-overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(23,19,16,0.5); backdrop-filter:blur(2px); align-items:center; justify-content:center; padding:24px; }
@@ -6838,17 +6844,29 @@ async function openMealAlbum(date) {
   const items = (_mealAlbum && _mealAlbum.days && _mealAlbum.days[date]) || [];
   const keep = (_mealAlbum && _mealAlbum.retain_days) || 60;
   if (!items.length) {
-    list.innerHTML = `<div class="album-empty">この日の食事の記録は残っていません。<br>食べたもの（写真・料理名）は直近${keep}日分まで見返せます。</div>`;
+    list.innerHTML = `<div class="album-empty">この日の食事の記録は残っていません。<br>食べたもの（写真・料理名・どの食材がBだったか）は直近${keep}日分まで見返せます。</div>`;
     return;
   }
   list.innerHTML = `<div class="album-grid">${items.map(it => `
     <div class="album-item">
       ${it.thumb ? `<img src="${it.thumb}" alt="" onclick="openLightbox('${it.thumb}')">` : '<div class="ai-txt">📝</div>'}
       <div class="ai-body">
-        ${it.slot ? `<span class="ai-slot">${esc(it.slot)}</span>` : ''}${esc(it.foods || '')}
+        ${it.slot ? `<span class="ai-slot">${esc(it.slot)}</span>` : ''}${it.items && it.items.length ? '' : esc(it.foods || '')}
         ${it.b_count != null ? ` <span class="ai-b">B${fmtCount(it.b_count)}</span>` : ''}
+        ${albumFoodsHtml(it.items)}
       </div>
     </div>`).join('')}</div>`;
+}
+
+// 記録1件の食材ごとの内訳。Bが付いた食材を太字・色付きで目立たせる（内訳の無い古い記録は何も出さない）。
+function albumFoodsHtml(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return '<ul class="ai-foods">' + items.map(f => {
+    const b = (typeof f.b === 'number') ? f.b : null;
+    const isB = b != null && b > 0;
+    const label = isB ? `B${fmtCount(b)}` : (f.c === 'A' ? 'A' : 'B0');
+    return `<li class="${isB ? 'is-b' : ''}"><span>${esc(f.n || '')}</span><span class="af-b">${label}</span></li>`;
+  }).join('') + '</ul>';
 }
 
 function closeMealAlbum() {
