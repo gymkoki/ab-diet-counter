@@ -203,8 +203,6 @@
     .text-entry-textarea:focus { border-color:var(--indigo); box-shadow:0 0 0 3px rgba(91,91,214,0.12); }
     .btn-text-submit { width:100%; margin-top:10px; padding:13px; border-radius:var(--radius-md); border:none; background:var(--indigo); color:white; font-size:18px; font-weight:700; cursor:pointer; transition:transform 0.1s; }
     /* 解析後の確認質問（大盛り・油の量）ボタン */
-    .btn-clarify { width:100%; padding:14px 10px; border-radius:var(--radius-md); border:1.5px solid var(--primary-line); background:var(--primary-soft); color:var(--primary-dark); font-size:17px; font-weight:800; cursor:pointer; }
-    .btn-clarify:active { background:var(--primary); color:#fff; }
     .btn-text-submit:active { transform:scale(0.985); }
     .btn-text-submit:disabled { opacity:0.45; cursor:not-allowed; }
     .text-entry-recap { background:var(--indigo-soft); border-radius:var(--radius-sm); padding:12px 14px; font-size:17px; line-height:1.6; color:#44449B; margin-bottom:12px; }
@@ -249,8 +247,6 @@
     .result-delete-btn:active { opacity:1; }
 
     /* ── リセット確認ダイアログ ── */
-    #reset-overlay { display:none; position:fixed; inset:0; z-index:400; background:rgba(23,19,16,0.45); backdrop-filter:blur(2px); align-items:center; justify-content:center; padding:24px; }
-    #reset-overlay.show { display:flex; }
     .reset-dialog { background:white; border-radius:20px; padding:28px 24px; width:100%; max-width:320px; text-align:center; box-shadow:0 24px 48px rgba(0,0,0,0.18); }
     .reset-dialog h3 { font-size:18px; font-weight:800; margin-bottom:8px; }
     .reset-dialog p { font-size:17px; color:var(--text-muted); margin-bottom:22px; line-height:1.7; }
@@ -936,18 +932,15 @@
   </div>
   <div id="sweet-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);line-height:1.5">
     <span style="display:inline-block;background:#FFF;color:#E8622C;font-weight:800;border-radius:999px;padding:1px 12px">🍬 特別ルール適用！ ＋<span id="sweet-bonus-num">0.5</span>カウント</span><br>
-    <span style="font-size:14px">お菓子・スイーツ・ジュース 合計<span id="sweet-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal</span><br>
-    <span style="font-size:13px;opacity:0.85">（<span id="sweet-bonus-rule">120〜200kcal → ＋0.5</span>）</span>
+    <span style="font-size:14px">お菓子・スイーツ・ジュース 合計<span id="sweet-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal（<span id="sweet-bonus-rule">120〜200kcal → ＋0.5</span>）</span>
   </div>
   <div id="sushi-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);line-height:1.5">
     <span style="display:inline-block;background:#FFF;color:#E8622C;font-weight:800;border-radius:999px;padding:1px 12px">🍣 特別ルール適用！ ＋<span id="sushi-bonus-num">0.5</span>カウント</span><br>
-    <span style="font-size:14px">寿司のシャリ 合計<span id="sushi-bonus-rice" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>g（約<span id="sushi-bonus-kcal" style="font-variant-numeric:tabular-nums">0</span>kcal）</span><br>
-    <span style="font-size:13px;opacity:0.85">（1貫ずつはB0でも、全部のシャリで数えます）</span>
+    <span style="font-size:14px">寿司のシャリ 合計<span id="sushi-bonus-rice" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>g（約<span id="sushi-bonus-kcal" style="font-variant-numeric:tabular-nums">0</span>kcal）</span>
   </div>
   <div id="juice-bonus-bar" style="display:none;text-align:center;background:rgba(255,255,255,0.14);padding:6px 20px 8px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);line-height:1.5">
     <span style="display:inline-block;background:#FFF;color:#E8622C;font-weight:800;border-radius:999px;padding:1px 12px">🧃 特別ルール適用！ ＋<span id="juice-bonus-num">0.5</span>カウント</span><br>
-    <span style="font-size:14px">果物ジュース 合計<span id="juice-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal</span><br>
-    <span style="font-size:13px;opacity:0.85">（1本ずつはB0でも、1日の合計で数えます）</span>
+    <span style="font-size:14px">果物ジュース 合計<span id="juice-bonus-kcal" style="font-weight:800;font-variant-numeric:tabular-nums">0</span>kcal</span>
   </div>
   <div id="protein-bar" style="display:none;text-align:center;padding:6px 20px 8px;font-size:17px;font-weight:600;color:rgba(255,255,255,0.92)">
     🥩 タンパク質 <span id="protein-total" style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">0</span><span id="protein-target-text" style="opacity:0.85"></span>
@@ -1177,8 +1170,7 @@
     <div id="drum-speed-label" class="drum-speed-label"></div>
   </div>
   <div id="ex-profile-notice" class="ex-profile-notice" style="display:none">
-    ⚠️ 正確な消費カロリーを計算するために、<strong>右下の「設定」から身長・体重を入力してください。</strong><br>
-    <span style="font-size:16px;color:var(--text-muted)">未入力の場合は体重60kgで概算します。</span>
+    ⚠️ <strong>「設定」で身長・体重を入れる</strong>と消費カロリーが正確になります<span style="font-size:16px;color:var(--text-muted)">（未入力は60kgで計算）</span>
   </div>
   <div id="ex-result-card" class="ex-result-card" style="display:none">
     <div id="ex-result-inner"></div>
@@ -1302,7 +1294,7 @@
   </div>
   <div class="setting-card">
     <h2>🍚 コピーご飯（よく食べる食事）</h2>
-    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">よく食べる食事を登録しておくと、記録画面の「コピーご飯を追加」から写真なしでワンタップ登録できます。</p>
+    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">よく食べる食事を登録すると、写真なしでワンタップ記録できます。</p>
     <div id="copymeals-list"></div>
     <div id="copy-add-status" style="display:none;text-align:center;padding:10px;color:var(--text-muted);font-size:17px"></div>
     <button class="btn-save" onclick="startAddCopyMeal()">📷 写真から登録</button>
@@ -1310,7 +1302,7 @@
     <div id="copy-text-form" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg)">
       <label style="display:block;font-size:17px;font-weight:700;margin-bottom:4px">食事の名前・内容</label>
       <textarea id="copy-text-name" maxlength="500" rows="3" placeholder="例：コンビニのおにぎり2個、鶏むね肉サラダ&#10;（長い内容の貼り付けもOK・500字まで）" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;box-sizing:border-box;margin-bottom:8px;font-family:inherit;resize:vertical"></textarea>
-      <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 12px">入力した内容から、AIが<strong>Bカウント・タンパク質・野菜の量を自動で計算</strong>して登録します（ダイヤルでの手入力は不要です）。</p>
+      <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 12px">AIがBカウント・タンパク質・野菜を<strong>自動で計算</strong>します。</p>
       <button class="btn-save" id="copy-text-save-btn" onclick="saveCopyMealText()">🤖 この内容で登録する</button>
     </div>
   </div>
@@ -1320,10 +1312,10 @@
     <h2>📧 アカウント（メールアドレス・パスワード）</h2>
     <div id="account-registered" style="display:none">
       <p style="font-size:17px;line-height:1.7;margin-bottom:6px">✅ 登録済み：<b id="account-email"></b></p>
-      <p style="font-size:16px;color:var(--text-muted);line-height:1.6;margin:0">機種変更や別の端末では、下の「ログイン」から同じメールアドレスとパスワードで入ると、今までの記録がそのまま使えます。</p>
+      <p style="font-size:16px;color:var(--text-muted);line-height:1.6;margin:0">機種変更・別の端末では、下の「ログイン」から入ると記録をそのまま使えます。</p>
     </div>
     <div id="account-register-form">
-      <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:6px">メールアドレスとパスワードを登録すると、機種変更しても<strong>今までの記録をそのまま引き継げます</strong>（登録しても今の記録は変わりません）。</p>
+      <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:6px">登録すると、機種変更しても<strong>記録をそのまま引き継げます</strong>。</p>
       <label class="setting-label" for="acc-reg-email">メールアドレス</label>
       <input class="setting-input" type="email" id="acc-reg-email" autocomplete="email" inputmode="email" placeholder="例：name@example.com">
       <label class="setting-label" for="acc-reg-pw">パスワード（8文字以上）</label>
@@ -1332,7 +1324,7 @@
       <input class="setting-input" type="password" id="acc-reg-pw2" autocomplete="new-password" maxlength="128">
       <button class="btn-save" id="acc-reg-btn" style="margin-top:12px" onclick="registerAccount()">確認コードを送って登録する</button>
       <div id="acc-reg-code-box" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg)">
-        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">入力したメールアドレスに6桁の確認コードを送りました。届いたコードを入力すると登録が完了します（迷惑メールのフォルダもご確認ください）。</p>
+        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">メールに届いた6桁のコードを入力してください（迷惑メールもご確認ください）。</p>
         <label class="setting-label" for="acc-reg-code">確認コード（6桁）</label>
         <input class="setting-input" type="text" id="acc-reg-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
                onkeydown="if(event.key==='Enter')confirmRegistration()">
@@ -1342,7 +1334,7 @@
     <div style="border-top:1px solid var(--border);margin:18px 0 10px"></div>
     <details id="account-login-box">
       <summary style="font-size:17px;font-weight:700;cursor:pointer;padding:4px 0">🔑 機種変更・別の端末の方：ログイン</summary>
-      <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:8px 0 0">登録したメールアドレスとパスワードで入ると、この端末でも同じ記録を使えます。この端末にだけある記録も一緒に合わせます。</p>
+      <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:8px 0 0">登録したメールアドレスとパスワードで、この端末でも同じ記録を使えます。</p>
       <label class="setting-label" for="acc-login-email">メールアドレス</label>
       <input class="setting-input" type="email" id="acc-login-email" autocomplete="email" inputmode="email">
       <label class="setting-label" for="acc-login-pw">パスワード</label>
@@ -1351,7 +1343,7 @@
       <button class="btn-save" id="acc-login-btn" style="margin-top:12px;background:#6366F1" onclick="loginAccount()">ログインする</button>
       <button type="button" onclick="togglePasswordReset()" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--text-muted);font-size:15px;text-decoration:underline;cursor:pointer">パスワードを忘れた方はこちら</button>
       <div id="account-reset-box" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--bg)">
-        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">上の欄にメールアドレスを入れて「確認コードを送る」を押すと、6桁の確認コードがメールで届きます。</p>
+        <p style="font-size:15px;color:var(--text-muted);line-height:1.6;margin:0 0 8px">上の欄にメールアドレスを入れて押すと、確認コードが届きます。</p>
         <button class="btn-save" style="background:#6B7280" onclick="requestPasswordReset()">確認コードを送る</button>
         <label class="setting-label" for="acc-reset-code">確認コード（6桁）</label>
         <input class="setting-input" type="text" id="acc-reset-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
@@ -1364,7 +1356,7 @@
   </div>
   <div class="setting-card">
     <h2>🔗 スマホ・パソコンでデータを共有</h2>
-    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">スマホとパソコンなど、複数の端末で<strong>同じ記録</strong>を見たり編集したりできるようにします。<br><strong>① いつも記録している端末</strong>で連携コードを発行し、<strong>② もう一方の端末</strong>でそのコードを入力してください。</p>
+    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">複数の端末で<strong>同じ記録</strong>を使えます。①いつもの端末でコードを発行 → ②もう一方の端末で入力。</p>
     <button class="btn-save" onclick="issueLinkCode()">① 連携コードを発行する</button>
     <div id="link-code-display" style="display:none;text-align:center;margin-top:12px"></div>
     <div style="border-top:1px solid var(--border);margin:18px 0"></div>
@@ -1375,7 +1367,7 @@
   </div>
   <div class="setting-card">
     <h2>✉️ 修正希望・ご要望</h2>
-    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">アプリへのご要望・不具合・「この食材のB判定を直してほしい」などの修正希望をお送りください。運営に届きます。</p>
+    <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">ご要望・不具合・B判定の修正希望などをお送りください。</p>
     <textarea id="feedback-text" maxlength="5000" placeholder="例：〇〇がA判定になりますが、Bにしてほしいです" style="width:100%;min-height:100px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:18px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
     <div id="feedback-status" style="display:none;text-align:center;padding:8px;font-size:17px;color:var(--text-muted)"></div>
     <button class="btn-save" style="margin-top:10px" onclick="sendFeedback()">送信する</button>
@@ -1400,16 +1392,6 @@
 
 <input type="file" id="input-file" accept="image/*" multiple style="display:none" onchange="onHiddenInputChange(this)">
 
-<!-- 解析後の確認質問（大盛り・油の量）：回答すると最終結果が表示される -->
-<div id="clarify-overlay" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(23,19,16,0.5);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px">
-  <div class="modal-card" style="background:white;border-radius:20px;padding:24px 20px;width:100%;max-width:340px;box-shadow:0 24px 48px rgba(0,0,0,0.18);text-align:center">
-    <div style="font-size:15px;font-weight:700;color:var(--primary);letter-spacing:0.1em;margin-bottom:8px">🔍 かんたん確認</div>
-    <div id="clarify-question" style="font-size:18px;font-weight:800;line-height:1.6;margin-bottom:6px"></div>
-    <div id="clarify-note" style="font-size:14px;color:var(--text-muted);line-height:1.6;margin-bottom:16px"></div>
-    <div id="clarify-buttons" style="display:flex;flex-direction:column;gap:8px"></div>
-    <div style="font-size:14px;color:var(--text-muted);margin-top:12px">選ぶと最終の計算結果が表示されます</div>
-  </div>
-</div>
 
 <div id="lightbox" onclick="closeLightbox()">
   <button id="lightbox-close" onclick="closeLightbox()">✕</button>
@@ -1998,7 +1980,7 @@ async function checkUnderRecording() {
     const desc = document.getElementById('underrec-desc');
     if (!el || !desc) return;
     desc.textContent = `直近${recorded.length}日のうち${thin.length}日は、記録が1件だけでした。`
-      + '間食・飲み物も含めて記録すると、Bカウントや採点がより正確になります。';
+      + '間食・飲み物も記録すると、より正確になります。';
     el.style.display = 'flex';
     localStorage.setItem(UNDERREC_KEY, today);
   } catch (e) { /* 失敗しても通常利用には影響させない */ }
@@ -2527,8 +2509,8 @@ function renderMealPoints() {
   const msg = document.getElementById('mpt-msg');
   if (pts >= goal) {
     msg.textContent = (earnedToday
-      ? `🎉 今日も1ポイント獲得！${goal}ポイント達成おめでとうございます。リオールジムから特別メッセージが見られます。`
-      : `🎉 ${goal}ポイント達成！リオールジムから特別メッセージが見られます。これからもこまめに記録しましょう。`)
+      ? `🎉 今日も1ポイント獲得！${goal}ポイント達成で、リオールジムから特別メッセージが見られます。`
+      : `🎉 ${goal}ポイント達成！リオールジムから特別メッセージが見られます。`)
       + `\n${MEAL_POINTS_RULE}`;
   } else if (earnedToday) {
     msg.textContent = `🎉 今日の1ポイント獲得！あと${goal - pts}ポイントで、リオールジムから特別メッセージが見られます。\n${MEAL_POINTS_RULE}`;
@@ -2994,13 +2976,13 @@ function calcCharaScore() {
 function charaAdvice(s) {
   if (s.count === 0) return 'まだ今日の記録がありません。まずは食事を記録するところから始めましょう！';
   if (s.tooFewMeals) {
-    return `今日の記録はまだ${s.count}回分です。記録が${MIN_MEALS_FOR_FULL_SCORE - 1}回以下の日は、タンパク質や野菜の量に関係なく危機管鳥になります。記録できていない食事があれば追加してください。${MIN_MEALS_FOR_FULL_SCORE}回以上記録できれば、通常どおりの採点になります📷`;
+    return `今日の記録はまだ${s.count}回分です。${MIN_MEALS_FOR_FULL_SCORE - 1}回以下の日は危機管鳥になります。${MIN_MEALS_FOR_FULL_SCORE}回以上記録すると通常の採点になります📷`;
   }
   if (s.bLocked) {
-    return 'タンパク質と野菜がまだ0%です。どちらかが増えるまでBカウントの達成率は加点されません。まずはタンパク質か野菜を1品プラスしましょう🥩🥗';
+    return 'タンパク質と野菜がまだ0%です。どちらかを1品足すと、Bカウントも加点されます🥩🥗';
   }
   if (s.bOver) {
-    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバーしています（Bは最重要項目なので達成率は50%扱い）。次の食事はA食材中心にして、運動でBを取り返しましょう🏃`;
+    return `Bカウントが目標を${fmtCount(s.net - s.bMax)}回オーバー。次の食事はA食材中心に、運動でも取り返しましょう🏃`;
   }
   const pLack = Math.max(0, s.pGoal - s.protein);
   const vLack = Math.max(0, VEG_TARGET_G - s.veg);
@@ -4159,36 +4141,6 @@ function getProteinTarget() {
 }
 
 // ═══════════════════════════════════════════
-//  リセット
-// ═══════════════════════════════════════════
-function confirmReset() {
-  document.getElementById('reset-overlay').classList.add('show');
-}
-function cancelReset() {
-  document.getElementById('reset-overlay').classList.remove('show');
-}
-async function doReset() {
-  const total = MEALS.reduce((sum, m) => {
-    const done = state[m.id].items.filter(i => i.result);
-    return sum + done.reduce((s, i) => s + i.result.total_b_count, 0);
-  }, 0);
-  if (total > 0) {
-    const net = Math.max(0, total - getTodayExBCount());
-    await submitDailyB(net, getTodayJST());
-  }
-  MEALS.forEach(m => { state[m.id].items = []; });
-  localStorage.removeItem(STORAGE_KEY);
-  MEALS.forEach(m => {
-    renderStrip(m.id);
-    renderResults(m.id);
-    const errEl = document.getElementById(`err-${m.id}`);
-    if (errEl) errEl.style.display = 'none';
-  });
-  updateDailyTotal();
-  document.getElementById('reset-overlay').classList.remove('show');
-}
-
-// ═══════════════════════════════════════════
 //  File handling
 // ═══════════════════════════════════════════
 async function addFiles(mealId, files) {
@@ -4847,9 +4799,6 @@ function resetMeal(mealId) {
 // 残り％の一定割合ずつ99%へ近づき続けるので、途中（88%など）で止まって
 // 見えることがなく、解析が終わるまで数字がずっと動き続ける（完了時に100%）。
 function _advanceProgress(item) {
-  // 確認質問（大盛り・油）の表示中は回答待ちなので、進捗は進めない
-  const ov = document.getElementById('clarify-overlay');
-  if (ov && ov.style.display === 'flex') return;
   const p = item.loadingPct || 0;
   if (p < 99) item.loadingPct = Math.min(99, p + Math.max(0.05, (99 - p) * 0.012));
 }
@@ -6609,7 +6558,7 @@ function _paintHistory(daily) {
       </div>`).join('');
     const tgt = getGoalTarget(getProfile());
     document.getElementById('history-avg-note').innerHTML =
-      '記録した日だけで計算しています（今日は記録の途中なので含めません）。'
+      '記録した日だけで計算（今日は除く）。'
       + (tgt ? `目標は<span style="white-space:nowrap">1日 B${tgt.label}</span>（${tgt.goalName}）です。` : '');
     totalEl.style.display = '';
   } else {
