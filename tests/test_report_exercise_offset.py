@@ -82,17 +82,11 @@ def _sr():
     return send_report
 
 
-def test_exercise_line_shows_offset_and_food_only():
+def test_exercise_b_line_was_replaced_by_minutes():
+    """「🏃 運動：1日平均 −◯ B を相殺」の行は、オーナー指示 2026-11-12 で「運動 1日平均◯分」の枠に置き換えた。
+    運動で相殺したBは、日付の見出しの札（食事B − 🏃運動 = 差し引き）に残っている。"""
     sr = _sr()
-    line = sr._exercise_line({"avg_b_7d": 4.2, "ex_b_7d": 0.8})
-    assert "運動" in line and "−0.8 B" in line
-    assert "食事だけなら 5.0 B/日" in line and "運動を引いて 4.2 B/日" in line
-
-
-def test_exercise_line_hidden_without_exercise():
-    sr = _sr()
-    assert sr._exercise_line({"avg_b_7d": 4.2, "ex_b_7d": 0}) == ""
-    assert sr._exercise_line({"avg_b_7d": 4.2}) == ""
+    assert not hasattr(sr, "_exercise_line")
 
 
 def test_photo_card_shows_day_offset(monkeypatch):
@@ -102,6 +96,5 @@ def test_photo_card_shows_day_offset(monkeypatch):
               "photos": [{"src": "x", "date": "2026-10-14", "b_count": 2, "day_b_count": 5, "day_ex_b": 1},
                          {"src": "x", "date": "2026-10-13", "b_count": 2, "day_b_count": 4, "day_ex_b": None}]}
     html = sr._photo_card(member, "t", {}, good=False)
-    assert "🏃 運動：" in html
     assert "この日の合計 B5" in html and "🏃運動 −1 → B4" in html
     assert html.count("🏃運動 −") == 1, "運動していない日にまで相殺の表示が出ている"

@@ -4555,6 +4555,67 @@ def _member_intake(cur, uid, days=PROGRESS_COMPARE_DAYS):
     }
 
 
+# 歩数だけで記録した歩行を分に直す目安（1分あたりの歩数）
+EXERCISE_STEPS_PER_MIN = 100
+
+
+def _member_exercise_minutes(cur, uid, days=PROGRESS_COMPARE_DAYS):
+    """直近 days 日（昨日まで）の運動時間の1日平均（オーナー指示 2026-11-12：「運動（1日平均何分）」を大きく）。
+
+    ・元データは daily_exercise.detail（アプリが送る運動の内容：種類・分・歩数・階）
+    ・分＝記録した分。歩数だけの歩行は 100歩＝1分の目安で分に直す。階段（階数だけ）は数えない
+    ・時間の無い記録（対面トレーニングなど）は分に入れず、回数を sessions で返す
+    ・運動のBはあるのに内容が無い日（導入前・他の端末）は unknown_days で返す（分には入れない）
+    ・1日平均は「何も運動しなかった日」も0分として days 日で割る
+    読めなければ None（レポートは止めない）。"""
+    today = datetime.datetime.now(JST).date()
+    first = (today - datetime.timedelta(days=days)).isoformat()
+    last = (today - datetime.timedelta(days=1)).isoformat()
+    try:
+        cur.execute(f"SELECT date, ex_b_count, detail FROM daily_exercise "
+                    f"WHERE user_id={PH} AND date>={PH} AND date<={PH}", (uid, first, last))
+        rows = cur.fetchall()
+    except Exception as e:
+        app.logger.warning("member exercise minutes skipped: %s", e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+        return None
+    total = 0
+    ex_days = unknown = sessions = 0
+    for _d, b, detail in rows:
+        items = None
+        if detail:
+            try:
+                items = [it for it in json.loads(detail) if isinstance(it, dict)]
+            except (TypeError, ValueError):
+                items = None
+        if items is None:
+            if isinstance(b, (int, float)) and b > 0:
+                unknown += 1
+            continue
+        day_min = 0
+        for it in items:
+            if isinstance(it.get("min"), (int, float)) and it["min"] > 0:
+                day_min += it["min"]
+            elif isinstance(it.get("steps"), (int, float)) and it["steps"] > 0:
+                day_min += it["steps"] / EXERCISE_STEPS_PER_MIN
+            elif not it.get("floors"):
+                sessions += 1
+        if items:
+            ex_days += 1
+        total += day_min
+    return {
+        "days": days,
+        "minutes_per_day": round(total / days) if days else 0,
+        "total_min": round(total),
+        "exercise_days": ex_days,
+        "unknown_days": unknown,
+        "sessions": sessions,
+    }
+
+
 def _member_progress(cur, uid):
     """会員の「始めたとき → いま」を返す（デイリーレポートのピックアップ用）。
 
@@ -4681,6 +4742,8 @@ def admin_report_photos():
                     "record_rate": _member_record_rate(cur, mem["uid"]),
                     # 直近7日のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）
                     "intake": _member_intake(cur, mem["uid"]),
+                    # 直近7日の運動時間の1日平均（オーナー指示 2026-11-12）
+                    "exercise": _member_exercise_minutes(cur, mem["uid"]),
                 })
             return picked
 

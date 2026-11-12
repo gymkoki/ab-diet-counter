@@ -94,19 +94,20 @@ def test_report_photos_api_includes_intake(db):
 
 
 def test_report_card_shows_intake():
+    """タンパク質・野菜の1日平均は、会員カードの大きな枠に出す（オーナー指示 2026-11-12）。"""
     pytest.importorskip("requests", reason="requests 未インストール")
     import send_report as sr
     intake = {"days": 7, "record_days": 6, "used_days": 5, "min_meals": 2, "protein_g": 68, "veg_g": 240}
-    line = sr._intake_line(intake)
-    assert "タンパク質 <b>68g</b>" in line and "野菜 <b>240g</b>" in line
-    assert "記録が2回以上の5日" in line
-    assert "ありません" in sr._intake_line({"days": 7, "used_days": 0, "min_meals": 2,
-                                           "protein_g": None, "veg_g": None})
-    assert sr._intake_line(None) == "", "古いサーバー（intake なし）でも落ちない"
+    block = sr._key_stats({"intake": intake})
+    assert "🥗 タンパク質・野菜" in block and ">68</span>" in block and ">240</span>" in block
+    assert "記録2回以上の5日" in block
+    none = sr._key_stats({"intake": {"days": 7, "used_days": 0, "min_meals": 2, "protein_g": None, "veg_g": None}})
+    assert "記録2回以上の日なし" in none
+    assert sr._key_stats({"intake": None}) == "", "古いサーバー（intake なし）でも落ちない"
 
     member = {"name": "やさい子", "change_30d_kg": -2.5, "photos": [{"src": PHOTO, "date": "2026-10-14"}],
               "record_rate": {"days": 7, "record_days": 5, "records": 18, "records_per_day": 3.6},
               "intake": intake}
     html = sr._photo_card(member, "t", {}, True)
-    # 「📝 食事の記録」の行の下に出す（2026-10-18 に「📷 食事の写真」から言い換えた）
-    assert html.index("📝 食事の記録：") < html.index("🥗 食べた量：")
+    # 並びは 食事の記録 → 運動 → タンパク質・野菜
+    assert html.index("📝 食事の記録") < html.index("🏃 運動") < html.index("🥗 タンパク質・野菜")

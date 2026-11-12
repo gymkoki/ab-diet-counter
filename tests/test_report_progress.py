@@ -133,9 +133,10 @@ def test_email_card_shows_start_to_now_with_chart():
     _put(UID, weights=[(60, 70.0), (30, 68.8), (1, 67.2)], bcounts=b)
     charts = {}
     html = S._photo_card(_member(_progress(UID)), "ph_good0", charts, True)
-    assert "開始時 70.0kg" in html and "現在 67.2kg" in html
-    assert "-2.8kg" in html and "-4.0%" in html
-    assert "開始直後 7 → 直近" in html
+    # 文章（開始時◯kg → 現在◯kg）はオーナー指示 2026-11-12 で消した（グラフで分かるため）
+    assert "開始時 70.0kg" not in html and "現在 67.2kg" not in html
+    assert "通算 -2.8 kg（-4.0%）" in html, "通算の変化は名前の横に出る"
+    assert "開始直後 7 → 直近" not in html, "食べ方の文章は出さない（グラフだけ）"
     # 推移グラフが添付され、本文から参照されている（空枠にならない）
     assert "ph_good0_progress" in charts
     assert charts["ph_good0_progress"][:4] == b"\x89PNG"
@@ -148,7 +149,7 @@ def test_email_card_with_single_weight():
     _put(UID, weights=[(5, 62.0)])
     charts = {}
     html = S._photo_card(_member(_progress(UID)), "ph_bad0", charts, False)
-    assert "記録が開始時の1回だけ" in html
+    assert "記録が開始時の1回だけ" not in html, "推移の文章は出さない（グラフだけ）"
     assert "ph_bad0_progress" in charts
 
 
@@ -172,7 +173,7 @@ def test_broken_chart_does_not_break_the_card(monkeypatch):
     monkeypatch.setattr(S, "chart_progress", _boom)
     charts = {}
     html = S._photo_card(_member(_progress(UID)), "ph_good2", charts, True)
-    assert "開始時 70.0kg" in html, "グラフが失敗しても要約は出す"
+    assert "通算 -1.0 kg" in html and "cid:ph_good2_0" in html, "グラフが失敗してもカードは出す"
     assert "ph_good2_progress" not in charts
     assert "cid:ph_good2_progress" not in html, "添付していない画像を参照すると空枠になる"
 

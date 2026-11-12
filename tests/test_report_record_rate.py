@@ -115,23 +115,21 @@ def test_report_photos_api_includes_rate(db):
 
 
 def test_report_card_shows_rate():
+    """食事の記録の回数は、会員カードの大きな枠に「◯回（1日平均）」で出す（オーナー指示 2026-11-12）。
+    数え方は 2026-10-18 のまま（写真・文章・コピーご飯などの記録の回数。写真の枚数ではない）。"""
     pytest.importorskip("requests", reason="requests 未インストール")
     import send_report as sr
     rate = {"days": 7, "record_days": 5, "records": 18, "records_per_day": 3.6,
             "by_kind": {"photo": 12, "text": 2, "copy": 4, "manual_b": 0}}
-    line = sr._record_rate_line(rate)
-    assert "📝 食事の記録：" in line and "1日平均 3.6回" in line
-    assert "記録した5日" in line and "計18回" in line
-    assert "写真12・文章2・コピーご飯4" in line and "B手入力" not in line
-    assert "枚" not in line, "写真の枚数の表示に戻さない"
-    assert "記録なし" in sr._record_rate_line({"days": 7, "record_days": 0, "records": 0,
-                                                "records_per_day": None})
-    assert sr._record_rate_line(None) == "", "データが無くても落ちない"
-
     member = {"name": "きろく子", "change_30d_kg": -2.5, "avg_b_7d": 3.1, "b_target": 4,
               "photos": [{"src": PHOTO, "date": "2026-10-09", "b_count": 2}],
               "record_rate": rate}
     html = sr._photo_card(member, "t", {}, True)
-    assert "📝 食事の記録：" in html and "1日平均 3.6回" in html
-    assert "📷 食事の写真：" not in html
+    assert "📝 食事の記録" in html and ">3.6</span>" in html and ">回</span>" in html
+    assert "1日平均・直近7日" in html
+    assert "📷 食事の写真" not in html and "枚" not in sr._key_stats(member), "写真の枚数の表示に戻さない"
     assert "掲載 1枚" in html
+    # データが無くても落ちない
+    assert sr._key_stats({"record_rate": None}) == ""
+    none = sr._key_stats({"record_rate": {"days": 7, "record_days": 0, "records": 0, "records_per_day": None}})
+    assert "直近7日の記録なし" in none
