@@ -606,112 +606,86 @@ def chart_progress(progress: dict, good: bool) -> bytes:
 
 
 def _progress_block(progress, cid: str, charts: dict, good: bool) -> str:
-    """カード内の「開始時 → 現在」の要約とグラフ。体重の記録が無ければ空。"""
+    """カード内の「開始時 → 現在」の体重のグラフ。体重の記録が無ければ空。
+    文章（開始時◯kg → 現在◯kg、食べ方の平均B）はオーナー指示 2026-11-12 で消した
+    （「減量の推移はグラフでわかるので文章の記載は消していい」）。通算の変化は名前の横に出ている。"""
     if not progress:
         return ""
     try:
         charts[cid] = chart_progress(progress, good)
-        img = (f'<img src="cid:{cid}" alt="推移" '
-               f'style="width:100%;max-width:640px;display:block;margin:6px 0 10px;border-radius:6px">')
-    except Exception as e:          # グラフが描けなくても要約とレポート本体は出す
+    except Exception as e:          # グラフが描けなくてもレポート本体は出す
         print(f"progress chart skipped: {e}")
-        img = ""
-
-    def md(d):
-        try:
-            x = datetime.date.fromisoformat(d)
-            return f"{x.month}/{x.day}"
-        except (TypeError, ValueError):
-            return "—"
-
-    ch = progress.get("total_change_kg")
-    pct = progress.get("total_change_pct")
-    days = progress.get("days_since_start") or 0
-    if progress.get("weight_records", 0) < 2:
-        change_html = '<span style="color:#9CA3AF">体重の記録が開始時の1回だけです</span>'
-    else:
-        c = "#059669" if (ch or 0) < 0 else ("#DC2626" if (ch or 0) > 0 else "#6B7280")
-        pct_s = f"（{pct:+.1f}%）" if isinstance(pct, (int, float)) else ""
-        change_html = (f'<b style="color:{c}">{ch:+.1f}kg{pct_s}</b>'
-                       f'<span style="color:#9CA3AF">／{days}日間</span>')
-
-    b0, b1 = progress.get("b_first_week_avg"), progress.get("b_last_week_avg")
-    if isinstance(b0, (int, float)) and isinstance(b1, (int, float)):
-        bc = "#059669" if b1 < b0 else ("#DC2626" if b1 > b0 else "#6B7280")
-        b_html = (f'食べ方（1日の平均B）：開始直後 {b0:g} → 直近 '
-                  f'<b style="color:{bc}">{b1:g}</b>')
-    elif isinstance(b1, (int, float)):
-        b_html = f'食べ方（1日の平均B）：直近 {b1:g}（開始直後の記録が足りず比較なし）'
-    else:
-        b_html = ""
-
-    return f"""
-      <div style="font-size:12px;color:#374151;line-height:1.7;margin-bottom:2px">
-        📈 <b>開始時 {progress['start_weight']:.1f}kg</b>（{md(progress.get('start_date'))}）
-        → <b>現在 {progress['latest_weight']:.1f}kg</b>（{md(progress.get('latest_date'))}）　{change_html}
-        {f'<br>{b_html}' if b_html else ''}
-      </div>
-      {img}"""
-
-
-def _record_rate_line(rate) -> str:
-    """「直近7日に食事を1日平均何回記録しているか」の1行（オーナー指示 2026-10-18）。
-    写真の枚数ではなく、写真・文章・コピーご飯（間食も含む）すべての記録の回数で数える。
-    割る日数は記録した日（何も記録していない日は0回として数えない）。データが無ければ出さない。"""
-    if not isinstance(rate, dict):
         return ""
-    days = rate.get("days") or 7
-    rpd = rate.get("records_per_day")
+    return (f'\n      <img src="cid:{cid}" alt="推移" '
+            f'style="width:100%;max-width:640px;display:block;margin:6px 0 10px;border-radius:6px">')
+
+
+def _stat_cell(icon_label: str, value_html: str, sub: str) -> str:
+    return (f'<td valign="top" style="width:33%;padding:8px 6px;background:#F9FAFB;border:1px solid #E5E7EB;'
+            f'border-radius:8px;text-align:center">'
+            f'<div style="font-size:13px;font-weight:800;color:#374151;white-space:nowrap">{icon_label}</div>'
+            f'<div style="margin-top:2px;color:#111827;line-height:1.25">{value_html}</div>'
+            f'<div style="margin-top:3px;font-size:11px;color:#9CA3AF;line-height:1.4">{sub}</div></td>')
+
+
+def _big(num: str, unit: str = "", color: str = "#111827") -> str:
+    return (f'<span style="font-size:26px;font-weight:900;color:{color};font-variant-numeric:tabular-nums">{num}</span>'
+            f'<span style="font-size:14px;font-weight:800;color:{color}">{unit}</span>')
+
+
+def _key_stats(member) -> str:
+    """会員カードの「食事の記録・運動・タンパク質と野菜」を大きな文字の3つの枠で出す（オーナー指示 2026-11-12）。
+    以前の小さな文字の3行（📝 食事の記録／🏃 運動（相殺したB）／🥗 食べた量）を置き換えた。
+      ・食事の記録：直近7日の記録の回数（写真・文章・コピーご飯・B手入力）÷ 記録した日数（2026-10-18 の数え方のまま。写真の枚数ではない）
+      ・運動：直近7日（昨日まで）の運動時間の1日平均（分。運動しなかった日も0分として7日で割る）
+      ・タンパク質・野菜：直近7日（昨日まで）のうち記録が2回以上の日の1日平均
+    データが無い枠は「—」。3つとも無ければ出さない（古いサーバーでも落ちない）。"""
+    rate = member.get("record_rate") if isinstance(member.get("record_rate"), dict) else None
+    ex = member.get("exercise") if isinstance(member.get("exercise"), dict) else None
+    intake = member.get("intake") if isinstance(member.get("intake"), dict) else None
+    if not (rate or ex or intake):
+        return ""
+
+    # 📝 食事の記録
+    rpd = rate.get("records_per_day") if rate else None
     if isinstance(rpd, (int, float)):
-        kinds = rate.get("by_kind") or {}
-        labels = (("photo", "写真"), ("text", "文章"), ("copy", "コピーご飯"), ("manual_b", "B手入力"))
-        parts = [f"{lbl}{kinds.get(k)}" for k, lbl in labels if kinds.get(k)]
-        breakdown = f'：{"・".join(parts)}' if parts else ""
-        body = (f'<b>1日平均 {rpd:.1f}回</b>'
-                f'<span style="color:#9CA3AF">（直近{days}日のうち記録した{rate.get("record_days", 0)}日・'
-                f'計{rate.get("records", 0)}回{breakdown}）</span>')
+        c = "#059669" if rpd >= 3 else ("#B45309" if rpd >= 2 else "#DC2626")
+        rec = _big(f"{rpd:.1f}", "回", c)
+        rec_sub = f'1日平均・直近{rate.get("days") or 7}日'
     else:
-        body = f'<span style="color:#9CA3AF">直近{days}日の記録なし</span>'
-    return (f'\n      <div style="font-size:12px;color:#374151;line-height:1.7">'
-            f'📝 食事の記録：{body}</div>')
+        rec, rec_sub = _big("—"), "直近7日の記録なし"
 
-
-def _exercise_line(member) -> str:
-    """運動でBを相殺している会員に「運動でいくつ相殺したか」の1行を出す（オーナー指示 2026-10-15）。
-    見出しの「平均 ◯ B/日」は運動を差し引いた後の値なので、食事だけのBも並べて分かるようにする。
-    運動の記録が無い会員には出さない。"""
-    ex = member.get("ex_b_7d")
-    avg_b = member.get("avg_b_7d")
-    if not isinstance(ex, (int, float)) or ex <= 0:
-        return ""
-    if isinstance(avg_b, (int, float)):
-        body = (f'1日平均 <b style="color:#059669">−{ex:g} B</b> を相殺'
-                f'<span style="color:#9CA3AF">（食事だけなら {avg_b + ex:.1f} B/日 → '
-                f'運動を引いて {avg_b:.1f} B/日・直近7日）</span>')
+    # 🏃 運動
+    mpd = ex.get("minutes_per_day") if ex else None
+    if isinstance(mpd, (int, float)):
+        exv = _big(f"{mpd:g}", "分", "#059669" if mpd > 0 else "#6B7280")
+        notes = [f'1日平均・直近{ex.get("days") or 7}日']
+        if ex.get("sessions"):
+            notes.append(f'＋時間なしの運動 {ex["sessions"]}回')
+        if ex.get("unknown_days"):
+            notes.append(f'内容不明 {ex["unknown_days"]}日')
+        ex_sub = "<br>".join(notes)
     else:
-        body = f'1日平均 <b style="color:#059669">−{ex:g} B</b> を相殺<span style="color:#9CA3AF">（直近7日）</span>'
-    return (f'\n      <div style="font-size:12px;color:#374151;line-height:1.7">'
-            f'🏃 運動：{body}</div>')
+        exv, ex_sub = _big("—"), "記録なし"
 
-
-def _intake_line(intake) -> str:
-    """「直近7日（昨日まで）のタンパク質・野菜の1日平均」の1行（オーナー指示 2026-10-15）。
-    記録が少ない日（1回だけの日）は平均に入れない。データが無ければ出さない。"""
-    if not isinstance(intake, dict):
-        return ""
-    days = intake.get("days") or 7
-    p, v = intake.get("protein_g"), intake.get("veg_g")
+    # 🥗 タンパク質・野菜
+    p = intake.get("protein_g") if intake else None
+    v = intake.get("veg_g") if intake else None
     if isinstance(p, (int, float)) or isinstance(v, (int, float)):
-        p_s = f"{p:g}g" if isinstance(p, (int, float)) else "—"
-        v_s = f"{v:g}g" if isinstance(v, (int, float)) else "—"
-        body = (f'1日平均 タンパク質 <b>{p_s}</b>・野菜 <b>{v_s}</b>'
-                f'<span style="color:#9CA3AF">（直近{days}日・昨日までのうち、'
-                f'記録が{intake.get("min_meals", 2)}回以上の{intake.get("used_days", 0)}日）</span>')
+        pv = (f'<div style="font-size:12px;font-weight:700;color:#6B7280">タンパク質 '
+              f'{_big(f"{p:g}" if isinstance(p, (int, float)) else "—", "g")}</div>'
+              f'<div style="font-size:12px;font-weight:700;color:#6B7280">野菜 '
+              f'{_big(f"{v:g}" if isinstance(v, (int, float)) else "—", "g")}</div>')
+        pv_sub = f'1日平均（記録{intake.get("min_meals", 2)}回以上の{intake.get("used_days", 0)}日）'
     else:
-        body = (f'<span style="color:#9CA3AF">直近{days}日に記録が'
-                f'{intake.get("min_meals", 2)}回以上の日がありません</span>')
-    return (f'\n      <div style="font-size:12px;color:#374151;line-height:1.7">'
-            f'🥗 食べた量：{body}</div>')
+        pv, pv_sub = _big("—"), f'記録{(intake or {}).get("min_meals", 2)}回以上の日なし'
+
+    return ('\n      <table cellpadding="0" cellspacing="4" border="0" width="100%" style="margin:2px 0 6px;border-collapse:separate">'
+            '<tr>'
+            + _stat_cell("📝 食事の記録", rec, rec_sub)
+            + _stat_cell("🏃 運動", exv, ex_sub)
+            + _stat_cell("🥗 タンパク質・野菜", pv, pv_sub)
+            + '</tr></table>')
 
 
 # 写真に添える時間帯の表示（app.py の _guess_meal_slot が返す値）
@@ -888,7 +862,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
         {change_html}
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
-      </div>{_record_rate_line(member.get("record_rate"))}{_exercise_line(member)}{_intake_line(member.get("intake"))}{progress_html}
+      </div>{_key_stats(member)}{progress_html}
       {photos_html}
     </div>"""
 
