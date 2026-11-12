@@ -375,6 +375,69 @@ def _sanitize_banana(foods):
             f["b_count"] = b
 
 
+# ── かぼちゃは常にB食材・重さの早見表でBを決める（オーナー指摘 2026-11-11：「かぼちゃがA食材になったりB食材になったりする」） ──
+# 野菜（A）と芋類（B）のどちらにも読めたうえ、小鉢1個がちょうど120kcal前後でAIの判定がぶれていた。
+# かぼちゃだけの項目（煮物・蒸し・焼きなど）は category を "B" にそろえ、重さ × 0.9kcal/g の STEP2 で付け直す。
+#   〜130g → B0 ／ 130〜220g → B0.5 ／ 220g超 → B1（440g超はさらに STEP2）
+# 重さは name・amount の「◯g」「◯切れ（1切れ≒35g）」「小鉢」から読む。読めなければ category だけそろえる。
+# サラダ・ポタージュ・天ぷら・コロッケ・プリンなど、ほかの材料が入る料理は対象外（料理全体のkcalで判定する）。
+KABOCHA_KCAL_PER_G = 0.9
+KABOCHA_PIECE_G = 35
+KABOCHA_KOBACHI_G = 100
+_KABOCHA_RE = re.compile(r"かぼちゃ|カボチャ|南瓜")
+_KABOCHA_ONLY_REST_RE = re.compile(
+    r"[0-9.／/〜~約程度切れ個枚gグラム分の小中大きめさ（）()\s・、,×xX]|小鉢|煮物|煮付け|煮つけ|含め煮|甘煮|うま煮|"
+    r"煮|蒸し|焼き|グリル|ロースト|ゆで|茹で|塩|冷凍|皮付き|皮つき|皮|ほくほく|西洋|日本|坊ちゃん|"
+    r"一口大|カット|スライス|角切り|切り")
+
+
+def _is_kabocha_only(name):
+    import unicodedata
+    text = unicodedata.normalize("NFKC", str(name or ""))
+    if not _KABOCHA_RE.search(text):
+        return False
+    return not _KABOCHA_ONLY_REST_RE.sub("", _KABOCHA_RE.sub("", text))
+
+
+def _kabocha_grams(text):
+    """「120g」「4切れ」「小鉢」から重さ(g)を読む。読めなければ None。"""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", str(text or ""))
+    mm = re.search(r"(\d+(?:\.\d+)?)\s*(?:g|グラム)", t)
+    if mm:
+        return float(mm.group(1))
+    mm = re.search(r"(\d+(?:\.\d+)?)\s*切れ", t)
+    if mm:
+        return float(mm.group(1)) * KABOCHA_PIECE_G
+    if "小鉢" in t:
+        return float(KABOCHA_KOBACHI_G) * (1.5 if "大盛" in t else 1.0)
+    return None
+
+
+def _sanitize_kabocha(foods):
+    """かぼちゃだけの項目を B食材にそろえ、重さが分かればBとkcalを早見表どおりに付け直す。
+    会員の訂正（reason に「訂正反映」）には触らない。変えた値は *_adjusted_from に残す。"""
+    for f in foods:
+        if not isinstance(f, dict) or not _is_kabocha_only(f.get("name")):
+            continue
+        if "訂正反映" in str(f.get("reason") or ""):
+            continue
+        if f.get("category") != "B":
+            f["category_adjusted_from"] = f.get("category")
+            f["category"] = "B"
+        grams = _kabocha_grams(f"{f.get('name') or ''} {f.get('amount') or ''}")
+        if grams is None or grams <= 0:
+            continue
+        kcal = round(grams * KABOCHA_KCAL_PER_G)
+        b = _b_from_kcal(kcal)
+        if f.get("kcal_per_serving") != kcal:
+            f["kcal_adjusted_from"] = f.get("kcal_per_serving")
+            f["kcal_per_serving"] = kcal
+        if _num(f.get("b_count")) != b:
+            f["b_adjusted_from"] = f.get("b_count")
+            f["b_count"] = b
+
+
 def recompute_totals(result):
     """total_* を必ず foods の合計に一致させる。
     AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
@@ -389,6 +452,7 @@ def recompute_totals(result):
         _fill_sushi_rice(foods)
         _fill_juice_kcal(foods)
         _sanitize_banana(foods)
+        _sanitize_kabocha(foods)
         # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
         b_sum = sum(_num(f.get("b_count")) for f in foods)
         result["total_b_count"] = round(b_sum * 2) / 2
@@ -2269,6 +2333,13 @@ B食材例：
 - パン全般（食パン・全粒粉パンなど）
 - 麺類（そば・うどん・ラーメン・パスタなど、1人前≒270〜350kcal）
 - 芋類（さつまいも・じゃがいもなど、100g≒100〜130kcal）
+- かぼちゃ【必ずB食材として扱う・A食材にしない】野菜だが糖質が多く芋類に近いため、category は必ず "B" にする。
+  Bは量（重さ）の早見表で決める（煮物・蒸し・焼き・ゆでなど、かぼちゃそのものの料理。1gあたり約0.9kcalで計算する）：
+  ・2〜3切れ・小鉢1個（〜130g）→ B0
+  ・4〜6切れ・小鉢大盛り（130〜220g）→ B0.5
+  ・それ以上（220g超）→ B1（440g超はkcalのSTEP2）
+  ※1切れ（一口大）≒35g。name か amount に「◯切れ」か「◯g」を必ず書く（アプリ側でも重さから確かめる）。
+  ※同じ量なら毎回同じB・同じ category にする。かぼちゃサラダ（マヨネーズ）・ポタージュ・天ぷら・コロッケ等は料理全体のkcalで判定する。
 - バナナ【重要・必ずカウントする】バナナはB食材であり、1本食べたら必ず【B0.5】とする。
   日本で売られているバナナ1本は可食部100〜120g・約90〜130kcalで、糖質が多くダイエット上は無視できないため、
   「120kcal未満だからB0」という丸め方はしない（B食材に指定した意味がなくなるため）。
