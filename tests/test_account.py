@@ -58,9 +58,10 @@ def mails(monkeypatch):
 
 
 @pytest.fixture
-def client(mails):
+def client(mails, monkeypatch):
     m.init_db()
     m.app.config["TESTING"] = True
+    monkeypatch.setattr(m, "ACCOUNT_UI_ENABLED", True)   # 登録の流れを試すテストは、受付をオンにして行う
 
     def clean():
         for t in ("accounts", "account_reset_codes", "account_pending", "member_devices"):
@@ -431,3 +432,27 @@ def test_unknown_email_still_runs_password_check(client, mails, monkeypatch):
     monkeypatch.setattr(m, "check_password_hash", lambda h, p: seen.append(h) or real(h, p))
     client.post("/api/account/login", json={"email": "nobody@example.com", "password": "whatever1"})
     assert seen == [m._DUMMY_PASSWORD_HASH]
+
+
+# ── 会員に案内するまで出さない（オーナー指示 2026-11-15） ─────────────────────
+def test_account_ui_is_off_by_default():
+    assert m.ACCOUNT_UI_ENABLED is False, "オーナーが始めると言うまで、アカウント登録は会員に出さない"
+
+
+def test_hidden_until_enabled(client, mails, monkeypatch):
+    monkeypatch.setattr(m, "ACCOUNT_UI_ENABLED", False)
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="account-card"' not in html and "openAccountLoginFromGate()\"" not in html
+    r = _register(client)
+    assert r.status_code == 403 and not mails, "画面を隠すだけでなく、登録の受付も止める"
+    assert _confirm(client, "123456").status_code == 403
+    monkeypatch.setattr(m, "ACCOUNT_UI_ENABLED", True)
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="account-card"' in html and "openAccountLoginFromGate()" in html
+
+
+def test_existing_accounts_still_log_in_while_hidden(client, mails, monkeypatch):
+    """すでに登録した人のアカウントは消さず、ログインもできる。"""
+    _register_full(client, mails)
+    monkeypatch.setattr(m, "ACCOUNT_UI_ENABLED", False)
+    assert client.post("/api/account/login", json={"email": EMAIL, "password": PW}).status_code == 200

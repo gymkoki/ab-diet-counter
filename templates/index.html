@@ -1307,7 +1307,9 @@
     </div>
   </div>
   <!-- アカウント（メールアドレス＋パスワード。2026-11-10）：今の記録にメールとパスワードを結びつける。
-       記録は移さないので、登録しても履歴はそのまま。機種変更・別の端末ではログインで同じ記録に入れる。 -->
+       記録は移さないので、登録しても履歴はそのまま。機種変更・別の端末ではログインで同じ記録に入れる。
+       オーナー指示 2026-11-15：会員に案内するまで画面に出さない（ACCOUNT_UI_ENABLED）。 -->
+  {% if account_ui %}
   <div class="setting-card" id="account-card">
     <h2>📧 アカウント（メールアドレス・パスワード）</h2>
     <div id="account-registered" style="display:none">
@@ -1354,6 +1356,7 @@
     </details>
     <div id="account-status" style="display:none;text-align:center;margin-top:10px;font-size:17px;font-weight:700;line-height:1.6"></div>
   </div>
+  {% endif %}
   <div class="setting-card">
     <h2>🔗 スマホ・パソコンでデータを共有</h2>
     <p style="font-size:17px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">複数の端末で<strong>同じ記録</strong>を使えます。①いつもの端末でコードを発行 → ②もう一方の端末で入力。</p>
@@ -1499,8 +1502,10 @@
     <div id="member-gate-error" style="display:none;margin-top:10px;font-size:15px;color:#DC2626;line-height:1.6"></div>
     <button id="member-gate-btn" onclick="submitMemberGate()"
             style="width:100%;margin-top:14px;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">認証する</button>
+    {% if account_ui %}
     <button type="button" onclick="openAccountLoginFromGate()"
             style="width:100%;margin-top:10px;padding:12px;border-radius:14px;border:1.5px solid #6366F1;background:white;color:#4F46E5;font-size:16px;font-weight:700;cursor:pointer">📧 アカウントをお持ちの方はログイン</button>
+    {% endif %}
     <div style="margin-top:14px;font-size:14px;color:#85807A;line-height:1.7">
       パスワードが分からない場合は、リオールジムのスタッフまでお問い合わせください。
     </div>
@@ -2001,6 +2006,7 @@ function _setAccountStatus(msg, isError) {
 }
 
 async function loadAccountStatus() {
+  if (!document.getElementById('account-card')) return;   // 会員に案内するまで画面に出さない（2026-11-15）
   try {
     const r = await fetch(`/api/account/status?user_id=${encodeURIComponent(USER_ID)}`);
     if (!r.ok) return;

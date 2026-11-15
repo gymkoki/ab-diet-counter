@@ -1504,6 +1504,10 @@ def member_unlock():
 #  ・パスワード・確認コードはハッシュだけを保存する。メールアドレス・パスワードはログに出さない。
 #  ・ログインの失敗・確認メールの送信は回数を制限する（総当たり・メール爆撃の対策）。
 # ══════════════════════════════════════════════════════════════
+# 会員にアカウント登録を案内するまで、画面（設定の欄・合言葉の画面のログイン）を出さず、新しい登録も受け付けない
+# （オーナー指示 2026-11-15：「会員登録や有料化など新しい取り組みは今日しないで」）。始めるときは環境変数を 1 にする。
+# すでに登録された人のアカウント・記録はそのまま（ログイン・再設定のAPIも動く）。
+ACCOUNT_UI_ENABLED = os.environ.get("ACCOUNT_UI_ENABLED", "").strip() == "1"
 ACCOUNT_PASSWORD_MIN = 8
 ACCOUNT_CODE_TTL_MIN = 30            # 確認コード（登録・再設定）の有効時間
 ACCOUNT_RESET_TTL_MIN = ACCOUNT_CODE_TTL_MIN
@@ -1690,6 +1694,8 @@ def api_account_register():
     email = _norm_email(data.get("email"))
     pw = str(data.get("password") or "")
     token = request.headers.get("X-Device-Token", "")
+    if not ACCOUNT_UI_ENABLED:
+        return jsonify({"error": "アカウント登録は現在受け付けていません。"}), 403
     if not uid:
         return jsonify({"error": "端末を識別できませんでした。アプリを開き直してください。"}), 400
     try:
@@ -1761,6 +1767,8 @@ def api_account_register_confirm():
     data = request.get_json(silent=True) or {}
     uid = (data.get("user_id") or "").strip()
     code = str(data.get("code") or "").strip()
+    if not ACCOUNT_UI_ENABLED:
+        return jsonify({"error": "アカウント登録は現在受け付けていません。"}), 403
     bad = jsonify({"error": "確認コードが違うか、期限が切れています。もう一度「登録する」を押してください。"}), 400
     try:
         if not _owns_uid(uid, request.headers.get("X-Device-Token", "")):
@@ -2960,7 +2968,7 @@ def get_client():
 @app.route("/")
 def index():
     # 過去日に後から食事写真を追加できる日数をフロントへ渡す。
-    return render_template("index.html", past_meal_edit_days=PAST_MEAL_EDIT_DAYS)
+    return render_template("index.html", past_meal_edit_days=PAST_MEAL_EDIT_DAYS, account_ui=ACCOUNT_UI_ENABLED)
 
 
 @app.route(ADMIN_BASE)
