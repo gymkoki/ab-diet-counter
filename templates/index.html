@@ -2796,7 +2796,11 @@ async function maybeShowSticker(d) {
     }
     // 確保の応答を待つ間に別のお知らせが開いたら、重ねずに閉じるまで待ってから出す（この1回は確保済み）
     while (_stickerBlocked()) await wait(1500);
-    try { localStorage.setItem(STICKER_LOCAL_KEY, 'shown'); } catch {}
+    // 待っている間に同じ端末の別のタブが表示したら（shown に変わったら）出さない。読み書きは同期で、間に別の処理は入らない
+    try {
+      if (localStorage.getItem(STICKER_LOCAL_KEY) !== 'pending') return;
+      localStorage.setItem(STICKER_LOCAL_KEY, 'shown');
+    } catch {}
     document.getElementById('sticker-points').textContent = String(d.sticker_goal || 100);
     document.getElementById('sticker-overlay').classList.add('show');
   } catch {} finally { _stickerBusy = false; }

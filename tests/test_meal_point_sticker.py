@@ -131,3 +131,12 @@ def test_app_does_not_overlap_other_notices():
     assert after_claim.index("while (_stickerBlocked())") < after_claim.index("classList.add('show')")
     # 確保したが表示できずに閉じた端末は、次に開いたときに出す
     assert "'pending'" in body
+
+
+def test_other_tab_already_shown_is_rechecked():
+    """Codex の指摘（PR #269 2回目）：pending から再開する2つのタブで2回出ないよう、表示の直前に共有の記録を読み直す。"""
+    src = open(INDEX, encoding="utf-8").read()
+    body = src[src.index("async function maybeShowSticker"):src.index("function closeSticker")]
+    tail = body[body.rindex("while (_stickerBlocked())"):]
+    recheck = tail.index("localStorage.getItem(STICKER_LOCAL_KEY) !== 'pending') return;")
+    assert recheck < tail.index("setItem(STICKER_LOCAL_KEY, 'shown')") < tail.index("classList.add('show')")
