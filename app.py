@@ -947,6 +947,15 @@ def init_db():
                 PRIMARY KEY (user_id, reason)
             )
         """)
+        # こまめ記録ポイント100ポイントの「キーラン君ステッカープレゼント」を表示したか（オーナー指示 2026-11-17）。
+        # 1人1行（主キー）＝表示できるのは1回だけ。ジムで渡したかどうかの管理には使わない。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS meal_point_sticker (
+                user_id    TEXT PRIMARY KEY,
+                points     INTEGER NOT NULL,
+                shown_at   TEXT NOT NULL
+            )
+        """)
         # アプリ内の1回だけのアンケート（オーナー指示 2026-11-10）。1人1アンケート1行。
         # status: shown=表示した（未回答）／skipped=答えずに閉じた／answered=回答した
         cur.execute("""
@@ -8580,6 +8589,23 @@ def _build_report_html(target_date: str) -> str:
 # ══════════════════════════════════════════════════════════════
 MEAL_POINTS_GOAL = 10
 SPECIAL_MESSAGE_URL_KEY = "special-message-url"
+# 100ポイントで「キーラン君ステッカープレゼント」のメッセージを1回だけ出す（オーナー指示 2026-11-17）
+MEAL_POINTS_STICKER_GOAL = 100
+
+
+def _sticker_shown(uid):
+    """ステッカーのメッセージを表示済みか。読めなければ True（＝出さない側に倒す。2回出さないため）。"""
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT 1 FROM meal_point_sticker WHERE user_id={PH}", (uid,))
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.warning("meal_point_sticker read skipped: %s", e)
+        return True
 
 
 def _meal_points_of(uid):
@@ -8640,6 +8666,9 @@ def _meal_points_payload(uid):
         # 10ポイントに届いた人にだけURLを渡す（届いていない人には「準備中かどうか」だけ）
         "message_ready": bool(url),
         "message_url": url if unlocked else None,
+        "sticker_goal": MEAL_POINTS_STICKER_GOAL,
+        # 100ポイントに届いていて、まだ一度も表示していない人だけ True
+        "sticker_due": points >= MEAL_POINTS_STICKER_GOAL and not _sticker_shown(uid),
     }
 
 
@@ -8739,6 +8768,40 @@ def api_meal_points():
     except Exception as e:
         app.logger.warning("meal_points read failed: %s", e)
         return jsonify({"error": "読み込めませんでした"}), 500
+
+
+@app.route("/api/meal-points/sticker", methods=["POST"])
+def api_meal_points_sticker():
+    """POST {user_id}：「キーラン君ステッカープレゼント」を表示する直前に、この会員の1回を確保する。
+    主キーで1行しか入らないので、2つの端末・タブで同時に開いても出るのは1つだけ（claimed）。"""
+    body = request.get_json(silent=True) or {}
+    uid = str(body.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    try:
+        points = len(_meal_points_of(uid)) + _bonus_points_of(uid)
+    except Exception as e:
+        app.logger.warning("meal_point_sticker points read failed: %s", e)
+        return jsonify({"claimed": False}), 503
+    if points < MEAL_POINTS_STICKER_GOAL:
+        return jsonify({"claimed": False, "points": points})
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO meal_point_sticker (user_id, points, shown_at) VALUES ({PH},{PH},{PH}) "
+                    f"ON CONFLICT DO NOTHING",
+                    (uid, points, datetime.datetime.now(JST).isoformat()))
+                claimed = cur.rowcount == 1
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.warning("meal_point_sticker insert failed: %s", e)
+        return jsonify({"claimed": False}), 503
+    return jsonify({"claimed": claimed, "points": points})
 
 
 # ══════════════════════════════════════════════════════════════
@@ -8877,6 +8940,22 @@ def admin_special_message():
         for u, b in _bonus_points_by_user(cur).items():
             per[u] = per.get(u, 0) + b
         counts = [c for c in per.values() if c > 0]
+        # 100ポイント（キーラン君ステッカー）に届いた会員：ジムでステッカーを渡すための一覧
+        sticker = []
+        reached = [u for u, c in per.items() if c >= MEAL_POINTS_STICKER_GOAL]
+        if reached:
+            cur.execute("SELECT user_id, display_name FROM user_profile")
+            names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+            shown = {}
+            try:
+                cur.execute("SELECT user_id, shown_at FROM meal_point_sticker")
+                shown = {r[0]: str(r[1])[:10] for r in cur.fetchall()}
+            except Exception:
+                if USE_PG:
+                    conn.rollback()
+            sticker = sorted(({"name": (names.get(u) or f"会員{u[:4]}")[:20], "points": per[u],
+                               "shown_on": shown.get(u)} for u in reached),
+                             key=lambda x: -x["points"])
     finally:
         conn.close()
     return jsonify({
@@ -8885,6 +8964,8 @@ def admin_special_message():
         "members_with_points": len(counts),
         "members_unlocked": sum(1 for c in counts if c >= MEAL_POINTS_GOAL),
         "points_total": sum(counts),
+        "sticker_goal": MEAL_POINTS_STICKER_GOAL,
+        "sticker_members": sticker,
     })
 
 

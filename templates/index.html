@@ -747,6 +747,8 @@
     @keyframes mptFlash { 0%{transform:scale(1)} 30%{transform:scale(1.03); box-shadow:0 0 0 6px rgba(124,92,224,.25)} 100%{transform:scale(1)} }
     #special-msg-overlay { display:none; position:fixed; inset:0; z-index:520; background:rgba(23,19,16,0.6); align-items:center; justify-content:center; padding:20px; }
     #special-msg-overlay.show { display:flex; }
+    #sticker-overlay { display:none; position:fixed; inset:0; z-index:605; background:rgba(23,19,16,0.6); align-items:center; justify-content:center; padding:20px; }
+    #sticker-overlay.show { display:flex; }
     .sm-video { position:relative; width:100%; padding-top:56.25%; border-radius:var(--radius-md); overflow:hidden; background:#000; margin:10px 0; }
     .sm-video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
     .btn-hist-meal-edit { width:100%; margin-top:8px; padding:13px; border-radius:var(--radius-md); border:none; background:#0E9F6E; color:white; font-size:17px; font-weight:700; cursor:pointer; }
@@ -1075,6 +1077,16 @@
     <h3>🎬 リオールジムからの特別メッセージ</h3>
     <div id="special-msg-body"></div>
     <button class="weight-cancel" onclick="closeSpecialMessage()">閉じる</button>
+  </div>
+</div>
+
+<!-- こまめ記録ポイント100ポイント：キーラン君ステッカープレゼント（1人1回だけ表示・オーナー指示 2026-11-17） -->
+<div id="sticker-overlay" onclick="closeSticker()">
+  <div class="weight-dialog" onclick="event.stopPropagation()">
+    <img src="/static/chara-kieran.webp?v=1" alt="キーラン君" style="width:120px;height:120px;object-fit:cover;border-radius:20px" draggable="false">
+    <h3 style="margin-top:12px">🎉 こまめ記録ポイント<br><span id="sticker-points">100</span>ポイント達成！</h3>
+    <p style="font-size:22px;font-weight:800;color:#FF6B35;line-height:1.5;margin:12px 0 18px">キーラン君ステッカー<br>プレゼント🎁</p>
+    <button onclick="closeSticker()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">OK</button>
   </div>
 </div>
 
@@ -2462,8 +2474,10 @@ async function fetchMealPoints() {
     const res = await fetch(`/api/meal-points?user_id=${encodeURIComponent(USER_ID)}`);
     if (!res.ok) return;
     // 送信がまだ届いていない日（電波が悪かった等）は端末側の記録も残す
-    mergeMealPoints(await res.json());
+    const d = await res.json();
+    mergeMealPoints(d);
     renderMealPoints();
+    maybeShowSticker(d);
   } catch {}
 }
 
@@ -2475,7 +2489,7 @@ async function sendMealPoint(date) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: USER_ID, date }),
     });
-    if (res.ok) mergeMealPoints(await res.json());
+    if (res.ok) { const d = await res.json(); mergeMealPoints(d); maybeShowSticker(d); }
   } catch {} finally {
     _mealPointsSending = false;
     renderMealPoints();
@@ -2730,6 +2744,52 @@ function openSpecialMessage() {
 function closeSpecialMessage() {
   document.getElementById('special-msg-overlay').classList.remove('show');
   document.getElementById('special-msg-body').innerHTML = '';   // 再生を止める
+}
+
+// ── 100ポイント：キーラン君ステッカープレゼント（1人1回だけ・オーナー指示 2026-11-17） ──
+// サーバーが sticker_due（100ポイント以上・まだ表示していない）を返したときだけ。
+// ほかのお知らせが閉じるのを待ち、表示する直前にサーバーで「この会員の1回」を確保できた画面だけが出す
+// （別の端末・タブで同時に開いても1つだけ。サーバーにつながらないときは出さない＝2回出さない側に倒す）。
+const STICKER_LOCAL_KEY = 'ab-diet-sticker-100-shown';
+let _stickerBusy = false;
+function _stickerBlocked() {
+  if (document.visibilityState !== 'visible') return true;
+  const gc = document.getElementById('goal-celebrate');
+  if (gc && gc.classList.contains('show')) return true;
+  return Array.from(document.querySelectorAll('[id$="-overlay"]')).some(el =>
+    el.id !== 'sticker-overlay' && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden');
+}
+async function maybeShowSticker(d) {
+  if (!d || !d.sticker_due || _stickerBusy) return;
+  try { if (localStorage.getItem(STICKER_LOCAL_KEY)) return; } catch {}
+  _stickerBusy = true;
+  try {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    // 起動時のお知らせの確認（合言葉・返信・コーチメッセージなど）が終わるまで待つ
+    await Promise.race([Promise.allSettled(_startupNoticeChecks.slice()), wait(15000)]);
+    await wait(1000);
+    // ほかのお知らせが出ていたら閉じるまで待つ（約2分。出せなければ次に開いたときにもう一度）
+    for (let i = 0; _stickerBlocked(); i++) {
+      if (i >= 40) return;
+      await wait(3000);
+    }
+    const r = await fetch('/api/meal-points/sticker', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: USER_ID }),
+    });
+    const c = r.ok ? await r.json() : {};
+    if (!c.claimed) {
+      // 別の端末で表示済み：この端末でも二度と確かめない
+      if (r.ok && (c.points || 0) >= (d.sticker_goal || 100)) { try { localStorage.setItem(STICKER_LOCAL_KEY, 'done'); } catch {} }
+      return;
+    }
+    try { localStorage.setItem(STICKER_LOCAL_KEY, 'shown'); } catch {}
+    document.getElementById('sticker-points').textContent = String(d.sticker_goal || 100);
+    document.getElementById('sticker-overlay').classList.add('show');
+  } catch {} finally { _stickerBusy = false; }
+}
+function closeSticker() {
+  document.getElementById('sticker-overlay').classList.remove('show');
 }
 
 function updateDailyTotal() {
