@@ -577,6 +577,7 @@
     <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.6">
       朝（4時〜10時半）・昼（10時半〜16時）・夜（16時〜24時）の3回とも、その時間帯のうちに記録できた日に1ポイント。
       <b>10ポイントたまった会員だけ</b>が、下に登録した動画を見られます。
+      <b>100ポイント</b>たまると、アプリに「キーラン君ステッカープレゼント」のお知らせが1回だけ出ます（達成した人は下に表示）。
       URLが未登録のあいだは、会員には「ただいま撮影準備中」と表示されます。
       YouTube に<b>「限定公開」</b>でアップロードし、そのURL（https://youtu.be/… など）を貼ってください。
     </div>
@@ -2406,12 +2407,22 @@
       const d = await (await fetch('/api/admin/special-message')).json();
       now.innerHTML = `動画：${d.url ? '<span style="color:#065F46;font-weight:800">登録済み</span>' : '<span style="color:#B45309;font-weight:800">未登録（会員には「撮影準備中」と表示）</span>'}`
         + `　／　ポイントを1つ以上持っている会員：<b>${d.members_with_points}</b>人`
-        + `　／　${d.goal}ポイント達成：<b>${d.members_unlocked}</b>人`;
+        + `　／　${d.goal}ポイント達成：<b>${d.members_unlocked}</b>人`
+        + stickerList(d);
       const inp = document.getElementById('special-msg-url');
       if (inp && !inp.value) inp.value = d.url || '';
     } catch (e) {
       now.textContent = '読み込みに失敗しました';
     }
+  }
+
+  // 100ポイント（キーラン君ステッカー）に届いた会員の一覧（ジムでステッカーを渡すため）
+  function stickerList(d) {
+    const list = d.sticker_members || [];
+    const head = `<div style="margin-top:8px">🐱 ${d.sticker_goal || 100}ポイント達成（キーラン君ステッカー）：<b>${list.length}</b>人</div>`;
+    if (!list.length) return head;
+    return head + '<ul style="margin:4px 0 0 18px;padding:0">' + list.map(x =>
+      `<li>${escapeHtml(x.name)}（${x.points}pt）${x.shown_on ? `　<span style="color:#065F46">${escapeHtml(x.shown_on)} にお知らせ表示済み</span>` : '　<span style="color:#9CA3AF">次にアプリを開いたときに表示</span>'}</li>`).join('') + '</ul>';
   }
 
   async function saveSpecialMessage() {
