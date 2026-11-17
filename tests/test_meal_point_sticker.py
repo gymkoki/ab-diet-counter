@@ -116,3 +116,18 @@ def test_app_shows_message_once():
     assert "STICKER_LOCAL_KEY" in body and "_stickerBlocked()" in body
     # ポイントを取りに行ったとき・送ったときの両方で確かめる
     assert src.count("maybeShowSticker(d)") >= 2
+
+
+def test_app_does_not_overlap_other_notices():
+    """Codex の指摘（PR #269）：①ホーム画面に追加の案内も待つ ②起動時の確認が時間切れなら見送る
+    ③確保したあとも、ほかのお知らせが開いていれば閉じるまで待ってから出す。"""
+    src = open(INDEX, encoding="utf-8").read()
+    blocked = src[src.index("function _stickerBlocked"):src.index("async function maybeShowSticker")]
+    assert "#home-banner" in blocked
+    body = src[src.index("async function maybeShowSticker"):src.index("function closeSticker")]
+    assert "if (!settled) return;" in body
+    after_claim = body[body.index("c.claimed"):]
+    assert "while (_stickerBlocked())" in after_claim
+    assert after_claim.index("while (_stickerBlocked())") < after_claim.index("classList.add('show')")
+    # 確保したが表示できずに閉じた端末は、次に開いたときに出す
+    assert "'pending'" in body

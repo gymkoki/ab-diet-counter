@@ -2756,33 +2756,46 @@ function _stickerBlocked() {
   if (document.visibilityState !== 'visible') return true;
   const gc = document.getElementById('goal-celebrate');
   if (gc && gc.classList.contains('show')) return true;
-  return Array.from(document.querySelectorAll('[id$="-overlay"]')).some(el =>
+  // 画面いっぱいのお知らせ（〜-overlay）と、下に出る「ホーム画面に追加」の案内（#home-banner）
+  return Array.from(document.querySelectorAll('[id$="-overlay"], #home-banner')).some(el =>
     el.id !== 'sticker-overlay' && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden');
 }
 async function maybeShowSticker(d) {
-  if (!d || !d.sticker_due || _stickerBusy) return;
-  try { if (localStorage.getItem(STICKER_LOCAL_KEY)) return; } catch {}
+  let local = null;
+  try { local = localStorage.getItem(STICKER_LOCAL_KEY); } catch {}
+  // pending＝サーバーで確保したが、まだ表示できていない（ほかのお知らせが閉じる前にアプリを閉じた等）
+  const pending = local === 'pending';
+  if (!d || _stickerBusy || (local && !pending) || (!pending && !d.sticker_due)) return;
   _stickerBusy = true;
   try {
     const wait = ms => new Promise(r => setTimeout(r, ms));
-    // 起動時のお知らせの確認（合言葉・返信・コーチメッセージなど）が終わるまで待つ
-    await Promise.race([Promise.allSettled(_startupNoticeChecks.slice()), wait(15000)]);
+    // 起動時のお知らせの確認（合言葉・返信・コーチメッセージなど）が終わるまで待つ。15秒で終わらなければ今回は見送る
+    const settled = await Promise.race([
+      Promise.allSettled(_startupNoticeChecks.slice()).then(() => true),
+      wait(15000).then(() => false),
+    ]);
+    if (!settled) return;
     await wait(1000);
     // ほかのお知らせが出ていたら閉じるまで待つ（約2分。出せなければ次に開いたときにもう一度）
     for (let i = 0; _stickerBlocked(); i++) {
       if (i >= 40) return;
       await wait(3000);
     }
-    const r = await fetch('/api/meal-points/sticker', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: USER_ID }),
-    });
-    const c = r.ok ? await r.json() : {};
-    if (!c.claimed) {
-      // 別の端末で表示済み：この端末でも二度と確かめない
-      if (r.ok && (c.points || 0) >= (d.sticker_goal || 100)) { try { localStorage.setItem(STICKER_LOCAL_KEY, 'done'); } catch {} }
-      return;
+    if (!pending) {
+      const r = await fetch('/api/meal-points/sticker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: USER_ID }),
+      });
+      const c = r.ok ? await r.json() : {};
+      if (!c.claimed) {
+        // 別の端末で表示済み：この端末でも二度と確かめない
+        if (r.ok && (c.points || 0) >= (d.sticker_goal || 100)) { try { localStorage.setItem(STICKER_LOCAL_KEY, 'done'); } catch {} }
+        return;
+      }
+      try { localStorage.setItem(STICKER_LOCAL_KEY, 'pending'); } catch {}
     }
+    // 確保の応答を待つ間に別のお知らせが開いたら、重ねずに閉じるまで待ってから出す（この1回は確保済み）
+    while (_stickerBlocked()) await wait(1500);
     try { localStorage.setItem(STICKER_LOCAL_KEY, 'shown'); } catch {}
     document.getElementById('sticker-points').textContent = String(d.sticker_goal || 100);
     document.getElementById('sticker-overlay').classList.add('show');
