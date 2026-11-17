@@ -1904,6 +1904,11 @@ async function syncHistoryFromServer() {
       if (dd.diary   != null && dlog[dd.date] == null) { dlog[dd.date] = dd.diary;   dch = true; }
       if (dd.chara_score != null && clog[dd.date] == null) { clog[dd.date] = dd.chara_score; cch = true; }
     });
+    // 運営が入力ミスとして消した体重（同じ値が端末に残っていたら消す。違う値＝本人が直した値は残す）
+    (data.weight_removed || []).forEach(r => {
+      const v = parseFloat(wlog[r.date]);
+      if (!isNaN(v) && Math.abs(v - Number(r.weight)) < 0.05) { delete wlog[r.date]; wch = true; }
+    });
     if (wch) localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(wlog));
     if (bch) localStorage.setItem(BCOUNT_LOG_KEY, JSON.stringify(blog));
     if (dch) { localStorage.setItem(DIARY_LOG_KEY, JSON.stringify(dlog)); renderDiaryInline(); }
