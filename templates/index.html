@@ -2788,8 +2788,11 @@ async function maybeShowSticker(d) {
       });
       const c = r.ok ? await r.json() : {};
       if (!c.claimed) {
-        // 別の端末で表示済み：この端末でも二度と確かめない
-        if (r.ok && (c.points || 0) >= (d.sticker_goal || 100)) { try { localStorage.setItem(STICKER_LOCAL_KEY, 'done'); } catch {} }
+        // 別の端末で表示済み：この端末でも二度と確かめない。
+        // ただし同じ端末の別のタブが確保して表示を待っている（pending）ときは上書きしない（そのタブが出せなくなるため）
+        if (r.ok && (c.points || 0) >= (d.sticker_goal || 100)) {
+          try { if (!localStorage.getItem(STICKER_LOCAL_KEY)) localStorage.setItem(STICKER_LOCAL_KEY, 'done'); } catch {}
+        }
         return;
       }
       try { localStorage.setItem(STICKER_LOCAL_KEY, 'pending'); } catch {}

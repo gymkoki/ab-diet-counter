@@ -140,3 +140,11 @@ def test_other_tab_already_shown_is_rechecked():
     tail = body[body.rindex("while (_stickerBlocked())"):]
     recheck = tail.index("localStorage.getItem(STICKER_LOCAL_KEY) !== 'pending') return;")
     assert recheck < tail.index("setItem(STICKER_LOCAL_KEY, 'shown')") < tail.index("classList.add('show')")
+
+
+def test_failed_claim_keeps_other_tab_pending():
+    """Codex の指摘（PR #269 3回目）：確保に失敗したタブが、別のタブの pending を done で上書きしない。"""
+    src = open(INDEX, encoding="utf-8").read()
+    body = src[src.index("async function maybeShowSticker"):src.index("function closeSticker")]
+    unclaimed = body[body.index("if (!c.claimed)"):body.index("setItem(STICKER_LOCAL_KEY, 'pending')")]
+    assert "if (!localStorage.getItem(STICKER_LOCAL_KEY)) localStorage.setItem(STICKER_LOCAL_KEY, 'done')" in unclaimed
