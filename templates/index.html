@@ -4071,6 +4071,9 @@ function bananaB(pieces, kcal) {
 function scaledBCount(food, base, factor) {
   const b0 = Number(base.b_count) || 0;
   if (factor === 1) return b0;
+  // A食材（鶏むね肉・ささみ・野菜など）は量に関係なく0カウント（オーナー指摘 2026-11-17：
+  // 「鳥むね肉がB食材カウントされる」）。以前は2倍・1.5倍でkcalから付け直し、鶏むね150g×2でB1になっていた。
+  if (food.category === 'A' && b0 === 0) return 0;
   const k0 = Number(base.kcal_per_serving);
   const k = (isFinite(k0) && k0 > 0) ? k0 * factor : null;
   if (isBananaOnly(food.name) && !/訂正反映/.test(String(food.reason || ''))) {
