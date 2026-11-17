@@ -321,6 +321,16 @@
     <div id="member-search-result" style="margin-top:10px"></div>
   </div>
 
+  <!-- 体重の入力ミスの候補（オーナー指示 2026-11-17：外れ値の1件だけを確かめて消す） -->
+  <div class="card" style="margin-bottom:20px" id="weight-outlier-card">
+    <h2>⚖️ 体重の入力ミスの候補</h2>
+    <div style="font-size:12px;color:#6B7280;line-height:1.7;margin-bottom:10px">
+      その人の体重の中央値から大きく外れた1日の値です（例：60kg台の人の「35kg」）。前後の記録と見比べて、入力ミスなら「削除」を押してください。
+      消すのはその1日の体重だけで、元に戻せません。消した値は、本人の端末から送り直されても復活しません。
+    </div>
+    <div id="weight-outliers"><div class="spinner"></div></div>
+  </div>
+
   <!-- 💰 収益を伸ばすために今日やること（レポートを待たずにここで作って見られる。2026-10-26） -->
   <div class="card" style="margin-bottom:20px" id="revenue-card">
     <h2>💰 収益を伸ばすために今日やること</h2>
@@ -1596,6 +1606,57 @@
 
   // ── 記録方法ごとの1日あたり利用人数 ──
   // ── AI解析回数ランキング（直近30日・上位20人） ──
+  // 体重の入力ミスの候補（オーナー指示 2026-11-17）
+  let _weightOutliers = [];
+  async function loadWeightOutliers() {
+    const box = document.getElementById('weight-outliers');
+    if (!box) return;
+    try {
+      const r = await fetch('/api/admin/weight-outliers');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || '読み込めませんでした');
+      _weightOutliers = d.items || [];
+      if (!_weightOutliers.length) {
+        box.innerHTML = '<div style="font-size:13px;color:#6B7280">入力ミスらしい体重は見つかりませんでした。</div>';
+        return;
+      }
+      const md = s => { const p = String(s || '').split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : '—'; };
+      const nb = x => x ? `${md(x.date)} ${x.weight}kg` : '—';
+      box.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#F9FAFB;color:#6B7280;text-align:left">
+          <th style="padding:6px 8px">会員</th><th style="padding:6px 8px">日付</th><th style="padding:6px 8px">体重</th>
+          <th style="padding:6px 8px">ふだん（中央値）</th><th style="padding:6px 8px">前の記録</th><th style="padding:6px 8px">次の記録</th><th></th></tr></thead>
+        <tbody>${_weightOutliers.map((o, i) => `<tr style="border-top:1px solid #F3F4F6">
+          <td style="padding:6px 8px;font-weight:700">${escapeHtml(o.name)}</td>
+          <td style="padding:6px 8px">${escapeHtml(o.date)}</td>
+          <td style="padding:6px 8px;color:#DC2626;font-weight:800">${o.weight}kg <span style="font-size:11px;font-weight:700">（${o.diff > 0 ? '+' : ''}${o.diff}kg）</span></td>
+          <td style="padding:6px 8px">${o.median}kg</td>
+          <td style="padding:6px 8px;color:#6B7280">${escapeHtml(nb(o.prev))}</td>
+          <td style="padding:6px 8px;color:#6B7280">${escapeHtml(nb(o.next))}</td>
+          <td style="padding:6px 8px"><button onclick="deleteWeightOutlier(${i})" style="padding:5px 12px;border:none;border-radius:8px;background:#DC2626;color:#fff;font-weight:800;cursor:pointer">削除</button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+    } catch (e) {
+      box.innerHTML = `<div style="font-size:13px;color:#DC2626">⚠️ ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function deleteWeightOutlier(i) {
+    const o = _weightOutliers[i];
+    if (!o) return;
+    if (!confirm(`${o.name} さんの ${o.date} の体重「${o.weight}kg」を削除します。\n（ふだんは ${o.median}kg 前後）\n\n元に戻せません。よろしいですか？`)) return;
+    try {
+      const r = await fetch('/api/admin/weight-outliers/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: o.user_id, date: o.date, weight: o.weight }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('⚠️ ' + (d.error || '削除できませんでした')); }
+    } catch (e) {
+      alert('⚠️ 削除できませんでした');
+    }
+    loadWeightOutliers();
+  }
+
   async function loadAnalysisRanking() {
     const box = document.getElementById('analysis-ranking');
     if (!box) return;
@@ -2580,7 +2641,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadWeightOutliers(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();

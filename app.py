@@ -925,6 +925,16 @@ def init_db():
                 PRIMARY KEY (user_id, date)
             )
         """)
+        # 管理画面から消した体重の入力ミス（オーナー指示 2026-11-17）。同じ値が端末から送り直されて復活しないように残す。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weight_removed (
+                user_id    TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                weight     REAL NOT NULL,
+                removed_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, date)
+            )
+        """)
         # こまめポイントの「日付に付かない」ボーナス（はじめの3ステップ達成など。2026-11-08）。
         # meal_points は1人1日1行で「その日に3食記録できたか」の集計にも使うため、別の表に分ける。
         # 同じ理由（reason）では1人1回だけ。
@@ -9169,6 +9179,7 @@ _BACKUP_TABLES = [
     "daily_b_count", "daily_weight", "daily_exercise", "daily_meals",
     "daily_diary", "user_profile", "staff_comments", "usage_log", "settings",
     "accounts",   # メール・パスワード（ハッシュ）と記録の対応。無いと復元後にログインできない
+    "weight_removed",   # 管理画面で消した体重の入力ミス（無いと復元後に端末から送り直されて復活する）
 ]
 
 
@@ -9493,6 +9504,9 @@ def post_daily_weight():
         weight = 0
     if not uid or not date or weight <= 0:
         return jsonify({"error": "パラメータ不足"}), 400
+    # 管理画面で入力ミスとして消した値が、端末から送り直されて復活しないようにする（違う値なら受け付ける）
+    if _is_removed_weight(uid, date, weight):
+        return jsonify({"ok": True, "ignored": "removed"})
 
     ts = datetime.datetime.now(JST).isoformat()
     with _db_lock:
@@ -9517,6 +9531,146 @@ def post_daily_weight():
         finally:
             conn.close()
     return jsonify({"ok": True})
+
+
+# ══════════════════════════════════════════════════════════════
+#  体重の入力ミスの候補と削除（オーナー指示 2026-11-17）
+#  「10月14日以降で1人だけ外れ値のような値がある。記入ミスだと思うので、その値だけ削除して」。
+#  サーバーからは本番のDBを直接さわれないので、管理画面に候補を出し、オーナーが確かめて1件ずつ消す。
+#  候補＝その会員の体重の中央値から WEIGHT_OUTLIER_MIN_KG 以上かつ WEIGHT_OUTLIER_MIN_RATIO 以上ずれた記録
+#  （体重の記録が WEIGHT_OUTLIER_MIN_RECORDS 回以上ある会員だけ。少ないと中央値があてにならない）。
+#  消した値は weight_removed に残し、①同じ日・同じ値の送り直しを受け付けない ②履歴の取得で端末にも伝え、
+#  端末に残っている同じ値を消してもらう（連携・ログインのときに端末の記録がサーバーへ送られて復活しないように）。
+# ══════════════════════════════════════════════════════════════
+WEIGHT_OUTLIER_MIN_KG = 8.0
+WEIGHT_OUTLIER_MIN_RATIO = 0.12
+WEIGHT_OUTLIER_MIN_RECORDS = 3
+WEIGHT_OUTLIER_LIMIT = 50
+
+
+def _same_weight(a, b):
+    try:
+        return abs(float(a) - float(b)) < 0.05
+    except (TypeError, ValueError):
+        return False
+
+
+def _removed_weights_of(cur, uid):
+    """その会員の、消した体重の一覧 [{date, weight}]。表が読めなければ空（履歴の表示は止めない）。"""
+    try:
+        cur.execute(f"SELECT date, weight FROM weight_removed WHERE user_id={PH} ORDER BY date", (uid,))
+        return [{"date": str(d)[:10], "weight": float(w)} for d, w in cur.fetchall()]
+    except Exception as e:
+        app.logger.warning("weight_removed read skipped: %s", e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def _is_removed_weight(uid, date, weight):
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT weight FROM weight_removed WHERE user_id={PH} AND date={PH}", (uid, date))
+            row = cur.fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        return False          # 判定できないときは受け付ける（体重の記録を止めない）
+    return bool(row) and _same_weight(row[0], weight)
+
+
+def _weight_outliers(limit=WEIGHT_OUTLIER_LIMIT):
+    """体重の入力ミスの候補（ずれの大きい順）。会員ごとの中央値から大きく外れた1日の値。"""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, date, weight FROM daily_weight WHERE weight>0 ORDER BY user_id, date")
+        rows = cur.fetchall()
+        cur.execute("SELECT user_id, display_name FROM user_profile")
+        names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+    finally:
+        conn.close()
+    by_uid = {}
+    for uid, d, w in rows:
+        by_uid.setdefault(uid, []).append((str(d)[:10], float(w)))
+    out = []
+    for uid, recs in by_uid.items():
+        if len(recs) < WEIGHT_OUTLIER_MIN_RECORDS:
+            continue
+        ws = sorted(w for _, w in recs)
+        n = len(ws)
+        med = ws[n // 2] if n % 2 else (ws[n // 2 - 1] + ws[n // 2]) / 2
+        for i, (d, w) in enumerate(recs):
+            dev = w - med
+            if abs(dev) < WEIGHT_OUTLIER_MIN_KG or abs(dev) < med * WEIGHT_OUTLIER_MIN_RATIO:
+                continue
+            prev = recs[i - 1] if i > 0 else None
+            nxt = recs[i + 1] if i + 1 < len(recs) else None
+            out.append({
+                "user_id": uid,
+                "name": names.get(uid) or f"会員{uid[:4]}",
+                "date": d, "weight": w,
+                "median": round(med, 1), "diff": round(dev, 1),
+                "prev": {"date": prev[0], "weight": prev[1]} if prev else None,
+                "next": {"date": nxt[0], "weight": nxt[1]} if nxt else None,
+                "records": n,
+            })
+    out.sort(key=lambda x: abs(x["diff"]), reverse=True)
+    return out[:limit]
+
+
+@app.route("/api/admin/weight-outliers")
+@_admin_required
+def admin_weight_outliers():
+    """【管理者専用】体重の入力ミスの候補の一覧。"""
+    try:
+        return jsonify({"items": _weight_outliers(),
+                        "rule": {"min_kg": WEIGHT_OUTLIER_MIN_KG, "min_ratio": WEIGHT_OUTLIER_MIN_RATIO}})
+    except Exception as e:
+        app.logger.warning("weight outliers failed: %s", e)
+        return jsonify({"error": "読み込めませんでした"}), 500
+
+
+@app.route("/api/admin/weight-outliers/delete", methods=["POST"])
+@_admin_required
+def admin_weight_outlier_delete():
+    """【管理者専用】体重の記録を1件だけ消す。{user_id, date, weight}。
+    画面に出ていた値と今の値が同じときだけ消す（その間に本人が直していたら消さない）。"""
+    d = request.get_json(silent=True) or {}
+    uid = str(d.get("user_id") or "").strip()
+    date = str(d.get("date") or "")[:10]
+    weight = d.get("weight")
+    if not uid or not date or not isinstance(weight, (int, float)):
+        return jsonify({"error": "user_id・date・weight が必要です"}), 400
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT weight FROM daily_weight WHERE user_id={PH} AND date={PH}", (uid, date))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "その日の体重の記録はもうありません"}), 404
+            if not _same_weight(row[0], weight):
+                return jsonify({"error": f"値が変わっています（いまは {float(row[0]):g}kg）。画面を読み込み直してください"}), 409
+            cur.execute(f"DELETE FROM daily_weight WHERE user_id={PH} AND date={PH}", (uid, date))
+            now = datetime.datetime.now(JST).isoformat()
+            if USE_PG:
+                cur.execute("""INSERT INTO weight_removed (user_id, date, weight, removed_at) VALUES (%s,%s,%s,%s)
+                               ON CONFLICT (user_id, date) DO UPDATE SET weight=EXCLUDED.weight, removed_at=EXCLUDED.removed_at""",
+                            (uid, date, float(row[0]), now))
+            else:
+                cur.execute("""INSERT INTO weight_removed (user_id, date, weight, removed_at) VALUES (?,?,?,?)
+                               ON CONFLICT(user_id, date) DO UPDATE SET weight=excluded.weight, removed_at=excluded.removed_at""",
+                            (uid, date, float(row[0]), now))
+            conn.commit()
+        finally:
+            conn.close()
+    app.logger.info("weight record removed by admin (date=%s)", date)
+    return jsonify({"ok": True, "date": date, "weight": float(weight)})
 
 
 @app.route("/api/daily-diary", methods=["POST"])
@@ -9686,6 +9840,7 @@ def get_monthly_b():
             (uid,)
         )
         d_rows = cur.fetchall()
+        removed = _removed_weights_of(cur, uid)
     finally:
         conn.close()
     date_start = min([r[0] for r in b_rows] + [r[0] for r in w_rows], default=date_end)
@@ -9711,6 +9866,8 @@ def get_monthly_b():
         "daily":      daily,
         "date_start": date_start,
         "date_end":   date_end,
+        # 管理画面で入力ミスとして消した体重（端末に同じ値が残っていたら消してもらう）
+        "weight_removed": removed,
     })
 
 
