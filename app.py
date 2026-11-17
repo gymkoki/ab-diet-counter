@@ -4202,8 +4202,10 @@ REPORT_PHOTO_MAX_CHARS  = 2_000_000
 # サーバー側で縮小してから返す（並べて見比べるにはこの大きさで十分）。
 REPORT_PHOTO_THUMB_PX   = 320
 REPORT_PHOTO_THUMB_Q    = 72
-# 「順調」「停滞」の線引き（直近30日の体重変化kg）。目標ペースは -1.0kg/30日。
-REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下しか減っていない＝順調
+# 「順調」「停滞」の線引き（体重変化kg）。目標ペースは -1.0kg/30日。
+# デイリーレポートの写真は**開始時からの通算**の変化で分ける（オーナー指示 2026-11-17：「1週間の結果ではなく通算の結果で」）。
+# 「写真のお願い」（_maybe_queue_photo_nudge）は今の調子を見るため、直近30日の変化のまま使う。
+REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下（-0.5kg以上減った）＝順調
 REPORT_PHOTO_BAD_MIN    = 0.0      # これ以上＝減っていない・増えている
 
 
@@ -4251,6 +4253,74 @@ def _rotation_order(pool, last_shown, today, group, today_pick=()):
         keyed.append((key, mem))
     keyed.sort(key=lambda t: t[0])
     return [mem for _, mem in keyed]
+
+
+def _random_order(pool, today, group, today_pick=()):
+    """「減量が進んでいない会員」の並び順：毎日ランダム（オーナー指示 2026-11-17：「痩せていないときは、ランダムに
+    その人の情報が出るように」）。日付から決まる乱数なので、同じ日にレポートを作り直しても顔ぶれは変わらない
+    （今日すでに選んだ人を先頭に固定する）。"""
+    rng = random.Random(f"{today}:{group}:random")
+    pinned = {uid: i for i, uid in enumerate(today_pick)}
+    keyed = [((0, pinned[m["uid"]]) if m["uid"] in pinned else (1, rng.random()), m) for m in pool]
+    keyed.sort(key=lambda t: t[0])
+    return [m for _, m in keyed]
+
+
+def _total_weight_changes(uids):
+    """会員ごとの開始時からの通算の体重変化（最初に記録した体重 → いちばん新しい体重。kg）。
+    体重の記録が2回未満の人は入れない。読めなければ空（レポートは止めない）。"""
+    out = {}
+    uids = [u for u in uids if u]
+    if not uids:
+        return out
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            ph = ",".join([PH] * len(uids))
+            cur.execute(f"SELECT user_id, date, weight FROM daily_weight WHERE weight>0 AND user_id IN ({ph}) "
+                        f"ORDER BY user_id, date", tuple(uids))
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[REPORT-PHOTOS] 通算の体重変化を読めませんでした: {type(e).__name__}: {e}")
+        return out
+    by = {}
+    for uid, _d, w in rows:
+        by.setdefault(uid, []).append(float(w))
+    for uid, ws in by.items():
+        if len(ws) >= 2:
+            out[uid] = round(ws[-1] - ws[0], 1)
+    return out
+
+
+def _member_total_stats(cur, uid):
+    """会員カードの数字を「開始時からの通算」で出すための期間（オーナー指示 2026-11-17）。
+    開始＝その会員が最初にアプリを使った日（_first_activity_date）。action_log は400日しか残らないので最大400日。
+    戻り値：(通算の日数（今日を含む）, 通算の1日平均B（記録した日だけ）)。"""
+    today = datetime.datetime.now(JST).date()
+    try:
+        start = _first_activity_date(uid)
+    except Exception:
+        start = None
+    days = min(REPORT_TOTAL_MAX_DAYS, (today - start).days + 1) if start else PROGRESS_COMPARE_DAYS
+    days = max(1, days)
+    avg_b = None
+    try:
+        first = (today - datetime.timedelta(days=days - 1)).isoformat()
+        cur.execute(f"SELECT AVG(b_count) FROM daily_b_count WHERE user_id={PH} AND date>={PH}", (uid, first))
+        v = cur.fetchone()
+        avg_b = round(float(v[0]), 1) if v and v[0] is not None else None
+    except Exception:
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+    return days, avg_b
+
+
+REPORT_TOTAL_MAX_DAYS = 400   # 通算の上限（記録操作の履歴 action_log の保持日数）
 
 
 def _shrink_report_photo(src):
@@ -4685,7 +4755,8 @@ def admin_report_photos():
     ※このAPIは管理画面・レポート専用。会員向けアプリ(index.html)からは決して呼ばない。
       他の会員の食事写真が含まれるため、認証なしでは 404 を返す（_admin_required）。
     ※2週間以上まったく記録がない会員は対象から外す（オーナー方針 2026-09-09）。
-    ※毎日、しばらく載っていない人から順に入れ替える（オーナー指示 2026-10-07）。"""
+    ※順調な会員は、しばらく載っていない人から順に入れ替える（オーナー指示 2026-10-07）。
+    ※進んでいない会員は、開始時からの通算で減っていない人から毎日ランダムに選ぶ（オーナー指示 2026-11-17）。"""
     try:
         per_group = min(5, max(1, int(request.args.get("members", REPORT_PHOTO_MEMBERS))))
     except (TypeError, ValueError):
@@ -4698,12 +4769,16 @@ def admin_report_photos():
         per_member = REPORT_PHOTO_PER_MEMBER
 
     members = _active_members(_collect_cut_member_stats())
-    with_change = [m for m in members if isinstance(m.get("change_30d_kg"), (int, float))]
-    # 順調／停滞に分ける（並び順は下の _rotation_order で「しばらく載っていない人から」に並べ直す）
-    good_pool = sorted([m for m in with_change if m["change_30d_kg"] <= REPORT_PHOTO_GOOD_MAX],
-                       key=lambda m: m["change_30d_kg"])
-    bad_pool  = sorted([m for m in with_change if m["change_30d_kg"] >= REPORT_PHOTO_BAD_MIN],
-                       key=lambda m: -m["change_30d_kg"])
+    # 開始時からの通算の体重変化で、順調／停滞に分ける（オーナー指示 2026-11-17。以前は直近30日）
+    totals = _total_weight_changes([m["uid"] for m in members])
+    with_change = []
+    for mem in members:
+        if mem["uid"] in totals:
+            with_change.append(dict(mem, total_change_kg=totals[mem["uid"]]))
+    good_pool = sorted([m for m in with_change if m["total_change_kg"] <= REPORT_PHOTO_GOOD_MAX],
+                       key=lambda m: m["total_change_kg"])
+    bad_pool  = sorted([m for m in with_change if m["total_change_kg"] >= REPORT_PHOTO_BAD_MIN],
+                       key=lambda m: -m["total_change_kg"])
 
     since_date = (datetime.datetime.now(JST) - datetime.timedelta(days=REPORT_PHOTO_DAYS)).strftime("%Y-%m-%d")
 
@@ -4714,8 +4789,8 @@ def admin_report_photos():
     today_pick = _load_json_setting(pick_key, {})
     good_pool = _rotation_order(good_pool, history.get("good") or {}, today, "good",
                                 today_pick.get("good") or [])
-    bad_pool  = _rotation_order(bad_pool, history.get("bad") or {}, today, "bad",
-                                today_pick.get("bad") or [])
+    # 進んでいない会員は毎日ランダムに（オーナー指示 2026-11-17）
+    bad_pool  = _random_order(bad_pool, today, "bad", today_pick.get("bad") or [])
     chosen = {"good": [], "bad": []}
 
     conn = _get_conn()
@@ -4732,10 +4807,15 @@ def admin_report_photos():
                 if not photos:
                     continue
                 chosen[group].append(mem["uid"])
+                # カードの数字は開始時からの通算（オーナー指示 2026-11-17：「1週間の結果ではなく通算の結果で」）
+                total_days, avg_b_total = _member_total_stats(cur, mem["uid"])
                 picked.append({
                     "name": (mem.get("name") or "").strip()[:12] or f"会員{mem['uid'][:4]}",
                     "user_id_short": mem["user_id_short"],
                     "change_30d_kg": mem["change_30d_kg"],
+                    "total_change_kg": mem["total_change_kg"],
+                    "total_days": total_days,
+                    "avg_b_total": avg_b_total,
                     "avg_b_7d": mem.get("avg_b_7d"),
                     # 運動で相殺したBの1日平均（avg_b_7d は相殺後の値。オーナー指示 2026-10-15）
                     "ex_b_7d": mem.get("ex_b_7d") or 0.0,
@@ -4746,12 +4826,11 @@ def admin_report_photos():
                     "progress": _member_progress(cur, mem["uid"]),
                     # 1日ごとの B・記録の回数・運動の内容（オーナー指示 2026-10-24）
                     "days": _member_report_days(cur, mem["uid"], since_date),
-                    # 直近7日の写真の枚数（1日平均。オーナー指示 2026-10-10）
-                    "record_rate": _member_record_rate(cur, mem["uid"]),
-                    # 直近7日のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）
-                    "intake": _member_intake(cur, mem["uid"]),
-                    # 直近7日の運動時間の1日平均（オーナー指示 2026-11-12）
-                    "exercise": _member_exercise_minutes(cur, mem["uid"]),
+                    # 食事の記録の回数・タンパク質と野菜・運動時間の1日平均は、開始時からの通算（2026-11-17）。
+                    # 記録・栄養・運動の数え方そのものは今までどおり（期間だけ通算に広げた）
+                    "record_rate": _member_record_rate(cur, mem["uid"], days=total_days),
+                    "intake": _member_intake(cur, mem["uid"], days=max(1, total_days - 1)),
+                    "exercise": _member_exercise_minutes(cur, mem["uid"], days=max(1, total_days - 1)),
                 })
             return picked
 
