@@ -375,6 +375,44 @@ def _sanitize_banana(foods):
             f["b_count"] = b
 
 
+# ── 鶏むね肉・ささみは A食材（B0）にそろえる（オーナー指摘 2026-11-17：「鳥むね肉がB食材カウントされる」） ──
+# ルールは「鶏むね肉（皮なし）・ささみ＝A食材」「A食材はどれだけでも0カウント」。AIがまれに量の多い鶏むね肉に
+# STEP2（kcal→B）を当てたり B に分類したりするため、**それだけの項目**を A・B0 に直す安全網。
+# 揚げ物・皮つき・マヨやチーズ和え・親子丼などの料理、会員の訂正（「訂正反映」）には触らない。
+# 名前から下の「そのままの鶏むね肉を表す語」を取り除いて何も残らないときだけ対象にする（残れば料理とみなす）。
+_LEAN_CHICKEN_CORE = re.compile(r"(鶏むね|鶏胸|鶏ムネ|鳥むね|鳥胸|鳥ムネ|とりむね|むね肉|胸肉|ムネ肉|ささみ|ササミ|笹身|サラダチキン)")
+_LEAN_CHICKEN_OK_TOKENS = (
+    "サラダチキン", "鶏むね肉", "鶏胸肉", "鶏ムネ肉", "鶏むね", "鶏胸", "鶏ムネ",
+    "鳥むね肉", "鳥胸肉", "鳥ムネ肉", "鳥むね", "鳥胸", "鳥ムネ", "とりむね", "むね肉", "胸肉", "ムネ肉", "むね",
+    "ささみ", "ササミ", "笹身", "若鶏", "国産", "皮なし", "皮無し", "皮を除いた", "皮を取った", "皮取り",
+    "低温調理", "蒸し鶏", "蒸し", "茹で", "ゆで", "ボイル", "焼き", "グリル", "塩麹", "塩", "ハーブ",
+    "プレーン", "スモーク", "鶏肉", "鶏", "鳥", "とり", "チキン", "肉", "の", "グラム", "枚", "本", "切れ", "個",
+)
+
+
+def _is_lean_chicken_only(name):
+    n = str(name or "")
+    if not n or not _LEAN_CHICKEN_CORE.search(n):
+        return False
+    rest = re.sub(r"[\s　・、,()（）\[\]【】約〜~\-0-9０-９.gｇ]+", "", n)
+    for t in _LEAN_CHICKEN_OK_TOKENS:
+        rest = rest.replace(t, "")
+    return rest == ""
+
+
+def _sanitize_lean_chicken(foods):
+    """そのままの鶏むね肉・ささみの項目を A食材・B0 に直す。変えた項目には元の値を b_adjusted_from に残す。"""
+    for f in foods:
+        if not isinstance(f, dict) or not _is_lean_chicken_only(f.get("name")):
+            continue
+        if "訂正反映" in str(f.get("reason") or ""):
+            continue
+        if _num(f.get("b_count")) != 0:
+            f["b_adjusted_from"] = f.get("b_count")
+            f["b_count"] = 0
+        f["category"] = "A"
+
+
 def recompute_totals(result):
     """total_* を必ず foods の合計に一致させる。
     AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
@@ -389,6 +427,7 @@ def recompute_totals(result):
         _fill_sushi_rice(foods)
         _fill_juice_kcal(foods)
         _sanitize_banana(foods)
+        _sanitize_lean_chicken(foods)
         # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
         b_sum = sum(_num(f.get("b_count")) for f in foods)
         result["total_b_count"] = round(b_sum * 2) / 2
@@ -2187,6 +2226,8 @@ ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて�
 
 肉・魚・豆・乳製品のA食材例（100gあたり200kcal以下）：
 - 鶏むね肉（皮なし）・ささみ（100gあたり約100〜108kcal）← A食材
+  ※ 鶏むね肉（皮なし）・ささみ・サラダチキンは**300gでも500gでもB0**（量が多くてもkcalからBを付けない＝STEP2を当てない）。
+    Bが付くのは皮つき・揚げ物（唐揚げ・フライ・カツ・チキン南蛮）・マヨやたれ・油で調理した分だけ（その分を別の項目にする）。
 - 鶏レバー・ハツ（100gあたり約120〜145kcal）← A食材
 - 豚もも・牛もも・牛ヒレ（100gあたり約128〜176kcal）← A食材
 - 白身魚全般・えび・いか・たこ・ホタテ・貝類（100gあたり約70〜100kcal）← A食材
