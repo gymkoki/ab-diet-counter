@@ -932,7 +932,7 @@ def init_db():
                 date       TEXT NOT NULL,
                 weight     REAL NOT NULL,
                 removed_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, date)
+                PRIMARY KEY (user_id, date, weight)
             )
         """)
         # こまめポイントの「日付に付かない」ボーナス（はじめの3ステップ達成など。2026-11-08）。
@@ -9504,15 +9504,15 @@ def post_daily_weight():
         weight = 0
     if not uid or not date or weight <= 0:
         return jsonify({"error": "パラメータ不足"}), 400
-    # 管理画面で入力ミスとして消した値が、端末から送り直されて復活しないようにする（違う値なら受け付ける）
-    if _is_removed_weight(uid, date, weight):
-        return jsonify({"ok": True, "ignored": "removed"})
-
     ts = datetime.datetime.now(JST).isoformat()
     with _db_lock:
         conn = _get_conn()
         try:
             cur = conn.cursor()
+            # 管理画面で入力ミスとして消した値が、端末から送り直されて復活しないようにする（違う値なら受け付ける）。
+            # 判定は保存と同じロックの中で行う（判定と書き込みのあいだに削除が割り込むと、消した値が戻るため）。
+            if _is_removed_weight(cur, uid, date, weight):
+                return jsonify({"ok": True, "ignored": "removed"})
             if USE_PG:
                 cur.execute(
                     """INSERT INTO daily_weight (user_id, date, weight, created_at)
@@ -9569,18 +9569,23 @@ def _removed_weights_of(cur, uid):
         return []
 
 
-def _is_removed_weight(uid, date, weight):
+def _removed_key(weight):
+    """weight_removed に残す値（0.1kg 単位にそろえる。同じ日に別の値を消しても、それぞれ残る）。"""
+    return round(float(weight), 1)
+
+
+def _is_removed_weight(cur, uid, date, weight):
+    """その日に消した値のどれかと同じなら True。同じ日に何回消しても、消した値はすべて照合する。"""
     try:
-        conn = _get_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute(f"SELECT weight FROM weight_removed WHERE user_id={PH} AND date={PH}", (uid, date))
-            row = cur.fetchone()
-        finally:
-            conn.close()
+        cur.execute(f"SELECT weight FROM weight_removed WHERE user_id={PH} AND date={PH}", (uid, date))
+        rows = cur.fetchall()
     except Exception:
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
         return False          # 判定できないときは受け付ける（体重の記録を止めない）
-    return bool(row) and _same_weight(row[0], weight)
+    return any(_same_weight(r[0], weight) for r in rows)
 
 
 def _weight_outliers(limit=WEIGHT_OUTLIER_LIMIT):
@@ -9658,14 +9663,10 @@ def admin_weight_outlier_delete():
                 return jsonify({"error": f"値が変わっています（いまは {float(row[0]):g}kg）。画面を読み込み直してください"}), 409
             cur.execute(f"DELETE FROM daily_weight WHERE user_id={PH} AND date={PH}", (uid, date))
             now = datetime.datetime.now(JST).isoformat()
-            if USE_PG:
-                cur.execute("""INSERT INTO weight_removed (user_id, date, weight, removed_at) VALUES (%s,%s,%s,%s)
-                               ON CONFLICT (user_id, date) DO UPDATE SET weight=EXCLUDED.weight, removed_at=EXCLUDED.removed_at""",
-                            (uid, date, float(row[0]), now))
-            else:
-                cur.execute("""INSERT INTO weight_removed (user_id, date, weight, removed_at) VALUES (?,?,?,?)
-                               ON CONFLICT(user_id, date) DO UPDATE SET weight=excluded.weight, removed_at=excluded.removed_at""",
-                            (uid, date, float(row[0]), now))
+            # 同じ日に前に消した値は上書きしない（それぞれの値の復活を防ぎ続けるため）
+            cur.execute(f"""INSERT INTO weight_removed (user_id, date, weight, removed_at) VALUES ({PH},{PH},{PH},{PH})
+                           ON CONFLICT (user_id, date, weight) DO NOTHING""",
+                        (uid, date, _removed_key(row[0]), now))
             conn.commit()
         finally:
             conn.close()

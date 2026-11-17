@@ -110,6 +110,32 @@ def test_removed_value_is_not_revived_but_correction_is_accepted(client):
     assert {x["date"]: x["weight"] for x in d["daily"]}["2026-10-14"] == 60.3
 
 
+def test_every_value_removed_on_the_same_day_stays_blocked(client):
+    """同じ日に別の入力ミスをもう一度消しても、前に消した値の復活防止は残る（Codex 指摘）。"""
+    client.post("/api/admin/weight-outliers/delete", headers=ADMIN,
+                json={"user_id": U1, "date": "2026-10-14", "weight": 35.2})
+    client.post("/api/daily-weight", json={"user_id": U1, "date": "2026-10-14", "weight": 160.0})
+    r = client.post("/api/admin/weight-outliers/delete", headers=ADMIN,
+                    json={"user_id": U1, "date": "2026-10-14", "weight": 160.0})
+    assert r.status_code == 200, r.get_json()
+    d = client.get(f"/api/monthly-b?user_id={U1}").get_json()
+    assert sorted(x["weight"] for x in d["weight_removed"]) == [35.2, 160.0]
+    for kg in (35.2, 160.0):
+        r = client.post("/api/daily-weight", json={"user_id": U1, "date": "2026-10-14", "weight": kg})
+        assert r.get_json().get("ignored") == "removed", f"{kg}kg が復活した"
+    client.post("/api/daily-weight", json={"user_id": U1, "date": "2026-10-14", "weight": 60.3})
+    r = client.post("/api/admin/weight-outliers/delete", headers=ADMIN,
+                    json={"user_id": U1, "date": "2026-10-14", "weight": 35.2})
+    assert r.status_code == 409, "正しい値を前に消した値と取り違えた"
+
+
+def test_removed_check_runs_inside_the_save_lock():
+    """判定と保存のあいだに削除が割り込むと消した値が戻るので、判定は保存と同じロックの中（Codex 指摘）。"""
+    import inspect
+    src = inspect.getsource(m.post_daily_weight)
+    assert src.index("with _db_lock:") < src.index("_is_removed_weight(") < src.index("INSERT INTO daily_weight")
+
+
 def test_removed_table_is_backed_up():
     assert "weight_removed" in m._BACKUP_TABLES
 
