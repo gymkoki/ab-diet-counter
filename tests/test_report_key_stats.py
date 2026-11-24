@@ -74,7 +74,8 @@ def test_no_exercise_is_zero(cur):
 
 def test_report_photos_include_exercise():
     src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
-    assert '"exercise": _member_exercise_minutes(cur, mem["uid"]),' in src
+    # 2026-11-17：期間は開始時からの通算（total_days）に広げた
+    assert '"exercise": _member_exercise_minutes(cur, mem["uid"], days=max(1, total_days - 1)),' in src
 
 
 # ── ②③ メールのカード ──────────────────────────────────────────

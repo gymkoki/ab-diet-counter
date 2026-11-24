@@ -645,21 +645,26 @@ def _key_stats(member) -> str:
     intake = member.get("intake") if isinstance(member.get("intake"), dict) else None
     if not (rate or ex or intake):
         return ""
+    # 期間の書き方：通算（オーナー指示 2026-11-17：「1週間の結果ではなく通算の結果で」）。古いサーバーは直近◯日
+    total_days = member.get("total_days")
+
+    def period(d):
+        return f"通算{total_days}日" if isinstance(total_days, int) else f"直近{d or 7}日"
 
     # 📝 食事の記録
     rpd = rate.get("records_per_day") if rate else None
     if isinstance(rpd, (int, float)):
         c = "#059669" if rpd >= 3 else ("#B45309" if rpd >= 2 else "#DC2626")
         rec = _big(f"{rpd:.1f}", "回", c)
-        rec_sub = f'1日平均・直近{rate.get("days") or 7}日'
+        rec_sub = f'1日平均・{period(rate.get("days"))}'
     else:
-        rec, rec_sub = _big("—"), "直近7日の記録なし"
+        rec, rec_sub = _big("—"), f'{period(7)}の記録なし'
 
     # 🏃 運動
     mpd = ex.get("minutes_per_day") if ex else None
     if isinstance(mpd, (int, float)):
         exv = _big(f"{mpd:g}", "分", "#059669" if mpd > 0 else "#6B7280")
-        notes = [f'1日平均・直近{ex.get("days") or 7}日']
+        notes = [f'1日平均・{period(ex.get("days"))}']
         if ex.get("sessions"):
             notes.append(f'＋時間なしの運動 {ex["sessions"]}回')
         if ex.get("unknown_days"):
@@ -676,7 +681,8 @@ def _key_stats(member) -> str:
               f'{_big(f"{p:g}" if isinstance(p, (int, float)) else "—", "g")}</div>'
               f'<div style="font-size:12px;font-weight:700;color:#6B7280">野菜 '
               f'{_big(f"{v:g}" if isinstance(v, (int, float)) else "—", "g")}</div>')
-        pv_sub = f'1日平均（記録{intake.get("min_meals", 2)}回以上の{intake.get("used_days", 0)}日）'
+        pv_sub = (f'1日平均・{period(intake.get("days"))}'
+                  f'（記録{intake.get("min_meals", 2)}回以上の{intake.get("used_days", 0)}日）')
     else:
         pv, pv_sub = _big("—"), f'記録{(intake or {}).get("min_meals", 2)}回以上の日なし'
 
@@ -768,9 +774,13 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
     budget は「セクション全体であと何枚載せられるか」。"""
     color = "#10B981" if good else "#EF4444"
     change_html = _total_change_chip(member)
-    avg_b = member.get("avg_b_7d")
+    # 平均Bは開始時からの通算（オーナー指示 2026-11-17）。古いサーバー（avg_b_total が無い）なら直近7日
+    avg_b = member.get("avg_b_total")
+    prefix = "通算平均"
+    if not isinstance(avg_b, (int, float)):
+        avg_b, prefix = member.get("avg_b_7d"), "平均"
     target = member.get("b_target")
-    b_str = f"平均 {avg_b:.1f} B/日" if isinstance(avg_b, (int, float)) else "Bカウント —"
+    b_str = f"{prefix} {avg_b:.1f} B/日" if isinstance(avg_b, (int, float)) else "Bカウント —"
     if isinstance(target, (int, float)):
         b_str += f"（目標 {target:.0f} 以内）"
 
@@ -896,7 +906,7 @@ def _photo_section(photos: dict, charts: dict) -> str:
         blocks += f"""
       <div style="margin-bottom:6px">
         <div style="font-size:13px;font-weight:800;color:#059669;margin-bottom:8px">
-          ✅ 減量が順調な会員の食事（直近{days}日）
+          ✅ 減量が順調な会員の食事（写真は直近{days}日）
         </div>
         {good_html}
       </div>"""
@@ -909,7 +919,7 @@ def _photo_section(photos: dict, charts: dict) -> str:
         blocks += f"""
       <div>
         <div style="font-size:13px;font-weight:800;color:#DC2626;margin:14px 0 8px">
-          ⚠️ 減量が進んでいない会員の食事（直近{days}日）
+          ⚠️ 減量が進んでいない会員の食事（写真は直近{days}日）
         </div>
         {bad_html}
       </div>"""
@@ -923,10 +933,10 @@ def _photo_section(photos: dict, charts: dict) -> str:
     <div class="section" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;padding:16px 18px">
       <h2>🍽️ 実際の食事写真｜順調な人 vs 進んでいない人</h2>
       <div style="font-size:11px;color:#9CA3AF;line-height:1.6;margin-bottom:12px">
-        直近30日の体重変化で「順調／進んでいない」に分けた、減量希望の会員の実際の記録です（名前の横の体重は開始時からの通算）。
+        開始時からの通算の体重変化で「順調／進んでいない」に分けた、減量希望の会員の実際の記録です（数字はすべて開始時からの通算。写真は直近の分）。
         <b>この内容は会員の食事写真を含むため、オーナー限定</b>（このメールの宛先のみ）です。
         ※{REPORT_ABSENT_DAYS}日以上まったく記録がない会員は対象外です。
-        ※毎日、しばらく載っていない人から順に入れ替えています。
+        ※順調な人はしばらく載っていない人から順に、進んでいない人は毎日ランダムに選んでいます。
       </div>
       {blocks}
     </div>

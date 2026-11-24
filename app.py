@@ -375,6 +375,44 @@ def _sanitize_banana(foods):
             f["b_count"] = b
 
 
+# ── 鶏むね肉・ささみは A食材（B0）にそろえる（オーナー指摘 2026-11-17：「鳥むね肉がB食材カウントされる」） ──
+# ルールは「鶏むね肉（皮なし）・ささみ＝A食材」「A食材はどれだけでも0カウント」。AIがまれに量の多い鶏むね肉に
+# STEP2（kcal→B）を当てたり B に分類したりするため、**それだけの項目**を A・B0 に直す安全網。
+# 揚げ物・皮つき・マヨやチーズ和え・親子丼などの料理、会員の訂正（「訂正反映」）には触らない。
+# 名前から下の「そのままの鶏むね肉を表す語」を取り除いて何も残らないときだけ対象にする（残れば料理とみなす）。
+_LEAN_CHICKEN_CORE = re.compile(r"(鶏むね|鶏胸|鶏ムネ|鳥むね|鳥胸|鳥ムネ|とりむね|むね肉|胸肉|ムネ肉|ささみ|ササミ|笹身|サラダチキン)")
+_LEAN_CHICKEN_OK_TOKENS = (
+    "サラダチキン", "鶏むね肉", "鶏胸肉", "鶏ムネ肉", "鶏むね", "鶏胸", "鶏ムネ",
+    "鳥むね肉", "鳥胸肉", "鳥ムネ肉", "鳥むね", "鳥胸", "鳥ムネ", "とりむね", "むね肉", "胸肉", "ムネ肉", "むね",
+    "ささみ", "ササミ", "笹身", "若鶏", "国産", "皮なし", "皮無し", "皮を除いた", "皮を取った", "皮取り",
+    "低温調理", "蒸し鶏", "蒸し", "茹で", "ゆで", "ボイル", "焼き", "グリル", "塩麹", "塩", "ハーブ",
+    "プレーン", "スモーク", "鶏肉", "鶏", "鳥", "とり", "チキン", "肉", "の", "グラム", "枚", "本", "切れ", "個",
+)
+
+
+def _is_lean_chicken_only(name):
+    n = str(name or "")
+    if not n or not _LEAN_CHICKEN_CORE.search(n):
+        return False
+    rest = re.sub(r"[\s　・、,()（）\[\]【】約〜~\-0-9０-９.gｇ]+", "", n)
+    for t in _LEAN_CHICKEN_OK_TOKENS:
+        rest = rest.replace(t, "")
+    return rest == ""
+
+
+def _sanitize_lean_chicken(foods):
+    """そのままの鶏むね肉・ささみの項目を A食材・B0 に直す。変えた項目には元の値を b_adjusted_from に残す。"""
+    for f in foods:
+        if not isinstance(f, dict) or not _is_lean_chicken_only(f.get("name")):
+            continue
+        if "訂正反映" in str(f.get("reason") or ""):
+            continue
+        if _num(f.get("b_count")) != 0:
+            f["b_adjusted_from"] = f.get("b_count")
+            f["b_count"] = 0
+        f["category"] = "A"
+
+
 def recompute_totals(result):
     """total_* を必ず foods の合計に一致させる。
     AIが返す合計値は内訳（各foodのb_count等）とまれに食い違うことがあるため、
@@ -389,6 +427,7 @@ def recompute_totals(result):
         _fill_sushi_rice(foods)
         _fill_juice_kcal(foods)
         _sanitize_banana(foods)
+        _sanitize_lean_chicken(foods)
         # Bカウントは0.5刻み。浮動小数の誤差を除くため0.5単位に丸める。
         b_sum = sum(_num(f.get("b_count")) for f in foods)
         result["total_b_count"] = round(b_sum * 2) / 2
@@ -945,6 +984,15 @@ def init_db():
                 points     INTEGER NOT NULL,
                 created_at TEXT    NOT NULL,
                 PRIMARY KEY (user_id, reason)
+            )
+        """)
+        # こまめ記録ポイント100ポイントの「キーラン君ステッカープレゼント」を表示したか（オーナー指示 2026-11-17）。
+        # 1人1行（主キー）＝表示できるのは1回だけ。ジムで渡したかどうかの管理には使わない。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS meal_point_sticker (
+                user_id    TEXT PRIMARY KEY,
+                points     INTEGER NOT NULL,
+                shown_at   TEXT NOT NULL
             )
         """)
         # アプリ内の1回だけのアンケート（オーナー指示 2026-11-10）。1人1アンケート1行。
@@ -2197,6 +2245,8 @@ ANALYSIS_PROMPT = """この写真に写っている食事・食材をすべて�
 
 肉・魚・豆・乳製品のA食材例（100gあたり200kcal以下）：
 - 鶏むね肉（皮なし）・ささみ（100gあたり約100〜108kcal）← A食材
+  ※ 鶏むね肉（皮なし）・ささみ・サラダチキンは**300gでも500gでもB0**（量が多くてもkcalからBを付けない＝STEP2を当てない）。
+    Bが付くのは皮つき・揚げ物（唐揚げ・フライ・カツ・チキン南蛮）・マヨやたれ・油で調理した分だけ（その分を別の項目にする）。
 - 鶏レバー・ハツ（100gあたり約120〜145kcal）← A食材
 - 豚もも・牛もも・牛ヒレ（100gあたり約128〜176kcal）← A食材
 - 白身魚全般・えび・いか・たこ・ホタテ・貝類（100gあたり約70〜100kcal）← A食材
@@ -4212,8 +4262,10 @@ REPORT_PHOTO_MAX_CHARS  = 2_000_000
 # サーバー側で縮小してから返す（並べて見比べるにはこの大きさで十分）。
 REPORT_PHOTO_THUMB_PX   = 320
 REPORT_PHOTO_THUMB_Q    = 72
-# 「順調」「停滞」の線引き（直近30日の体重変化kg）。目標ペースは -1.0kg/30日。
-REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下しか減っていない＝順調
+# 「順調」「停滞」の線引き（体重変化kg）。目標ペースは -1.0kg/30日。
+# デイリーレポートの写真は**開始時からの通算**の変化で分ける（オーナー指示 2026-11-17：「1週間の結果ではなく通算の結果で」）。
+# 「写真のお願い」（_maybe_queue_photo_nudge）は今の調子を見るため、直近30日の変化のまま使う。
+REPORT_PHOTO_GOOD_MAX   = -0.5     # これ以下（-0.5kg以上減った）＝順調
 REPORT_PHOTO_BAD_MIN    = 0.0      # これ以上＝減っていない・増えている
 
 
@@ -4261,6 +4313,74 @@ def _rotation_order(pool, last_shown, today, group, today_pick=()):
         keyed.append((key, mem))
     keyed.sort(key=lambda t: t[0])
     return [mem for _, mem in keyed]
+
+
+def _random_order(pool, today, group, today_pick=()):
+    """「減量が進んでいない会員」の並び順：毎日ランダム（オーナー指示 2026-11-17：「痩せていないときは、ランダムに
+    その人の情報が出るように」）。日付から決まる乱数なので、同じ日にレポートを作り直しても顔ぶれは変わらない
+    （今日すでに選んだ人を先頭に固定する）。"""
+    rng = random.Random(f"{today}:{group}:random")
+    pinned = {uid: i for i, uid in enumerate(today_pick)}
+    keyed = [((0, pinned[m["uid"]]) if m["uid"] in pinned else (1, rng.random()), m) for m in pool]
+    keyed.sort(key=lambda t: t[0])
+    return [m for _, m in keyed]
+
+
+def _total_weight_changes(uids):
+    """会員ごとの開始時からの通算の体重変化（最初に記録した体重 → いちばん新しい体重。kg）。
+    体重の記録が2回未満の人は入れない。読めなければ空（レポートは止めない）。"""
+    out = {}
+    uids = [u for u in uids if u]
+    if not uids:
+        return out
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            ph = ",".join([PH] * len(uids))
+            cur.execute(f"SELECT user_id, date, weight FROM daily_weight WHERE weight>0 AND user_id IN ({ph}) "
+                        f"ORDER BY user_id, date", tuple(uids))
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[REPORT-PHOTOS] 通算の体重変化を読めませんでした: {type(e).__name__}: {e}")
+        return out
+    by = {}
+    for uid, _d, w in rows:
+        by.setdefault(uid, []).append(float(w))
+    for uid, ws in by.items():
+        if len(ws) >= 2:
+            out[uid] = round(ws[-1] - ws[0], 1)
+    return out
+
+
+def _member_total_stats(cur, uid):
+    """会員カードの数字を「開始時からの通算」で出すための期間（オーナー指示 2026-11-17）。
+    開始＝その会員が最初にアプリを使った日（_first_activity_date）。action_log は400日しか残らないので最大400日。
+    戻り値：(通算の日数（今日を含む）, 通算の1日平均B（記録した日だけ）)。"""
+    today = datetime.datetime.now(JST).date()
+    try:
+        start = _first_activity_date(uid)
+    except Exception:
+        start = None
+    days = min(REPORT_TOTAL_MAX_DAYS, (today - start).days + 1) if start else PROGRESS_COMPARE_DAYS
+    days = max(1, days)
+    avg_b = None
+    try:
+        first = (today - datetime.timedelta(days=days - 1)).isoformat()
+        cur.execute(f"SELECT AVG(b_count) FROM daily_b_count WHERE user_id={PH} AND date>={PH}", (uid, first))
+        v = cur.fetchone()
+        avg_b = round(float(v[0]), 1) if v and v[0] is not None else None
+    except Exception:
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+    return days, avg_b
+
+
+REPORT_TOTAL_MAX_DAYS = 400   # 通算の上限（記録操作の履歴 action_log の保持日数）
 
 
 def _shrink_report_photo(src):
@@ -4695,7 +4815,8 @@ def admin_report_photos():
     ※このAPIは管理画面・レポート専用。会員向けアプリ(index.html)からは決して呼ばない。
       他の会員の食事写真が含まれるため、認証なしでは 404 を返す（_admin_required）。
     ※2週間以上まったく記録がない会員は対象から外す（オーナー方針 2026-09-09）。
-    ※毎日、しばらく載っていない人から順に入れ替える（オーナー指示 2026-10-07）。"""
+    ※順調な会員は、しばらく載っていない人から順に入れ替える（オーナー指示 2026-10-07）。
+    ※進んでいない会員は、開始時からの通算で減っていない人から毎日ランダムに選ぶ（オーナー指示 2026-11-17）。"""
     try:
         per_group = min(5, max(1, int(request.args.get("members", REPORT_PHOTO_MEMBERS))))
     except (TypeError, ValueError):
@@ -4708,12 +4829,16 @@ def admin_report_photos():
         per_member = REPORT_PHOTO_PER_MEMBER
 
     members = _active_members(_collect_cut_member_stats())
-    with_change = [m for m in members if isinstance(m.get("change_30d_kg"), (int, float))]
-    # 順調／停滞に分ける（並び順は下の _rotation_order で「しばらく載っていない人から」に並べ直す）
-    good_pool = sorted([m for m in with_change if m["change_30d_kg"] <= REPORT_PHOTO_GOOD_MAX],
-                       key=lambda m: m["change_30d_kg"])
-    bad_pool  = sorted([m for m in with_change if m["change_30d_kg"] >= REPORT_PHOTO_BAD_MIN],
-                       key=lambda m: -m["change_30d_kg"])
+    # 開始時からの通算の体重変化で、順調／停滞に分ける（オーナー指示 2026-11-17。以前は直近30日）
+    totals = _total_weight_changes([m["uid"] for m in members])
+    with_change = []
+    for mem in members:
+        if mem["uid"] in totals:
+            with_change.append(dict(mem, total_change_kg=totals[mem["uid"]]))
+    good_pool = sorted([m for m in with_change if m["total_change_kg"] <= REPORT_PHOTO_GOOD_MAX],
+                       key=lambda m: m["total_change_kg"])
+    bad_pool  = sorted([m for m in with_change if m["total_change_kg"] >= REPORT_PHOTO_BAD_MIN],
+                       key=lambda m: -m["total_change_kg"])
 
     since_date = (datetime.datetime.now(JST) - datetime.timedelta(days=REPORT_PHOTO_DAYS)).strftime("%Y-%m-%d")
 
@@ -4724,8 +4849,8 @@ def admin_report_photos():
     today_pick = _load_json_setting(pick_key, {})
     good_pool = _rotation_order(good_pool, history.get("good") or {}, today, "good",
                                 today_pick.get("good") or [])
-    bad_pool  = _rotation_order(bad_pool, history.get("bad") or {}, today, "bad",
-                                today_pick.get("bad") or [])
+    # 進んでいない会員は毎日ランダムに（オーナー指示 2026-11-17）
+    bad_pool  = _random_order(bad_pool, today, "bad", today_pick.get("bad") or [])
     chosen = {"good": [], "bad": []}
 
     conn = _get_conn()
@@ -4742,10 +4867,15 @@ def admin_report_photos():
                 if not photos:
                     continue
                 chosen[group].append(mem["uid"])
+                # カードの数字は開始時からの通算（オーナー指示 2026-11-17：「1週間の結果ではなく通算の結果で」）
+                total_days, avg_b_total = _member_total_stats(cur, mem["uid"])
                 picked.append({
                     "name": (mem.get("name") or "").strip()[:12] or f"会員{mem['uid'][:4]}",
                     "user_id_short": mem["user_id_short"],
                     "change_30d_kg": mem["change_30d_kg"],
+                    "total_change_kg": mem["total_change_kg"],
+                    "total_days": total_days,
+                    "avg_b_total": avg_b_total,
                     "avg_b_7d": mem.get("avg_b_7d"),
                     # 運動で相殺したBの1日平均（avg_b_7d は相殺後の値。オーナー指示 2026-10-15）
                     "ex_b_7d": mem.get("ex_b_7d") or 0.0,
@@ -4756,12 +4886,11 @@ def admin_report_photos():
                     "progress": _member_progress(cur, mem["uid"]),
                     # 1日ごとの B・記録の回数・運動の内容（オーナー指示 2026-10-24）
                     "days": _member_report_days(cur, mem["uid"], since_date),
-                    # 直近7日の写真の枚数（1日平均。オーナー指示 2026-10-10）
-                    "record_rate": _member_record_rate(cur, mem["uid"]),
-                    # 直近7日のタンパク質・野菜の1日平均（オーナー指示 2026-10-15）
-                    "intake": _member_intake(cur, mem["uid"]),
-                    # 直近7日の運動時間の1日平均（オーナー指示 2026-11-12）
-                    "exercise": _member_exercise_minutes(cur, mem["uid"]),
+                    # 食事の記録の回数・タンパク質と野菜・運動時間の1日平均は、開始時からの通算（2026-11-17）。
+                    # 記録・栄養・運動の数え方そのものは今までどおり（期間だけ通算に広げた）
+                    "record_rate": _member_record_rate(cur, mem["uid"], days=total_days),
+                    "intake": _member_intake(cur, mem["uid"], days=max(1, total_days - 1)),
+                    "exercise": _member_exercise_minutes(cur, mem["uid"], days=max(1, total_days - 1)),
                 })
             return picked
 
@@ -8501,6 +8630,23 @@ def _build_report_html(target_date: str) -> str:
 # ══════════════════════════════════════════════════════════════
 MEAL_POINTS_GOAL = 10
 SPECIAL_MESSAGE_URL_KEY = "special-message-url"
+# 100ポイントで「キーラン君ステッカープレゼント」のメッセージを1回だけ出す（オーナー指示 2026-11-17）
+MEAL_POINTS_STICKER_GOAL = 100
+
+
+def _sticker_shown(uid):
+    """ステッカーのメッセージを表示済みか。読めなければ True（＝出さない側に倒す。2回出さないため）。"""
+    try:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT 1 FROM meal_point_sticker WHERE user_id={PH}", (uid,))
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.warning("meal_point_sticker read skipped: %s", e)
+        return True
 
 
 def _meal_points_of(uid):
@@ -8561,6 +8707,9 @@ def _meal_points_payload(uid):
         # 10ポイントに届いた人にだけURLを渡す（届いていない人には「準備中かどうか」だけ）
         "message_ready": bool(url),
         "message_url": url if unlocked else None,
+        "sticker_goal": MEAL_POINTS_STICKER_GOAL,
+        # 100ポイントに届いていて、まだ一度も表示していない人だけ True
+        "sticker_due": points >= MEAL_POINTS_STICKER_GOAL and not _sticker_shown(uid),
     }
 
 
@@ -8660,6 +8809,40 @@ def api_meal_points():
     except Exception as e:
         app.logger.warning("meal_points read failed: %s", e)
         return jsonify({"error": "読み込めませんでした"}), 500
+
+
+@app.route("/api/meal-points/sticker", methods=["POST"])
+def api_meal_points_sticker():
+    """POST {user_id}：「キーラン君ステッカープレゼント」を表示する直前に、この会員の1回を確保する。
+    主キーで1行しか入らないので、2つの端末・タブで同時に開いても出るのは1つだけ（claimed）。"""
+    body = request.get_json(silent=True) or {}
+    uid = str(body.get("user_id") or "").strip()
+    if not uid or len(uid) > 100:
+        return jsonify({"error": "user_id がありません"}), 400
+    try:
+        points = len(_meal_points_of(uid)) + _bonus_points_of(uid)
+    except Exception as e:
+        app.logger.warning("meal_point_sticker points read failed: %s", e)
+        return jsonify({"claimed": False}), 503
+    if points < MEAL_POINTS_STICKER_GOAL:
+        return jsonify({"claimed": False, "points": points})
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    f"INSERT INTO meal_point_sticker (user_id, points, shown_at) VALUES ({PH},{PH},{PH}) "
+                    f"ON CONFLICT DO NOTHING",
+                    (uid, points, datetime.datetime.now(JST).isoformat()))
+                claimed = cur.rowcount == 1
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        app.logger.warning("meal_point_sticker insert failed: %s", e)
+        return jsonify({"claimed": False}), 503
+    return jsonify({"claimed": claimed, "points": points})
 
 
 # ══════════════════════════════════════════════════════════════
@@ -8798,6 +8981,22 @@ def admin_special_message():
         for u, b in _bonus_points_by_user(cur).items():
             per[u] = per.get(u, 0) + b
         counts = [c for c in per.values() if c > 0]
+        # 100ポイント（キーラン君ステッカー）に届いた会員：ジムでステッカーを渡すための一覧
+        sticker = []
+        reached = [u for u, c in per.items() if c >= MEAL_POINTS_STICKER_GOAL]
+        if reached:
+            cur.execute("SELECT user_id, display_name FROM user_profile")
+            names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+            shown = {}
+            try:
+                cur.execute("SELECT user_id, shown_at FROM meal_point_sticker")
+                shown = {r[0]: str(r[1])[:10] for r in cur.fetchall()}
+            except Exception:
+                if USE_PG:
+                    conn.rollback()
+            sticker = sorted(({"name": (names.get(u) or f"会員{u[:4]}")[:20], "points": per[u],
+                               "shown_on": shown.get(u)} for u in reached),
+                             key=lambda x: -x["points"])
     finally:
         conn.close()
     return jsonify({
@@ -8806,6 +9005,8 @@ def admin_special_message():
         "members_with_points": len(counts),
         "members_unlocked": sum(1 for c in counts if c >= MEAL_POINTS_GOAL),
         "points_total": sum(counts),
+        "sticker_goal": MEAL_POINTS_STICKER_GOAL,
+        "sticker_members": sticker,
     })
 
 
