@@ -148,3 +148,15 @@ def test_failed_claim_keeps_other_tab_pending():
     body = src[src.index("async function maybeShowSticker"):src.index("function closeSticker")]
     unclaimed = body[body.index("if (!c.claimed)"):body.index("setItem(STICKER_LOCAL_KEY, 'pending')")]
     assert "if (!localStorage.getItem(STICKER_LOCAL_KEY)) localStorage.setItem(STICKER_LOCAL_KEY, 'done')" in unclaimed
+
+
+def test_sticker_tells_how_to_receive():
+    """受け取り方（オーナー指示 2026-11-24）：「ジムのスタッフにお声かけください」を、
+    1回だけ出る画面と、こまめ記録ポイントの「？」の説明（100ポイント以上の人）の両方に出す。"""
+    src = open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8").read()
+    i = src.index('id="sticker-overlay"')
+    overlay = src[i:src.index("</div>\n</div>", i)]
+    assert "ジムのスタッフに" in overlay and "お声かけください" in overlay
+    body = src[src.index("function renderMealPoints()"):src.index("//  はじめの3ステップ")]
+    assert "ジムのスタッフにお声かけください" in body
+    assert "pts >= stickerGoal" in body, "100ポイント未満の人には出さない"
