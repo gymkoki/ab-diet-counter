@@ -2,6 +2,7 @@
 
 直近30日の会員別：解析回数・推定費用（1回4円）・食事記録として保存された件数と保存率。上位20人。
 保存率が低い人が一目で分かること。
+2026-11-24：上に「🏆 直近30日の解析回数トップ5」（会員名・解析回数・保存された食事記録・推定AI費用＋体重の推移）を足した。
 """
 import datetime
 import os
@@ -22,7 +23,7 @@ def _clean():
     m.init_db()
     conn = m._get_conn()
     cur = conn.cursor()
-    for t in ("usage_log", "daily_nutrition", "action_log", "user_profile"):
+    for t in ("usage_log", "daily_nutrition", "action_log", "user_profile", "daily_weight"):
         cur.execute(f"DELETE FROM {t}")
     conn.commit()
     conn.close()
@@ -124,3 +125,46 @@ def test_dashboard_card_and_js_syntax():
             assert out.returncode == 0, out.stderr
         finally:
             os.unlink(f.name)
+
+
+def _weigh(uid, pairs):
+    conn = m._get_conn()
+    cur = conn.cursor()
+    for d, kg in pairs:
+        cur.execute(f"INSERT INTO daily_weight (user_id,date,weight,created_at) VALUES ({m.PH},{m.PH},{m.PH},'x')",
+                    (uid, _day(d), kg))
+    conn.commit()
+    conn.close()
+
+
+def test_weight_trend_total_and_30d(db):
+    """体重の推移：通算＝最初の記録→最新、直近30日＝期間内の最初→最新。"""
+    _add("u-w1", analyses=3, meals_by_day={1: 3}, name="山田")
+    _weigh("u-w1", [(60, 72.0), (25, 70.4), (10, 69.5), (2, 68.8)])
+    w = _rows()["山田"]["weight"]
+    assert w["start_kg"] == 72.0 and w["latest_kg"] == 68.8 and w["records"] == 4
+    assert w["total_change_kg"] == -3.2 and w["total_change_pct"] == -4.4
+    assert w["change_30d_kg"] == -1.6, "直近30日は期間内の最初（70.4）から"
+    assert [p["kg"] for p in w["points"]] == [70.4, 69.5, 68.8], "グラフは直近30日の記録だけ"
+
+
+def test_weight_trend_missing_or_single(db):
+    _add("u-w2", analyses=2, name="小林")
+    _add("u-w3", analyses=1, name="加藤")
+    _weigh("u-w3", [(3, 55.0)])
+    rows = _rows()
+    assert rows["小林"]["weight"] is None
+    w = rows["加藤"]["weight"]
+    assert w["records"] == 1 and w["total_change_kg"] is None and w["change_30d_kg"] is None
+
+
+def test_top5_card_columns():
+    html = open(os.path.join(ROOT, "templates", "admin.html"), encoding="utf-8").read()
+    assert 'id="analysis-top5"' in html and "直近30日の解析回数トップ5" in html
+    fn = html[html.index("function renderAnalysisTop5(d)"):]
+    fn = fn[:fn.index("\n  }\n")]
+    assert ".slice(0, 5)" in fn
+    for col in ("会員名", "解析回数", "保存された<br>食事記録", "推定<br>AI費用", "体重の推移"):
+        assert col in fn, col
+    assert "escapeHtml(x.name)" in fn, "名前はエスケープする"
+    assert "renderAnalysisTop5(d)" in html[html.index("async function loadAnalysisRanking()"):]
