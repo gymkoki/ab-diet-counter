@@ -669,6 +669,15 @@
     <div id="action-usage"><div class="spinner"></div></div>
   </div>
 
+  <!-- 直近30日の解析回数トップ5（オーナー指示 2026-11-24）：下のランキングと同じ集計の上位5人に、体重の推移を並べる -->
+  <div class="card" id="analysis-top5-card" style="margin-bottom:20px">
+    <h2>🏆 直近30日の解析回数トップ5</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.7">
+      AI解析の多い5人と、その人の<b>体重の推移</b>（通算＝最初の記録から今まで／直近30日）です。推定AI費用は1回¥4です。
+    </div>
+    <div id="analysis-top5"><div class="spinner"></div></div>
+  </div>
+
   <!-- AI解析回数ランキング（オーナー指示 2026-11-11） -->
   <div class="card" style="margin-bottom:20px">
     <h2>🤖 AI解析回数ランキング（直近30日・上位20人）</h2>
@@ -1658,13 +1667,71 @@
     loadWeightOutliers();
   }
 
+  // 体重の変化（kg）を色つきで。減った＝緑・増えた＝赤
+  function _kgChange(v) {
+    if (v == null) return '<span style="color:#9CA3AF">—</span>';
+    const c = v < 0 ? '#059669' : v > 0 ? '#DC2626' : '#6B7280';
+    return `<b style="color:${c}">${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(1)}kg</b>`;
+  }
+
+  // 直近30日の体重の小さな折れ線
+  function _weightSpark(points) {
+    if (!points || points.length < 2) return '';
+    const W = 110, H = 30, ks = points.map(p => p.kg);
+    const lo = Math.min(...ks), hi = Math.max(...ks), span = (hi - lo) || 1;
+    const xy = points.map((p, i) => `${(i / (points.length - 1) * (W - 4) + 2).toFixed(1)},${(H - 3 - (p.kg - lo) / span * (H - 6)).toFixed(1)}`);
+    const c = ks[ks.length - 1] < ks[0] ? '#059669' : ks[ks.length - 1] > ks[0] ? '#DC2626' : '#6B7280';
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin-top:3px">
+      <polyline points="${xy.join(' ')}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  }
+
+  const TOP5_GOAL_LABEL = { cut: '減量希望', maintain: '維持', bulk: '増量' };
+
+  function renderAnalysisTop5(d) {
+    const box = document.getElementById('analysis-top5');
+    if (!box) return;
+    const top = (d.rows || []).slice(0, 5);
+    if (!top.length) { box.innerHTML = '<div class="no-data">直近30日のAI解析はまだありません。</div>'; return; }
+    const rows = top.map((x, i) => {
+      const w = x.weight;
+      const goal = TOP5_GOAL_LABEL[x.goal] ? `<div style="font-size:10px;color:#6B7280;font-weight:700">${TOP5_GOAL_LABEL[x.goal]}</div>` : '';
+      const wt = !w ? '<span style="color:#9CA3AF">体重の記録なし</span>'
+        : w.records < 2 ? `<span style="color:#9CA3AF">記録1回（${w.latest_kg}kg）</span>`
+        : `<span>通算 ${_kgChange(w.total_change_kg)}${w.total_change_pct != null ? `<span style="color:#6B7280;font-size:11px">（${w.total_change_pct > 0 ? '+' : ''}${w.total_change_pct}%）</span>` : ''}</span>
+           <span style="font-size:11px;color:#6B7280">${w.start_kg}kg → ${w.latest_kg}kg（${escapeHtml(w.latest_date.slice(5).replace('-', '/'))}）</span>
+           <span style="font-size:11px">直近30日 ${_kgChange(w.change_30d_kg)}</span>${_weightSpark(w.points)}`;
+      return `<tr style="vertical-align:top">
+        <td rowspan="2" style="padding:8px 6px;font-weight:900;color:#6B7280;border-bottom:1px solid #E5E7EB">${i + 1}</td>
+        <td style="padding:8px 6px 2px;font-weight:700">${escapeHtml(x.name)}${goal}</td>
+        <td style="padding:8px 6px 2px;text-align:right;font-weight:800;white-space:nowrap">${x.analyses.toLocaleString()}回</td>
+        <td style="padding:8px 6px 2px;text-align:right;white-space:nowrap">${x.saved.toLocaleString()}件</td>
+        <td style="padding:8px 6px 2px;text-align:right;white-space:nowrap">¥${x.cost_yen.toLocaleString()}</td>
+      </tr>
+      <tr><td colspan="4" style="padding:2px 6px 10px;border-bottom:1px solid #E5E7EB">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;font-size:12px;background:#F9FAFB;border-radius:8px;padding:6px 8px">
+          <span style="font-weight:800;color:#374151">⚖️ 体重の推移</span>${wt}</div>
+      </td></tr>`;
+    }).join('');
+    box.innerHTML = `
+      <div style="font-size:12px;color:#6B7280;margin-bottom:8px">${escapeHtml(d.from)}〜${escapeHtml(d.to)}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="border-bottom:2px solid #E5E7EB;color:#6B7280;font-size:11px">
+          <th style="padding:6px;text-align:left">#</th><th style="padding:6px;text-align:left">会員名</th>
+          <th style="padding:6px;text-align:right">解析回数</th><th style="padding:6px;text-align:right">保存された<br>食事記録</th>
+          <th style="padding:6px;text-align:right">推定<br>AI費用</th>
+        </tr>${rows}
+      </table>`;
+  }
+
   async function loadAnalysisRanking() {
     const box = document.getElementById('analysis-ranking');
     if (!box) return;
+    const top5 = document.getElementById('analysis-top5');
     try {
       const r = await fetch('/api/admin/analysis-ranking');
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'analysis-ranking');
+      renderAnalysisTop5(d);
       if (!d.rows.length) { box.innerHTML = '<div class="no-data">直近30日のAI解析はまだありません。</div>'; return; }
       const style = {
         low: { bg: '#FEF2F2', fg: '#B91C1C', badge: '#DC2626', label: '低い' },
@@ -1707,6 +1774,7 @@
         <div style="font-size:11px;color:#9CA3AF;margin-top:6px">※ 保存率 ${d.low_rate}%未満＝赤、${d.mid_rate}%未満＝黄。保存件数は1日の最終的な記録数からコピーご飯を除いた数です。</div>`;
     } catch (e) {
       box.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
+      if (top5) top5.innerHTML = '<div class="no-data">読み込みに失敗しました</div>';
     }
   }
 

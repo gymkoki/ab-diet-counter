@@ -6457,6 +6457,29 @@ ANALYSIS_SAVE_RATE_LOW = 50     # 保存率がこれ未満は赤（解析の半�
 ANALYSIS_SAVE_RATE_MID = 80     # これ未満は黄
 
 
+def _ranking_weight_trend(recs, since):
+    """体重の推移の結果。recs＝[(date, kg)] を日付順。
+    通算＝最初に記録した体重 → いちばん新しい体重（レポートの会員カードと同じ数え方）。
+    直近30日＝期間内の最初の記録 → いちばん新しい記録（期間内に2回以上あるときだけ）。"""
+    if not recs:
+        return None
+    first_d, first_w = recs[0]
+    last_d, last_w = recs[-1]
+    out = {
+        "start_kg": round(first_w, 1), "start_date": first_d,
+        "latest_kg": round(last_w, 1), "latest_date": last_d,
+        "records": len(recs),
+        "total_change_kg": round(last_w - first_w, 1) if len(recs) >= 2 else None,
+        "total_change_pct": round((last_w - first_w) / first_w * 100, 1) if len(recs) >= 2 and first_w else None,
+        "change_30d_kg": None,
+        "points": [{"date": d, "kg": round(w, 1)} for d, w in recs if d >= since],
+    }
+    recent = [(d, w) for d, w in recs if d >= since]
+    if len(recent) >= 2:
+        out["change_30d_kg"] = round(recent[-1][1] - recent[0][1], 1)
+    return out
+
+
 def _analysis_ranking(days=ANALYSIS_RANKING_DAYS, top=ANALYSIS_RANKING_TOP):
     today = datetime.datetime.now(JST).date()
     first = today - datetime.timedelta(days=days - 1)
@@ -6477,6 +6500,24 @@ def _analysis_ranking(days=ANALYSIS_RANKING_DAYS, top=ANALYSIS_RANKING_TOP):
             copies.setdefault(uid, {})[d] = copies.setdefault(uid, {}).get(d, 0) + 1
         cur.execute("SELECT user_id, display_name FROM user_profile")
         names = {r[0]: (r[1] or "").strip() for r in cur.fetchall()}
+        goals = {}
+        try:
+            cur.execute("SELECT user_id, goal FROM user_profile")
+            goals = {r[0]: r[1] for r in cur.fetchall()}
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        # 体重の推移（解析した会員だけ。解析の多い人が実際に痩せているかを並べて見るため）
+        weights = {}
+        if analyses:
+            uids = list(analyses)
+            marks = ",".join([PH] * len(uids))
+            cur.execute(f"SELECT user_id, date, weight FROM daily_weight WHERE weight>0 AND user_id IN ({marks}) "
+                        "ORDER BY user_id, date", tuple(uids))
+            for uid, d, w in cur.fetchall():
+                weights.setdefault(uid, []).append((str(d)[:10], float(w)))
     finally:
         conn.close()
 
@@ -6494,6 +6535,8 @@ def _analysis_ranking(days=ANALYSIS_RANKING_DAYS, top=ANALYSIS_RANKING_TOP):
             "save_rate": rate,
             "level": ("low" if rate is not None and rate < ANALYSIS_SAVE_RATE_LOW
                       else "mid" if rate is not None and rate < ANALYSIS_SAVE_RATE_MID else "ok"),
+            "goal": goals.get(uid) or None,
+            "weight": _ranking_weight_trend(weights.get(uid, []), first.isoformat()),
         })
     rows.sort(key=lambda r: (-r["analyses"], r["save_rate"] if r["save_rate"] is not None else 101))
     total_n = sum(analyses.values())
