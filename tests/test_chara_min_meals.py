@@ -88,9 +88,11 @@ def test_two_meals_are_capped_to_kikikancho():
 @needs_node
 def test_three_meals_are_scored_normally():
     """3回以上記録できていれば、写真が1枚でも通常どおりの採点になる。"""
-    [three] = _run_score([{**PERFECT, "mealCount": 3}])
+    [three, four] = _run_score([{**PERFECT, "mealCount": 3}, {**PERFECT, "mealCount": 4}])
     assert three["tooFewMeals"] is False
-    assert three["score"] == 100, "3回記録した日まで点数が下がっている"
+    # 2026-11-24 から記録の回数も採点に入る（1日4回で満点）。3回は危機管鳥にはならず、記録の分だけ少し下がる
+    assert three["score"] == 94, "3回記録した日が危機管鳥に抑えられている"
+    assert four["score"] == 100
 
 
 @needs_node
@@ -105,7 +107,8 @@ def test_unknown_meal_count_is_not_capped():
 def test_cap_does_not_raise_a_bad_day():
     """もともと低い日を、この仕組みで持ち上げてしまわないこと（上限であって固定値ではない）。"""
     [bad] = _run_score([{"foodTotal": 0, "protein": 0, "veg": 0, "exBc": 0, "mealCount": 1}])
-    assert bad["score"] == 0
+    # 2026-11-24 から記録の回数も採点に入る：1回記録した分（記録25%÷4項目＝6点）だけ。上限29点で底上げはしない
+    assert bad["score"] == 6
 
 
 @needs_node
