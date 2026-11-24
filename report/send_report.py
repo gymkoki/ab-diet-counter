@@ -769,6 +769,31 @@ def _total_change_chip(member: dict) -> str:
     return f'<span style="color:{c};margin-left:8px">通算 {s}{pct_s}</span>'
 
 
+# 記録の回数も B と同じ重みで評価する（オーナー指示 2026-11-24）。アプリの採点（RECORD_TARGET_PER_DAY）と同じ回数で満点。
+RECORD_TARGET_PER_DAY = 4
+
+
+def _overall_badge(member: dict) -> str:
+    """名前の横の小さな評価（◎○△）。通算平均Bと1日の記録回数を同じ重み（半々）で見る。
+    B：目標以内＝100・超え＝50（アプリの採点と同じ）／記録：1日 RECORD_TARGET_PER_DAY 回で100。
+    平均 90以上＝◎・70以上＝○・それ未満＝△。どちらかの数字が無ければ出さない。"""
+    avg_b = member.get("avg_b_total")
+    if not isinstance(avg_b, (int, float)):
+        avg_b = member.get("avg_b_7d")
+    target = member.get("b_target")
+    rate = member.get("record_rate") if isinstance(member.get("record_rate"), dict) else {}
+    rpd = rate.get("records_per_day")
+    if not all(isinstance(x, (int, float)) for x in (avg_b, target, rpd)):
+        return ""
+    b_pct = 100 if avg_b <= target else 50
+    r_pct = min(100.0, max(0.0, rpd) / RECORD_TARGET_PER_DAY * 100)
+    total = (b_pct + r_pct) / 2
+    mark, color = (("◎", "#059669") if total >= 90 else
+                   ("○", "#B45309") if total >= 70 else ("△", "#DC2626"))
+    return (f'<span style="font-size:11px;font-weight:800;color:{color};margin-left:8px">'
+            f'評価 {mark}（B＋記録）</span>')
+
+
 def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget: int = MAX_PHOTOS_TOTAL) -> str:
     """会員1人ぶんの写真カード（名前・体重変化・その人の写真すべて）を組み立てる。
     budget は「セクション全体であと何枚載せられるか」。"""
@@ -870,7 +895,7 @@ def _photo_card(member: dict, cid_prefix: str, charts: dict, good: bool, budget:
       <div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:8px">
         {name}
         {change_html}
-        <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>
+        <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">{b_str}</span>{_overall_badge(member)}
         <span style="font-size:11px;color:#9CA3AF;font-weight:600;margin-left:8px">掲載 {len(cells)}枚</span>
       </div>{_key_stats(member)}{progress_html}
       {photos_html}
@@ -937,6 +962,7 @@ def _photo_section(photos: dict, charts: dict) -> str:
         <b>この内容は会員の食事写真を含むため、オーナー限定</b>（このメールの宛先のみ）です。
         ※{REPORT_ABSENT_DAYS}日以上まったく記録がない会員は対象外です。
         ※順調な人はしばらく載っていない人から順に、進んでいない人は毎日ランダムに選んでいます。
+        ※「評価 ◎○△」は通算平均Bと1日の記録回数を同じ重みで見たもの（Bは目標以内、記録は1日{RECORD_TARGET_PER_DAY}回で満点）。
       </div>
       {blocks}
     </div>

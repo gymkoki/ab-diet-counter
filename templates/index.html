@@ -2992,8 +2992,8 @@ function hideGoalCelebrate() {
 
 // ═══════════════════════════════════════════
 //  進捗タブ：今日の進捗スコアとマスコットアニメーション
-//  点数＝3項目（Bカウント・タンパク質・野菜）の達成率の平均
-//  （例：100%・100%・0% → 200%÷300% ≒ 67点）
+//  点数＝4項目（Bカウント・記録の回数・タンパク質・野菜）の達成率の平均（記録の回数は 2026-11-24 から）
+//  （例：100%・100%・100%・0% → 300%÷400% ＝ 75点）
 // ═══════════════════════════════════════════
 // 1日の合計値（食事B・タンパク質・野菜・運動B）からスコアを計算する共通処理。
 // 過去日の復元（キャラカレンダーの補完）でも同じ計算を使う。
@@ -3010,6 +3010,9 @@ const CHARA_KIKI_MAX_SCORE = 29;
 // 変更（オーナー指示 2026-10-11）：1日の記録が**2回以下**の日も、タンパク質・野菜の
 //   点数に関係なく必ず危機管鳥にする（以前は1回だけの日が対象だった）。
 const MIN_MEALS_FOR_FULL_SCORE = 3;
+// 記録の回数も B と同じ重みで採点する（オーナー指示 2026-11-24：「Bカウントに加えて、1日あたりの食事記録の回数も
+// 同じくらい評価される＝たくさん記録した方が良い」）。写真・文章・コピーご飯を含む記録の回数。この回数で満点（3食＋間食など）。
+const RECORD_TARGET_PER_DAY = 4;
 
 function scoreFromTotals(foodTotal, protein, veg, exBc, mealCount = null) {
   const net = Math.max(0, foodTotal - (exBc || 0));
@@ -3033,7 +3036,11 @@ function scoreFromTotals(foodTotal, protein, veg, exBc, mealCount = null) {
   const bLocked = (pPct <= 0 && vPct <= 0);
   if (bLocked) bPct = 0;
 
-  let score = Math.round((bPct + pPct + vPct) / 3);
+  // 記録の回数：RECORD_TARGET_PER_DAY 回で100%（回数が分からない古い呼び出しは従来の3項目で計算）
+  const rPct = mealCount == null ? null
+    : Math.min(100, Math.round(Math.max(0, mealCount) / RECORD_TARGET_PER_DAY * 100));
+  let score = rPct == null ? Math.round((bPct + pPct + vPct) / 3)
+                           : Math.round((bPct + rPct + pPct + vPct) / 4);
   // Bカウントは最重要指標：目標をオーバーした日は、タンパク質・野菜が
   // 満点でも29点を上限にして、キャラが危機管鳥（〜29点）になるようにする。
   if (bOver) score = Math.min(score, CHARA_KIKI_MAX_SCORE);
@@ -3042,7 +3049,7 @@ function scoreFromTotals(foodTotal, protein, veg, exBc, mealCount = null) {
   const tooFewMeals = (mealCount != null && mealCount > 0
                        && mealCount < MIN_MEALS_FOR_FULL_SCORE);
   if (tooFewMeals) score = Math.min(score, CHARA_KIKI_MAX_SCORE);
-  return { score, net, protein, veg, pGoal, bMax, bPct, pPct, vPct, bLocked, bOver, tooFewMeals };
+  return { score, net, protein, veg, pGoal, bMax, bPct, rPct, pPct, vPct, bLocked, bOver, tooFewMeals };
 }
 
 function calcCharaScore() {
@@ -3077,12 +3084,17 @@ function charaAdvice(s) {
   }
   const pLack = Math.max(0, s.pGoal - s.protein);
   const vLack = Math.max(0, VEG_TARGET_G - s.veg);
-  if (pLack <= 0 && vLack <= 0) return 'パーフェクト！この調子で1日をキープしましょう✨';
-  // 不足割合が大きい方を優先して案内
-  if ((pLack / s.pGoal) >= (vLack / VEG_TARGET_G)) {
-    return `タンパク質があと約${Math.round(pLack)}g。鶏むね肉・卵・プロテインなどを足すと最大＋${Math.round((100 - s.pPct) / 3)}点です🥩`;
+  const rPct = s.rPct == null ? 100 : s.rPct;
+  const n = s.rPct == null ? 3 : 4;   // 採点の項目数（記録の回数を含めて4つ）
+  if (pLack <= 0 && vLack <= 0 && rPct >= 100) return 'パーフェクト！この調子で1日をキープしましょう✨';
+  // いちばん足りない項目を案内（記録の回数・タンパク質・野菜）
+  if (rPct < 100 && rPct <= s.pPct && rPct <= s.vPct) {
+    return `記録は今日${s.count}回。間食や飲み物も漏れなく記録すると、最大＋${Math.round((100 - rPct) / n)}点です📷`;
   }
-  return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${Math.round((100 - s.vPct) / 3)}点です🥗`;
+  if ((pLack / s.pGoal) >= (vLack / VEG_TARGET_G)) {
+    return `タンパク質があと約${Math.round(pLack)}g。鶏むね肉・卵・プロテインなどを足すと最大＋${Math.round((100 - s.pPct) / n)}点です🥩`;
+  }
+  return `野菜があと約${Math.round(vLack)}g。サラダや温野菜をもう1品足すと最大＋${Math.round((100 - s.vPct) / n)}点です🥗`;
 }
 
 // ── キャラの動くバージョン（公式イラストのパーツ分割）──
@@ -3948,6 +3960,7 @@ function renderChara() {
   document.getElementById('chara-score-num').textContent = s.score;
   document.getElementById('chara-breakdown').innerHTML = `
     <span class="chara-bd-chip">🍽️ Bカウント ${s.bPct}%</span>
+    <span class="chara-bd-chip">📝 記録 ${s.rPct == null ? 100 : s.rPct}%</span>
     <span class="chara-bd-chip">🥩 タンパク質 ${s.pPct}%</span>
     <span class="chara-bd-chip">🥗 野菜 ${s.vPct}%</span>`;
   document.getElementById('chara-advice-text').textContent = charaAdvice(s);
