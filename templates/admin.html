@@ -2501,6 +2501,7 @@
 
   // ── 解析モデルの比較・切り替え（オーナー指示 2026-11-28） ──
   let _mcTimer = null;
+  let _mcRun = null;   // 画面に出している比較の started_at（判定と一緒に送る）
   function _mcB(r) {
     if (!r) return '—';
     if (r.error) return `<span style="color:#DC2626">失敗（${escapeHtml(r.error)}）</span>`;
@@ -2520,6 +2521,7 @@
       now.innerHTML = `いま使っているモデル：<b style="font-size:15px">${escapeHtml(L[d.current] || d.current)}</b>`
         + `　<button class="apikey-save" style="width:auto;padding:4px 12px;font-size:12px" onclick="switchAnalysisModel('${escapeHtml(other)}')">${escapeHtml(L[other] || other)} に切り替える</button>`;
       const c = d.compare || {};
+      _mcRun = c.started_at || null;
       const items = c.items || [];
       const running = c.status === 'running';
       document.getElementById('model-compare-start').disabled = running;
@@ -2565,9 +2567,10 @@
     setTimeout(loadModelCompare, 1500);
   }
   async function gradeModelCompare(i, pick) {
-    await fetch('/api/admin/model-compare/grade', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ i, pick }),
+    const r = await fetch('/api/admin/model-compare/grade', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ i, pick, run: _mcRun }),
     });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || '保存できませんでした'); }
     loadModelCompare();
   }
   async function switchAnalysisModel(model) {

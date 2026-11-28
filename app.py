@@ -6616,7 +6616,7 @@ MODEL_COMPARE_KEY = "model-compare-latest"
 MODEL_COMPARE_GRADES_KEY = "model-compare-grades"
 MODEL_COMPARE_SIZE = 20
 MODEL_COMPARE_PER_USER = 3          # 1人に偏らないように
-MODEL_COMPARE_STALE_SEC = 20 * 60   # これより古い「実行中」は止まったものとみなす
+MODEL_COMPARE_STALE_SEC = 5 * 60    # 進み（updated_at）がこれより止まった「実行中」は中断とみなす（1枚は長くても約2分）
 MODEL_LABELS = {"claude-sonnet-5": "Sonnet 5", "claude-sonnet-5-5": "Sonnet 5.5"}
 _model_compare_lock = threading.Lock()
 _model_compare_running = {"on": False}
@@ -6701,18 +6701,20 @@ def _model_compare_load(key=MODEL_COMPARE_KEY):
 
 
 def _model_compare_running_elsewhere(data):
+    """保存された「実行中」が本当に進んでいるか。デプロイ・再起動で別スレッドが消えると updated_at が止まる。"""
     if data.get("status") != "running":
         return False
     try:
-        started = datetime.datetime.fromisoformat(data.get("started_at"))
+        last = datetime.datetime.fromisoformat(data.get("updated_at") or data.get("started_at"))
     except Exception:
         return False
-    return (datetime.datetime.now(JST) - started).total_seconds() < MODEL_COMPARE_STALE_SEC
+    return (datetime.datetime.now(JST) - last).total_seconds() < MODEL_COMPARE_STALE_SEC
 
 
 def _run_model_compare():
     now = lambda: datetime.datetime.now(JST).isoformat(timespec="seconds")
     data = {"status": "running", "started_at": now(), "models": list(ANALYSIS_MODEL_CHOICES), "items": []}
+    data["updated_at"] = data["started_at"]
     try:
         client = get_client()
         if client is None:
@@ -6726,6 +6728,7 @@ def _run_model_compare():
             smp["a"] = _analyze_photo_with(client, a, src)
             smp["b"] = _analyze_photo_with(client, b, src)
             data["items"].append(smp)
+            data["updated_at"] = now()
             _set_setting(MODEL_COMPARE_KEY, json.dumps(data, ensure_ascii=False))
         data.update(status="done", finished_at=now())
     except BaseException as e:   # ここで全部受け止める（管理画面に理由を出す）
@@ -6766,6 +6769,10 @@ def _model_compare_summary(items, grades):
 def admin_model_compare():
     """【管理者専用】解析モデルの比較結果と、いま使っているモデル。"""
     data = _model_compare_load()
+    # 途中で止まった（デプロイ・再起動で別スレッドが消えた）ものは、画面では中断として出す（もう一度始められる）
+    if (data.get("status") == "running" and not _model_compare_running["on"]
+            and not _model_compare_running_elsewhere(data)):
+        data = dict(data, status="error", error="途中で止まりました（サーバーの再起動など）。もう一度始めてください。")
     grades_doc = _model_compare_load(MODEL_COMPARE_GRADES_KEY)
     grades = grades_doc.get("g") if grades_doc.get("run") == data.get("started_at") else {}
     grades = grades if isinstance(grades, dict) else {}
@@ -6822,6 +6829,9 @@ def admin_model_compare_grade():
     if pick not in ("a", "b", "same", ""):
         return jsonify({"error": "判定が正しくありません"}), 400
     run = _model_compare_load().get("started_at")
+    # 画面に出していた比較と、いまの比較が同じときだけ受け付ける（古い画面の判定を別の写真に付けない）
+    if body.get("run") != run:
+        return jsonify({"error": "比較テストが新しくなりました。画面を読み込み直してください。"}), 409
     doc = _model_compare_load(MODEL_COMPARE_GRADES_KEY)
     grades = doc.get("g") if doc.get("run") == run and isinstance(doc.get("g"), dict) else {}
     if pick:

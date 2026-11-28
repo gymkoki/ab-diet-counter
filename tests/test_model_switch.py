@@ -184,10 +184,15 @@ def test_compare_runs_both_models_and_shows_results(monkeypatch):
         # 会員が訂正した記録（B2）との差：5 は1、5.5 は0
         assert d["summary"]["a"]["corrected_mae"] == 1 and d["summary"]["b"]["corrected_mae"] == 0
         # 判定を残す
-        assert c.post("/api/admin/model-compare/grade", json={"i": 0, "pick": "b"}, headers=ADMIN).status_code == 200
+        run = d["compare"]["started_at"]
+        assert c.post("/api/admin/model-compare/grade", json={"i": 0, "pick": "b", "run": "old"},
+                      headers=ADMIN).status_code == 409, "古い画面の判定は受け付けない"
+        assert c.post("/api/admin/model-compare/grade", json={"i": 0, "pick": "b", "run": run},
+                      headers=ADMIN).status_code == 200
         d = c.get("/api/admin/model-compare", headers=ADMIN).get_json()
         assert d["grades"] == {"0": "b"} and d["summary"]["b_better"] == 1
-        assert c.post("/api/admin/model-compare/grade", json={"i": 0, "pick": "x"}, headers=ADMIN).status_code == 400
+        assert c.post("/api/admin/model-compare/grade", json={"i": 0, "pick": "x", "run": run},
+                      headers=ADMIN).status_code == 400
     for call in fake.calls:
         assert call["thinking"] == m._thinking_off(call["model"])
 
@@ -209,3 +214,29 @@ def test_compare_without_api_key_records_error(monkeypatch):
 def test_admin_card_exists():
     src = open(os.path.join(os.path.dirname(m.__file__), "templates", "admin.html"), encoding="utf-8").read()
     assert 'id="model-compare-card"' in src and "loadModelCompare()" in src
+
+
+def test_interrupted_run_can_be_restarted(monkeypatch):
+    """Codex の指摘（PR #273）：再起動で別スレッドが消えて「実行中」のまま残っても、画面では中断と出し、もう一度始められる。"""
+    old = (datetime.datetime.now(m.JST) - datetime.timedelta(minutes=10)).isoformat(timespec="seconds")
+    m._set_setting(m.MODEL_COMPARE_KEY, json.dumps({"status": "running", "started_at": old, "updated_at": old,
+                                                     "items": [], "total": 20}))
+    m._model_compare_running["on"] = False
+    started = []
+    monkeypatch.setattr(m.threading, "Thread", lambda target, daemon: SimpleNamespace(start=lambda: started.append(1)))
+    with m.app.test_client() as c:
+        d = c.get("/api/admin/model-compare", headers=ADMIN).get_json()
+        assert d["compare"]["status"] == "error" and "もう一度" in d["compare"]["error"]
+        assert c.post("/api/admin/model-compare/start", headers=ADMIN).status_code == 202
+    assert started == [1]
+    m._model_compare_running["on"] = False
+
+
+def test_recent_progress_blocks_second_start(monkeypatch):
+    recent = datetime.datetime.now(m.JST).isoformat(timespec="seconds")
+    m._set_setting(m.MODEL_COMPARE_KEY, json.dumps({"status": "running", "started_at": recent,
+                                                     "updated_at": recent, "items": []}))
+    m._model_compare_running["on"] = False
+    with m.app.test_client() as c:
+        assert c.post("/api/admin/model-compare/start", headers=ADMIN).status_code == 409
+        assert c.get("/api/admin/model-compare", headers=ADMIN).get_json()["compare"]["status"] == "running"
