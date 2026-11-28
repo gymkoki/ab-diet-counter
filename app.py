@@ -593,6 +593,10 @@ def create_and_parse(client, time_budget=None, **kwargs):
     detail = ""
     last_json_err = None
     started = time.monotonic()
+    # 思考オフの指定をモデルに合わせる（Sonnet 5.5 は disabled が 400 になる）
+    allow_fallback = kwargs.pop("allow_fallback", True)
+    if kwargs.get("thinking") == THINKING_OFF:
+        kwargs["thinking"] = _thinking_off(kwargs.get("model"))
     # このリクエストで使ってよい締め切り。1回のAI呼び出しも、Web検索の再開も、
     # 必ずこの締め切りの中で終わらせる（gunicornに切られる前に自分で打ち切る）。
     budget = time_budget if time_budget else (RETRY_TIME_BUDGET_SEC - RETRY_RESERVE_SEC)
@@ -601,6 +605,13 @@ def create_and_parse(client, time_budget=None, **kwargs):
         err = None
         try:
             response = _create_with_server_tools(client, deadline=deadline, **kwargs)
+            # Sonnet 5.5 が安全上の理由で断ったとき（refusal・まれ）は、Sonnet 5 で1回だけ作り直す
+            if (getattr(response, "stop_reason", None) == "refusal" and allow_fallback
+                    and kwargs.get("model") != ANALYSIS_MODEL_FALLBACK):
+                print(f"[REFUSAL] {kwargs.get('model')} が回答を断ったため {ANALYSIS_MODEL_FALLBACK} で作り直します")
+                kwargs["model"] = ANALYSIS_MODEL_FALLBACK
+                kwargs["thinking"] = _thinking_off(ANALYSIS_MODEL_FALLBACK)
+                response = _create_with_server_tools(client, deadline=deadline, **kwargs)
             result = recompute_totals(parse_ai_result(response))
             # foods が無い等、想定外の形なら生成し直す
             if not isinstance(result, dict) or "foods" not in result:
@@ -2156,6 +2167,35 @@ ANALYSIS_MODEL = (os.environ.get("ANALYSIS_MODEL", "").strip() or "claude-sonnet
 # 枠を使い切って回答が途中で切れる危険がある。従来のSonnet 4.6と同じ挙動に揃えるため
 # 全ての解析で明示的にオフにする。
 THINKING_OFF = {"type": "disabled"}
+
+# ── 解析モデルの切り替え（オーナー指示 2026-11-28：「Sonnet 5.5 が同じ以上の精度なら、そのまま乗り換えて」）──
+# 管理画面の「🤖 解析モデルの比較・切り替え」で、実際の会員の写真で Sonnet 5 と 5.5 を比べてから切り替える。
+# 選んだモデルは settings の ANALYSIS_MODEL_SETTING_KEY に残り、再デプロイなしで全ての解析に効く
+# （未設定・不正な値・DBが読めないときは環境変数 ANALYSIS_MODEL＝従来どおり）。
+ANALYSIS_MODEL_FALLBACK = "claude-sonnet-5"        # 5.5 が断った（refusal）ときに1回だけ使う
+ANALYSIS_MODEL_CHOICES = ("claude-sonnet-5", "claude-sonnet-5-5")
+ANALYSIS_MODEL_SETTING_KEY = "analysis-model"
+_analysis_model_cache = {"v": None, "at": 0.0}
+
+
+def _analysis_model():
+    """いま解析に使うモデル。settings を30秒だけ覚えておく（解析のたびにDBを読まない）。"""
+    now = time.monotonic()
+    if _analysis_model_cache["v"] and now - _analysis_model_cache["at"] < 30.0:
+        return _analysis_model_cache["v"]
+    try:
+        v = (_get_setting(ANALYSIS_MODEL_SETTING_KEY, "") or "").strip()
+    except Exception:
+        v = ""
+    model = v if v in ANALYSIS_MODEL_CHOICES else ANALYSIS_MODEL
+    _analysis_model_cache.update(v=model, at=now)
+    return model
+
+
+def _thinking_off(model):
+    """思考オフの指定をモデルに合わせる。Sonnet 5.5 は {"type": "disabled"} を受け付けない（400）ため、
+    いちばん低い設定 {"type": "between_tools"}（考えずに答える・効果は従来の思考オフと同じ）を送る。"""
+    return {"type": "between_tools"} if model == "claude-sonnet-5-5" else dict(THINKING_OFF)
 
 # 食事分析1回あたりの概算コスト（円）。通常解析はSonnet 5（入力$3/出力$15。
 # ただし2026-08-31までは導入価格 $2/$10）。画像1024px・思考オフ・出力約1300トークンで、
@@ -6563,6 +6603,245 @@ def admin_analysis_ranking():
     except Exception as e:
         app.logger.error("analysis ranking failed: %s", e)
         return jsonify({"error": "集計に失敗しました。時間をおいてお試しください。"}), 500
+
+
+# ══════════════════════════════════════════════════════════════
+#  解析モデルの比較・切り替え（オーナー指示 2026-11-28：「Sonnet 5.5 が同じ以上の精度なら、そのまま乗り換えて」）
+#  直近（daily_meals は5日分）の会員の実際の写真を、Sonnet 5 と 5.5 の両方で同じ指示（ANALYSIS_PROMPT）で解析し、
+#  管理画面に並べる。オーナーが写真を見て「どちらが近いか」を付け、同じ以上なら「5.5 に切り替える」を押す。
+#  ・解析は別スレッド（長いリクエストにしない）。結果は settings に保存（写真そのものは保存せず、表示のときに読み直す）
+#  ・費用：1枚につき2回の解析（20枚で約40回・およそ150円）。会員の画面には何も出ない
+# ══════════════════════════════════════════════════════════════
+MODEL_COMPARE_KEY = "model-compare-latest"
+MODEL_COMPARE_GRADES_KEY = "model-compare-grades"
+MODEL_COMPARE_SIZE = 20
+MODEL_COMPARE_PER_USER = 3          # 1人に偏らないように
+MODEL_COMPARE_STALE_SEC = 20 * 60   # これより古い「実行中」は止まったものとみなす
+MODEL_LABELS = {"claude-sonnet-5": "Sonnet 5", "claude-sonnet-5-5": "Sonnet 5.5"}
+_model_compare_lock = threading.Lock()
+_model_compare_running = {"on": False}
+_MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
+
+
+def _iter_photo_items(payload):
+    for key in _MEAL_KEYS:
+        for item in ((payload or {}).get(key) or {}).get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            src = item.get("previewSrc")
+            if (isinstance(src, str) and src.startswith("data:image") and isinstance(item.get("result"), dict)
+                    and not item.get("isText") and not item.get("isCopy") and not item.get("isOil")):
+                yield item
+
+
+def _model_compare_samples(limit=MODEL_COMPARE_SIZE):
+    """直近5日の写真の記録から、新しい順に limit 件（1人 MODEL_COMPARE_PER_USER 件まで）。"""
+    since = (datetime.datetime.now(JST).date() - datetime.timedelta(days=5)).isoformat()
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT user_id, date, payload FROM daily_meals WHERE date >= {PH}", (since,))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    cands = []
+    for uid, dt, payload_str in rows:
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        for item in _iter_photo_items(payload):
+            res = item["result"]
+            foods = [f for f in (res.get("foods") or []) if isinstance(f, dict)]
+            cands.append({
+                "uid": uid, "date": str(dt)[:10], "item_id": item.get("id"),
+                "final_b": res.get("total_b_count"),
+                "corrected": any("訂正反映" in str(f.get("reason") or "") for f in foods),
+                "_src": item["previewSrc"],
+            })
+    cands.sort(key=lambda c: (c["date"], _num(c["item_id"])), reverse=True)
+    out, per = [], {}
+    for c in cands:
+        if per.get(c["uid"], 0) >= MODEL_COMPARE_PER_USER:
+            continue
+        per[c["uid"]] = per.get(c["uid"], 0) + 1
+        out.append(c)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _analyze_photo_with(client, model, src):
+    """比較用：会員の写真（data URL）を指定のモデルで、写真解析と同じ指示で解析する。失敗しても例外を出さない。"""
+    started = time.monotonic()
+    try:
+        head, b64 = src.split(",", 1)
+        media = head[5:].split(";", 1)[0] or "image/jpeg"
+        data, media = prepare_image_for_api(base64.b64decode(b64), media)
+        res = create_and_parse(
+            client, model=model, thinking=THINKING_OFF, allow_fallback=False,
+            time_budget=ANALYZE_TOTAL_BUDGET_SEC, timeout=ANALYZE_TIMEOUT_SEC, max_tokens=ANALYZE_MAX_TOKENS,
+            system=[{"type": "text", "text": ANALYSIS_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media, "data": data}}]}],
+        )
+        foods = [f for f in (res.get("foods") or []) if isinstance(f, dict)]
+        return {"b": res.get("total_b_count"), "sec": round(time.monotonic() - started, 1),
+                "foods": [{"n": str(f.get("name") or "")[:30], "b": f.get("b_count")} for f in foods][:12]}
+    except Exception as e:
+        return {"error": type(e).__name__, "sec": round(time.monotonic() - started, 1)}
+
+
+def _model_compare_load(key=MODEL_COMPARE_KEY):
+    try:
+        v = json.loads(_get_setting(key, "") or "{}")
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
+def _model_compare_running_elsewhere(data):
+    if data.get("status") != "running":
+        return False
+    try:
+        started = datetime.datetime.fromisoformat(data.get("started_at"))
+    except Exception:
+        return False
+    return (datetime.datetime.now(JST) - started).total_seconds() < MODEL_COMPARE_STALE_SEC
+
+
+def _run_model_compare():
+    now = lambda: datetime.datetime.now(JST).isoformat(timespec="seconds")
+    data = {"status": "running", "started_at": now(), "models": list(ANALYSIS_MODEL_CHOICES), "items": []}
+    try:
+        client = get_client()
+        if client is None:
+            raise RuntimeError("APIキーが設定されていません")
+        samples = _model_compare_samples()
+        data["total"] = len(samples)
+        _set_setting(MODEL_COMPARE_KEY, json.dumps(data, ensure_ascii=False))
+        a, b = ANALYSIS_MODEL_CHOICES
+        for smp in samples:
+            src = smp.pop("_src")
+            smp["a"] = _analyze_photo_with(client, a, src)
+            smp["b"] = _analyze_photo_with(client, b, src)
+            data["items"].append(smp)
+            _set_setting(MODEL_COMPARE_KEY, json.dumps(data, ensure_ascii=False))
+        data.update(status="done", finished_at=now())
+    except BaseException as e:   # ここで全部受け止める（管理画面に理由を出す）
+        data.update(status="error", finished_at=now(), error=f"{type(e).__name__}: {str(e)[:200]}")
+    finally:
+        try:
+            _set_setting(MODEL_COMPARE_KEY, json.dumps(data, ensure_ascii=False))
+        except Exception:
+            pass
+        with _model_compare_lock:
+            _model_compare_running["on"] = False
+
+
+def _model_compare_summary(items, grades):
+    """オーナーの判定の集計と、会員が訂正した記録（＝正解に近い）との差、時間・失敗の数。"""
+    out = {"graded": 0, "a_better": 0, "b_better": 0, "same": 0, "a": {}, "b": {}}
+    for i, it in enumerate(items):
+        g = grades.get(str(i))
+        if g in ("a", "b", "same"):
+            out["graded"] += 1
+            out[{"a": "a_better", "b": "b_better", "same": "same"}[g]] += 1
+    for side in ("a", "b"):
+        rs = [it.get(side) or {} for it in items]
+        ok = [r for r in rs if isinstance(r.get("b"), (int, float))]
+        secs = [r["sec"] for r in rs if isinstance(r.get("sec"), (int, float)) and "error" not in r]
+        errs = [abs(it[side]["b"] - it["final_b"]) for it in items
+                if it.get("corrected") and isinstance((it.get(side) or {}).get("b"), (int, float))
+                and isinstance(it.get("final_b"), (int, float))]
+        out[side] = {"done": len(ok), "errors": len(rs) - len(ok),
+                     "avg_sec": round(sum(secs) / len(secs), 1) if secs else None,
+                     "corrected_n": len(errs),
+                     "corrected_mae": round(sum(errs) / len(errs), 2) if errs else None}
+    return out
+
+
+@app.route("/api/admin/model-compare", methods=["GET"])
+@_admin_required
+def admin_model_compare():
+    """【管理者専用】解析モデルの比較結果と、いま使っているモデル。"""
+    data = _model_compare_load()
+    grades_doc = _model_compare_load(MODEL_COMPARE_GRADES_KEY)
+    grades = grades_doc.get("g") if grades_doc.get("run") == data.get("started_at") else {}
+    grades = grades if isinstance(grades, dict) else {}
+    items = data.get("items") or []
+    # 写真は保存していないので、まだ残っている（5日以内の）ものだけ読み直して添える
+    srcs = {}
+    keys = {(it.get("uid"), it.get("date")) for it in items}
+    if keys:
+        try:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                for uid, dt in keys:
+                    cur.execute(f"SELECT payload FROM daily_meals WHERE user_id={PH} AND date={PH}", (uid, dt))
+                    row = cur.fetchone()
+                    if not row:
+                        continue
+                    for item in _iter_photo_items(json.loads(row[0])):
+                        srcs[(uid, dt, item.get("id"))] = item["previewSrc"]
+            finally:
+                conn.close()
+        except Exception as e:
+            app.logger.warning("model compare photos skipped: %s", e)
+    view = [{k: v for k, v in it.items() if k != "uid"} | {"src": srcs.get((it.get("uid"), it.get("date"), it.get("item_id")))}
+            for it in items]
+    return jsonify({
+        "current": _analysis_model(), "choices": list(ANALYSIS_MODEL_CHOICES), "labels": MODEL_LABELS,
+        "size": MODEL_COMPARE_SIZE,
+        "compare": {k: v for k, v in data.items() if k != "items"} | {"items": view},
+        "grades": grades, "summary": _model_compare_summary(items, grades),
+    })
+
+
+@app.route("/api/admin/model-compare/start", methods=["POST"])
+@_admin_required
+def admin_model_compare_start():
+    with _model_compare_lock:
+        if _model_compare_running["on"] or _model_compare_running_elsewhere(_model_compare_load()):
+            return jsonify({"error": "比較テストを実行中です。終わるまでお待ちください。"}), 409
+        _model_compare_running["on"] = True
+    threading.Thread(target=_run_model_compare, daemon=True).start()
+    return jsonify({"ok": True}), 202
+
+
+@app.route("/api/admin/model-compare/grade", methods=["POST"])
+@_admin_required
+def admin_model_compare_grade():
+    body = request.get_json(silent=True) or {}
+    pick = body.get("pick")
+    try:
+        i = int(body.get("i"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "番号が正しくありません"}), 400
+    if pick not in ("a", "b", "same", ""):
+        return jsonify({"error": "判定が正しくありません"}), 400
+    run = _model_compare_load().get("started_at")
+    doc = _model_compare_load(MODEL_COMPARE_GRADES_KEY)
+    grades = doc.get("g") if doc.get("run") == run and isinstance(doc.get("g"), dict) else {}
+    if pick:
+        grades[str(i)] = pick
+    else:
+        grades.pop(str(i), None)
+    _set_setting(MODEL_COMPARE_GRADES_KEY, json.dumps({"run": run, "g": grades}))
+    return jsonify({"ok": True, "grades": grades})
+
+
+@app.route("/api/admin/analysis-model", methods=["POST"])
+@_admin_required
+def admin_analysis_model():
+    """【管理者専用】解析に使うモデルを切り替える（全ての解析に30秒以内に効く）。"""
+    model = str((request.get_json(silent=True) or {}).get("model") or "")
+    if model not in ANALYSIS_MODEL_CHOICES:
+        return jsonify({"error": "選べないモデルです"}), 400
+    _set_setting(ANALYSIS_MODEL_SETTING_KEY, model)
+    _analysis_model_cache.update(v=None, at=0.0)
+    return jsonify({"ok": True, "current": _analysis_model()})
 
 
 @app.route("/api/admin/feature-usage")
@@ -11414,7 +11693,7 @@ def analyze():
     try:
         result = create_and_parse(
             client,
-            model=ANALYSIS_MODEL,   # 通常解析は精度重視でSonnet
+            model=_analysis_model(),   # 通常解析は精度重視でSonnet（管理画面で切り替え）
             thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             # 【重要】ここではWeb検索ツールを渡さない（オーナー指摘 2026-08）。
             # 一時期すべての写真解析で検索を許可したが、AIが手料理や定食の写真でも
@@ -11604,7 +11883,7 @@ def reanalyze():
     try:
         result = create_and_parse(
             client,
-            model=ANALYSIS_MODEL,   # 再計算（修正時）は精度重視でSonnet
+            model=_analysis_model(),   # 再計算（修正時）は精度重視でSonnet
             thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             **search_kwargs,
             system=[
@@ -11692,7 +11971,7 @@ total_b_count / total_protein_g / total_veg_g / advice も入れる）で回答�
     try:
         result = create_and_parse(
             client,
-            model=ANALYSIS_MODEL,   # 文章入力も精度重視でSonnet
+            model=_analysis_model(),   # 文章入力も精度重視でSonnet
             thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             # ここでは意図的にWeb検索ツールを付けていない。文章入力は下記の60秒制限で
             # 打ち切る設計（2026-07の「通信エラー」障害対策）で、検索が入ると
@@ -11766,9 +12045,10 @@ def estimate_nutrition():
         return jsonify({"total_protein_g": 0, "total_veg_g": 0})
 
     try:
+        model = _analysis_model()
         msg = client.messages.create(
-            model=ANALYSIS_MODEL,
-            thinking=THINKING_OFF,   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
+            model=model,
+            thinking=_thinking_off(model),   # 思考オフ（従来と同じ挙動・コスト増を防ぐ）
             max_tokens=120,
             system=[{"type": "text", "text": ESTIMATE_NUTRITION_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": f"【食事】{text}"}],

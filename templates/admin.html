@@ -678,6 +678,21 @@
     <div id="analysis-top5"><div class="spinner"></div></div>
   </div>
 
+  <!-- 解析モデルの比較・切り替え（オーナー指示 2026-11-28） -->
+  <div class="card" style="margin-bottom:20px" id="model-compare-card">
+    <h2>🧪 解析モデルの比較・切り替え（Sonnet 5 ⇔ Sonnet 5.5）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:12px;line-height:1.7">
+      直近の会員の写真（最大20枚）を、両方のモデルで同じ指示で解析して並べます（1回およそ150円・会員の画面には何も出ません）。
+      写真を見て<b>どちらのBが近いか</b>を押してください。Sonnet 5.5 が同じ以上なら「Sonnet 5.5 に切り替える」を押すと、すべての解析が切り替わります。
+    </div>
+    <div id="model-compare-now" style="font-size:13px;color:#374151;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="apikey-save" style="width:auto;padding:8px 16px;font-size:13px" id="model-compare-start" onclick="startModelCompare()">比較テストを始める</button>
+    </div>
+    <div id="model-compare-summary" style="font-size:13px;margin-bottom:10px"></div>
+    <div id="model-compare-list"></div>
+  </div>
+
   <!-- AI解析回数ランキング（オーナー指示 2026-11-11） -->
   <div class="card" style="margin-bottom:20px">
     <h2>🤖 AI解析回数ランキング（直近30日・上位20人）</h2>
@@ -2484,6 +2499,86 @@
     }
   }
 
+  // ── 解析モデルの比較・切り替え（オーナー指示 2026-11-28） ──
+  let _mcTimer = null;
+  function _mcB(r) {
+    if (!r) return '—';
+    if (r.error) return `<span style="color:#DC2626">失敗（${escapeHtml(r.error)}）</span>`;
+    const foods = (r.foods || []).map(f => `${escapeHtml(f.n)}${f.b ? ' <b>B' + escapeHtml(String(f.b)) + '</b>' : ''}`).join('・');
+    return `<div style="font-size:18px;font-weight:800">B ${escapeHtml(String(r.b ?? '—'))}</div>`
+      + `<div style="font-size:11px;color:#6B7280;line-height:1.5">${foods}</div>`
+      + `<div style="font-size:11px;color:#9CA3AF">${escapeHtml(String(r.sec ?? ''))}秒</div>`;
+  }
+  async function loadModelCompare() {
+    const now = document.getElementById('model-compare-now');
+    if (!now) return;
+    try {
+      const d = await (await fetch('/api/admin/model-compare')).json();
+      const L = d.labels || {};
+      const [ma, mb] = d.choices || [];
+      const other = d.current === mb ? ma : mb;
+      now.innerHTML = `いま使っているモデル：<b style="font-size:15px">${escapeHtml(L[d.current] || d.current)}</b>`
+        + `　<button class="apikey-save" style="width:auto;padding:4px 12px;font-size:12px" onclick="switchAnalysisModel('${escapeHtml(other)}')">${escapeHtml(L[other] || other)} に切り替える</button>`;
+      const c = d.compare || {};
+      const items = c.items || [];
+      const running = c.status === 'running';
+      document.getElementById('model-compare-start').disabled = running;
+      const s = d.summary || {};
+      let head = '';
+      if (!c.status) head = 'まだ比較テストをしていません。';
+      else if (running) head = `⏳ 解析中… ${items.length} / ${c.total ?? '?'} 枚（1枚あたり1分ほど）`;
+      else if (c.status === 'error') head = `<span style="color:#DC2626">⚠️ 途中で止まりました：${escapeHtml(c.error || '')}</span>`;
+      else head = `✅ ${escapeHtml((c.finished_at || '').replace('T', ' ').slice(0, 16))} に完了（${items.length}枚）`;
+      if (items.length) {
+        const sa = s.a || {}, sb = s.b || {};
+        const mae = x => x.corrected_mae == null ? '—' : `平均 ${x.corrected_mae} ずれ（${x.corrected_n}件）`;
+        head += `<div style="margin-top:6px;padding:10px 12px;background:#F9FAFB;border-radius:10px;line-height:1.8">`
+          + `あなたの判定（${s.graded}件）：<b>${escapeHtml(L[mb] || mb)} が近い ${s.b_better}</b>／<b>${escapeHtml(L[ma] || ma)} が近い ${s.a_better}</b>／同じ ${s.same}<br>`
+          + `会員が訂正した記録との差：${escapeHtml(L[ma] || ma)} ${mae(sa)}／${escapeHtml(L[mb] || mb)} ${mae(sb)}<br>`
+          + `平均の解析時間：${escapeHtml(L[ma] || ma)} ${sa.avg_sec ?? '—'}秒／${escapeHtml(L[mb] || mb)} ${sb.avg_sec ?? '—'}秒　失敗：${sa.errors ?? 0}件／${sb.errors ?? 0}件</div>`;
+      }
+      document.getElementById('model-compare-summary').innerHTML = head;
+      const g = d.grades || {};
+      const btn = (i, pick, label) => `<button onclick="gradeModelCompare(${i},'${g[String(i)] === pick ? '' : pick}')" style="padding:6px 10px;border-radius:8px;border:1.5px solid ${g[String(i)] === pick ? '#7C3AED' : '#E5E7EB'};background:${g[String(i)] === pick ? '#EDE9FE' : '#fff'};font-size:12px;font-weight:700;cursor:pointer">${label}</button>`;
+      document.getElementById('model-compare-list').innerHTML = items.map((it, i) => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid #F3F4F6;flex-wrap:wrap">
+          ${it.src ? `<img src="${escapeHtml(it.src)}" style="width:110px;height:110px;object-fit:cover;border-radius:8px">` : '<div style="width:110px;height:110px;background:#F3F4F6;border-radius:8px;font-size:11px;color:#9CA3AF;display:flex;align-items:center;justify-content:center">写真は削除済み</div>'}
+          <div style="flex:1;min-width:220px">
+            <div style="font-size:11px;color:#9CA3AF">${escapeHtml(it.date || '')}　会員の記録 B ${escapeHtml(String(it.final_b ?? '—'))}${it.corrected ? '（会員が訂正済み）' : ''}</div>
+            <div style="display:flex;gap:10px;margin:4px 0">
+              <div style="flex:1"><div style="font-size:11px;font-weight:800;color:#6B7280">${escapeHtml(L[ma] || ma)}</div>${_mcB(it.a)}</div>
+              <div style="flex:1"><div style="font-size:11px;font-weight:800;color:#7C3AED">${escapeHtml(L[mb] || mb)}</div>${_mcB(it.b)}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${btn(i, 'a', escapeHtml(L[ma] || ma) + ' が近い')}${btn(i, 'same', '同じ')}${btn(i, 'b', escapeHtml(L[mb] || mb) + ' が近い')}</div>
+          </div>
+        </div>`).join('');
+      clearTimeout(_mcTimer);
+      if (running) _mcTimer = setTimeout(loadModelCompare, 8000);
+    } catch (e) {
+      now.textContent = '読み込みに失敗しました';
+    }
+  }
+  async function startModelCompare() {
+    if (!confirm('直近の写真（最大20枚）を両方のモデルで解析します。費用はおよそ150円です。始めますか？')) return;
+    const r = await fetch('/api/admin/model-compare/start', { method: 'POST' });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || '開始できませんでした'); }
+    setTimeout(loadModelCompare, 1500);
+  }
+  async function gradeModelCompare(i, pick) {
+    await fetch('/api/admin/model-compare/grade', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ i, pick }),
+    });
+    loadModelCompare();
+  }
+  async function switchAnalysisModel(model) {
+    if (!confirm(`会員のすべての解析を ${model} に切り替えます。よろしいですか？（あとで戻せます）`)) return;
+    const r = await fetch('/api/admin/analysis-model', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }),
+    });
+    if (!r.ok) { alert('切り替えに失敗しました'); return; }
+    loadModelCompare();
+  }
+
   // 100ポイント（キーラン君ステッカー）に届いた会員の一覧（ジムでステッカーを渡すため）
   function stickerList(d) {
     const list = d.sticker_members || [];
@@ -2720,7 +2815,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadWeightOutliers(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadWeightOutliers(), loadModelCompare(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
