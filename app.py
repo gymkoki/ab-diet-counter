@@ -1035,6 +1035,19 @@ def init_db():
             )
         """)
 
+        # リオールジム会員（無料）の登録（オーナー指示 2026-11-28：コード＋本名＋ニックネーム。
+        # 本名をオーナーが見て、ジムの会員でない人は管理画面で外す）。status は active / removed。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS gym_members (
+                user_id    TEXT PRIMARY KEY,
+                real_name  TEXT NOT NULL,
+                nickname   TEXT NOT NULL,
+                status     TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
         # 会員本人が履歴から「その日に何を食べたか」を見返すための食事アルバム（会員の声 2026-10-14）。
         # daily_meals は5日で消えるため、小さなサムネ・料理名・Bだけを MEAL_ALBUM_RETAIN_DAYS 日残す。
         cur.execute("""
@@ -1460,8 +1473,9 @@ def _member_gate_blocked(uid, token=None):
     if mode == "account":
         # 有料化後：アカウント登録済みの記録で、その通行証を持つ端末だけ（新しいIDを作って無料期間を繰り返せないように）。
         # DBが読めないときは止めない（合言葉と同じ方針）。
+        # リオールジム会員として登録した人（コード＋本名）は、アカウントが無くても通す。
         try:
-            has_account = bool(_account_by_uid(uid))
+            has_account = bool(_account_by_uid(uid)) or _is_gym_member(uid)
         except Exception:
             return None
         if has_account and _is_unlocked(uid, token):
@@ -1481,13 +1495,14 @@ def member_status():
     account_required = False
     if mode == "account":
         try:
-            account_required = not (_account_by_uid(uid) and _is_unlocked(uid, token))
+            account_required = not ((_account_by_uid(uid) or _is_gym_member(uid)) and _is_unlocked(uid, token))
         except Exception:
             account_required = False
     return jsonify({
         "gate_active": mode == "passphrase",
         "unlocked":    _is_unlocked(uid, token),
         "account_required": account_required,
+        "gym_signup":  _gym_signup_open_safe(),
         "start_date":  MEMBER_GATE_START,
     })
 
@@ -6848,6 +6863,32 @@ def admin_users():
     return jsonify({"users": users})
 
 
+def _save_display_name(uid, name):
+    """表示名（ニックネーム）を保存する。管理画面・レポートはこの名前で出す。"""
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            if USE_PG:
+                cur.execute(
+                    """INSERT INTO user_profile (user_id, display_name, updated_at)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (user_id) DO UPDATE SET display_name=%s, updated_at=%s""",
+                    (uid, name, ts, name, ts)
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO user_profile (user_id, display_name, updated_at)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, updated_at=excluded.updated_at""",
+                    (uid, name, ts)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+
 @app.route("/api/profile", methods=["POST"])
 def api_profile():
     """会員がアプリの設定画面で入力した表示名を保存（スタッフ確認用）。
@@ -6859,28 +6900,7 @@ def api_profile():
         return jsonify({"error": "パラメータ不足"}), 400
 
     if name:
-        ts = datetime.datetime.now(JST).isoformat()
-        with _db_lock:
-            conn = _get_conn()
-            try:
-                cur = conn.cursor()
-                if USE_PG:
-                    cur.execute(
-                        """INSERT INTO user_profile (user_id, display_name, updated_at)
-                           VALUES (%s, %s, %s)
-                           ON CONFLICT (user_id) DO UPDATE SET display_name=%s, updated_at=%s""",
-                        (uid, name, ts, name, ts)
-                    )
-                else:
-                    cur.execute(
-                        """INSERT INTO user_profile (user_id, display_name, updated_at)
-                           VALUES (?, ?, ?)
-                           ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, updated_at=excluded.updated_at""",
-                        (uid, name, ts)
-                    )
-                conn.commit()
-            finally:
-                conn.close()
+        _save_display_name(uid, name)
     _save_user_goal(uid, data.get("gender") or "", data.get("goal") or "")
     _save_user_height(uid, data.get("height_cm"))
     return jsonify({"ok": True})
@@ -9423,6 +9443,7 @@ _BACKUP_TABLES = [
     "daily_b_count", "daily_weight", "daily_exercise", "daily_meals",
     "daily_diary", "user_profile", "staff_comments", "usage_log", "settings",
     "accounts",   # メール・パスワード（ハッシュ）と記録の対応。無いと復元後にログインできない
+    "gym_members",   # リオールジム会員（無料）の登録。無いと復元後に会員が有料扱いになる
     "weight_removed",   # 管理画面で消した体重の入力ミス（無いと復元後に端末から送り直されて復活する）
 ]
 
@@ -11022,6 +11043,7 @@ def billing_state(uid, today=None, preview=False):
         "trial_days": BILLING_TRIAL_DAYS, "start_date": start.isoformat() if start else None,
         "required": False, "state": "off", "trial_ends": None,
         "current_period_end": None, "cancel_at_period_end": False, "can_manage": False,
+        "gym": _gym_info_safe(uid, preview=preview),
     }
     if not (active or preorder):
         return base
@@ -11029,6 +11051,10 @@ def billing_state(uid, today=None, preview=False):
     row = _billing_row(uid) or {}
     if row.get("customer_id"):
         base["can_manage"] = True
+    # リオールジム会員（コード＋本名で登録し、オーナーが外していない人）は無料
+    if base["gym"].get("member"):
+        base["state"] = "gym"
+        return base
     if row.get("status") in BILLING_OK_STATUSES:
         base.update(state="subscribed", current_period_end=row.get("current_period_end"),
                     cancel_at_period_end=bool(row.get("cancel_at_period_end")))
@@ -11073,6 +11099,197 @@ def _billing_blocked(uid):
     if st.get("required"):
         return jsonify({"error": BILLING_REQUIRED_MESSAGE, "billing_required": True}), 402
     return None
+
+
+# ══════════════════════════════════════════════════════════════
+#  リオールジム会員は無料（オーナー指示 2026-11-28）
+#  「コードにしつつ、ニックネームと本名を登録させて、本名を見てリオールジムの会員ではない人をはじく」。
+#  ・会員はアプリで「ジム会員コード・本名・ニックネーム」を1回入れる → その記録(user_id)は無料（billing_state の "gym"）。
+#  ・オーナーは管理画面の一覧で本名を見て、会員でない人を「外す」（status=removed。外した人は同じ記録では登録し直せない）。
+#  ・コードは管理画面で変えられる（既定は今の合言葉）。変えても登録済みの人はそのまま。総当たりは合言葉と同じ回数制限。
+#  ・登録すると通行証も渡す（有料化後は合言葉が終わるため、ジム会員はアカウントが無くてもこれで使える）。
+#  ・受付は「管理画面でオン」か「有料化が始まった後」だけ。それまでは画面に出さない（会員への告知にならないように）。
+#  ・本名はスタッフの確認のためだけに使い、ほかの会員やレポート・AIには出さない。
+# ══════════════════════════════════════════════════════════════
+GYM_CODE_KEY        = "gym_member_code"
+GYM_SIGNUP_OPEN_KEY = "gym_signup_open"
+GYM_NAME_MAX        = 30
+
+
+def _gym_code():
+    try:
+        v = (_get_setting(GYM_CODE_KEY, "") or "").strip()
+    except Exception:
+        v = ""
+    return v or _member_password()
+
+
+def _gym_signup_open():
+    return _setting_on(GYM_SIGNUP_OPEN_KEY) or _billing_active()
+
+
+def _gym_signup_open_safe():
+    try:
+        return _gym_signup_open()
+    except Exception:
+        return False
+
+
+def _gym_row(uid):
+    uid = (uid or "").strip()
+    if not uid:
+        return None
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT real_name, nickname, status, created_at FROM gym_members WHERE user_id={PH}", (uid,))
+        r = cur.fetchone()
+    finally:
+        conn.close()
+    return {"real_name": r[0], "nickname": r[1], "status": r[2], "created_at": r[3]} if r else None
+
+
+def _is_gym_member(uid):
+    """オーナーが外していないジム会員か。DBが読めなければ例外（呼ぶ側が方針を決める）。"""
+    row = _gym_row(uid)
+    return bool(row and row["status"] == "active")
+
+
+def _gym_info_safe(uid, preview=False):
+    """画面に渡すジム会員の状況。判定できないときは「受付なし・会員でない」。"""
+    try:
+        row = _gym_row(uid)
+        return {
+            "open": _gym_signup_open() or bool(preview and _billing_start_date() is not None),
+            "member": bool(row and row["status"] == "active"),
+            "removed": bool(row and row["status"] == "removed"),
+            "nickname": (row or {}).get("nickname") if row and row["status"] == "active" else None,
+        }
+    except Exception as e:
+        app.logger.warning("gym member check failed: %s", e)
+        return {"open": False, "member": False, "removed": False, "nickname": None}
+
+
+def _clean_name(v):
+    return re.sub(r"\s+", " ", str(v or "")).strip()[:GYM_NAME_MAX]
+
+
+@app.route("/api/gym/register", methods=["POST"])
+def api_gym_register():
+    """リオールジム会員として登録する（コード＋本名＋ニックネーム）。成功すると通行証を返す。"""
+    data = request.get_json(silent=True) or {}
+    uid = (data.get("user_id") or "").strip()
+    token = (request.headers.get("X-Device-Token") or data.get("token") or "").strip()
+    code = str(data.get("code") or "").strip()
+    real_name = _clean_name(data.get("real_name"))
+    nickname = _clean_name(data.get("nickname"))
+    ip = _client_ip()
+
+    if not (_gym_signup_open_safe() or (data.get("preview") and _billing_start_date() is not None)):
+        return jsonify({"error": "現在は受け付けていません。"}), 403
+    locked = _unlock_locked_for(ip)
+    if locked > 0:
+        return jsonify({"error": f"入力を{MEMBER_UNLOCK_MAX_FAILS}回間違えたため、しばらく入力できません。"
+                                 f"約{max(1, locked // 60)}分後にもう一度お試しください。", "locked_sec": locked}), 429
+    if not uid:
+        return jsonify({"error": "端末を識別できませんでした。アプリを開き直してください。"}), 400
+    if not real_name or not nickname:
+        return jsonify({"error": "本名とニックネームを入力してください。"}), 400
+    if not code or not secrets.compare_digest(code, _gym_code()):
+        _record_unlock_fail(ip)
+        left = max(0, MEMBER_UNLOCK_MAX_FAILS - len(_unlock_fails.get(ip, [])))
+        return jsonify({"error": "ジム会員コードが違います。ジムのスタッフにご確認ください。", "attempts_left": left}), 401
+    _clear_unlock_fails(ip)
+
+    try:
+        # 通行証のある記録は、その持ち主の端末だけ（他人の記録をジム会員にしない）
+        saved = _device_token(uid)
+        if saved and not (token and secrets.compare_digest(saved, token)):
+            return jsonify({"error": "この端末からは登録できません。アプリを開き直してください。"}), 403
+        row = _gym_row(uid)
+        if row and row["status"] == "removed":
+            return jsonify({"error": "登録できませんでした。ジムのスタッフにお問い合わせください。", "removed": True}), 403
+        ts = datetime.datetime.now(JST).isoformat()
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                cur = conn.cursor()
+                if row:
+                    cur.execute(f"UPDATE gym_members SET real_name={PH}, nickname={PH}, updated_at={PH} WHERE user_id={PH}",
+                                (real_name, nickname, ts, uid))
+                else:
+                    cur.execute(f"INSERT INTO gym_members (user_id, real_name, nickname, status, created_at, updated_at) "
+                                f"VALUES ({PH},{PH},{PH},'active',{PH},{PH})", (uid, real_name, nickname, ts, ts))
+                conn.commit()
+            finally:
+                conn.close()
+        # アプリの表示名はニックネーム（管理画面・レポートもこちらを出す。本名は出さない）
+        _save_display_name(uid, nickname)
+        new_token = _device_token_for(uid)
+    except Exception as e:
+        app.logger.error("gym register failed: %s", type(e).__name__)
+        return jsonify({"error": "登録に失敗しました。時間をおいてお試しください。"}), 503
+    return jsonify({"ok": True, "token": new_token, "nickname": nickname})
+
+
+@app.route("/api/admin/gym-members")
+@_admin_required
+def admin_gym_members():
+    """【管理者専用】ジム会員として登録した人の一覧（本名つき）と受付の設定。"""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT g.user_id, g.real_name, g.nickname, g.status, g.created_at, p.display_name "
+                    "FROM gym_members g LEFT JOIN user_profile p ON p.user_id = g.user_id "
+                    "ORDER BY g.created_at DESC")
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    members = [{"user_id": r[0], "real_name": r[1], "nickname": r[2], "status": r[3],
+                "created_at": r[4], "display_name": r[5]} for r in rows]
+    return jsonify({
+        "signup_open_setting": _setting_on(GYM_SIGNUP_OPEN_KEY),
+        "signup_open": _gym_signup_open_safe(),
+        "code": _gym_code(),
+        "members": members,
+        "active": sum(1 for x in members if x["status"] == "active"),
+    })
+
+
+@app.route("/api/admin/gym-members/settings", methods=["POST"])
+@_admin_required
+def admin_gym_members_settings():
+    data = request.get_json(silent=True) or {}
+    if "signup_open" in data:
+        _set_setting(GYM_SIGNUP_OPEN_KEY, "1" if data.get("signup_open") else "0")
+    if "code" in data:
+        code = str(data.get("code") or "").strip()
+        if not (3 <= len(code) <= 20):
+            return jsonify({"error": "コードは3〜20文字にしてください。"}), 400
+        _set_setting(GYM_CODE_KEY, code)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/gym-members/<user_id>", methods=["POST"])
+@_admin_required
+def admin_gym_member_update(user_id):
+    """会員でない人を外す（removed）／間違えて外した人を戻す（active）。"""
+    status = (request.get_json(silent=True) or {}).get("status")
+    if status not in ("active", "removed"):
+        return jsonify({"error": "status は active か removed"}), 400
+    ts = datetime.datetime.now(JST).isoformat()
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"UPDATE gym_members SET status={PH}, updated_at={PH} WHERE user_id={PH}", (status, ts, user_id))
+            n = cur.rowcount
+            conn.commit()
+        finally:
+            conn.close()
+    if not n:
+        return jsonify({"error": "見つかりません"}), 404
+    return jsonify({"ok": True, "status": status})
 
 
 def _app_base_url():

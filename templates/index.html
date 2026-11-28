@@ -844,6 +844,7 @@
     .seg-row { display:flex; gap:8px; }
     .seg-btn { flex:1; padding:12px 6px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-size:17px; font-weight:700; color:#5C564F; cursor:pointer; transition:all .15s; }
     .seg-btn.sel { border-color:var(--primary); background:var(--primary-soft); color:var(--primary-dark); box-shadow:0 0 0 1px var(--primary) inset; }
+    .gym-lb { display:block; font-size:14px; font-weight:700; color:#44403B; margin:10px 0 4px; }
     .goal-preview { margin-top:16px; padding:12px 14px; background:var(--primary-soft); border-radius:var(--radius-sm); font-size:17px; font-weight:700; color:var(--primary-dark); text-align:center; line-height:1.6; }
     .summary-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); }
     .summary-row:last-child { border-bottom:none; }
@@ -1262,6 +1263,12 @@
 <!-- 設定ビュー -->
 <div id="view-settings" style="display:none;padding-bottom:80px">
   <!-- 有料化（2026-11-01〜）：ご利用プラン。課金が始まるまでは表示しない。 -->
+  <!-- リオールジム会員は無料（2026-11-28）：コード＋本名＋ニックネームで登録。受付が始まるまでは表示しない。 -->
+  <div class="setting-card" id="gym-card" style="display:none">
+    <h2>🏋️ リオールジム会員の方</h2>
+    <div id="gym-card-status" style="font-size:16px;line-height:1.8;color:#44403B;margin-bottom:12px"></div>
+    <button class="btn-save" id="gym-card-btn" style="display:none" onclick="openGymOverlay()">ジム会員として登録する（無料）</button>
+  </div>
   <div class="setting-card" id="billing-card" style="display:none">
     <h2>💳 ご利用プラン</h2>
     <div id="billing-card-status" style="font-size:16px;line-height:1.8;color:#44403B;margin-bottom:12px"></div>
@@ -1555,7 +1562,30 @@
     <div id="billing-error" style="display:none;flex-shrink:0;margin-top:8px;font-size:14px;color:#DC2626;line-height:1.6"></div>
     <button id="billing-start-btn" onclick="startBillingCheckout()" disabled
             style="flex-shrink:0;width:100%;margin-top:12px;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer;opacity:0.45">申し込む（お支払いページへ）</button>
+    <button id="billing-gym-btn" onclick="closeBillingOverlay();openGymOverlay()" style="display:none;flex-shrink:0;width:100%;margin-top:8px;padding:12px;border-radius:14px;border:2px solid #FF6B35;background:white;color:#EE5520;font-size:16px;font-weight:800;cursor:pointer">🏋️ リオールジム会員の方はこちら（無料）</button>
     <button id="billing-later-btn" onclick="closeBillingOverlay()" style="display:none;flex-shrink:0;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">閉じる</button>
+  </div>
+</div>
+
+<!-- リオールジム会員の登録（2026-11-28）：ジム会員コード・本名・ニックネーム -->
+<div id="gym-overlay" style="display:none;position:fixed;inset:0;z-index:890;background:rgba(23,19,16,0.72);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px">
+  <div class="modal-card has-scroll" style="background:white;border-radius:20px;padding:24px 22px;width:100%;max-width:360px;box-shadow:0 24px 48px rgba(0,0,0,0.22)">
+   <div class="modal-scroll">
+    <div style="font-size:15px;font-weight:700;color:#FF6B35;letter-spacing:0.14em;margin-bottom:8px">REALL GYM</div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:8px">リオールジム会員の登録（無料）</div>
+    <div style="font-size:15px;line-height:1.8;color:#44403B;margin-bottom:12px">リオールジムの会員の方は、無料でご利用いただけます。ジムからお知らせしたコードを入れてください。</div>
+    <label class="gym-lb">ジム会員コード</label>
+    <input class="setting-input" id="gym-code-input" inputmode="numeric" autocomplete="one-time-code" placeholder="ジムからお知らせしたコード">
+    <label class="gym-lb">本名（フルネーム）</label>
+    <input class="setting-input" id="gym-real-name" autocomplete="name" maxlength="30" placeholder="例：山田 花子">
+    <label class="gym-lb">ニックネーム（アプリに表示する名前）</label>
+    <input class="setting-input" id="gym-nickname" autocomplete="nickname" maxlength="30" placeholder="例：はなこ">
+    <div style="margin-top:10px;font-size:13px;color:#85807A;line-height:1.7">本名は、ジムのスタッフが会員の方かどうかを確かめるためだけに使い、ほかの会員には表示されません。会員の方でないことが分かった場合は、無料の対象から外れます。</div>
+   </div>
+    <div id="gym-error" style="display:none;flex-shrink:0;margin-top:8px;font-size:14px;color:#DC2626;line-height:1.6"></div>
+    <button id="gym-submit-btn" onclick="submitGymRegister()" style="flex-shrink:0;width:100%;margin-top:12px;padding:14px;border-radius:14px;border:none;background:#FF6B35;color:white;font-size:18px;font-weight:700;cursor:pointer">登録する</button>
+    <button id="gym-account-btn" onclick="closeGymOverlay();_openAccountCard()" style="display:none;flex-shrink:0;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:15px;font-weight:700;cursor:pointer">ジム会員ではない方はこちら</button>
+    <button id="gym-close-btn" onclick="closeGymOverlay()" style="flex-shrink:0;width:100%;margin-top:4px;padding:10px;border-radius:14px;border:none;background:transparent;color:#85807A;font-size:16px;font-weight:700;cursor:pointer">閉じる</button>
   </div>
 </div>
 
@@ -2094,6 +2124,15 @@ async function confirmRegistration() {
 // 有料化後、アカウントが必要と言われたとき：設定のアカウントの欄へ案内する
 function openAccountRequired(msg) {
   closeMemberGate();
+  // リオールジム会員はアカウントの代わりに「ジム会員の登録」で使える（2026-11-28）
+  if (_gymSignupOpen && !(_billingState && _billingState.gym && _billingState.gym.member)) {
+    openGymOverlay({ fromAccount: true });
+    return;
+  }
+  _openAccountCard(msg);
+}
+
+function _openAccountCard(msg) {
   switchView('settings');
   setTimeout(() => {
     const card = document.getElementById('account-card');
@@ -3651,6 +3690,7 @@ async function checkMemberGate() {
     const r = await fetch(`/api/member-status?${q}`);
     if (!r.ok) return;
     const d = await r.json();
+    _gymSignupOpen = !!d.gym_signup;
     if (d.account_required) openAccountRequired();
     else if (d.gate_active && !d.unlocked) openMemberGate();
   } catch (e) {}
@@ -3684,7 +3724,9 @@ async function checkBilling() {
     if (!r.ok) return;
     _billingState = await r.json();
   } catch (e) { return; }
+  if (_billingState && _billingState.gym && _billingState.gym.open) _gymSignupOpen = true;
   renderBillingCard();
+  renderGymCard();
   if (_billingState && _billingState.required) openBillingOverlay(false);
 }
 
@@ -3698,7 +3740,9 @@ function renderBillingCard() {
   const sub = document.getElementById('billing-card-subscribe');
   const manage = document.getElementById('billing-card-manage');
   let html = '';
-  if (st.state === 'subscribed') {
+  if (st.state === 'gym') {
+    html = '🏋️ <b>リオールジム会員</b>のため、無料でご利用いただけます。';
+  } else if (st.state === 'subscribed') {
     html = '✅ <b>月額プラン（1,100円・税込）</b>をご利用中です。';
     if (st.cancel_at_period_end && st.current_period_end) {
       html += `<br>解約済みです。<b>${_fmtJpDate(st.current_period_end)}</b>までご利用いただけます。`;
@@ -3713,7 +3757,7 @@ function renderBillingCard() {
     html = 'ABダイエットは<b>月額1,100円（税込）</b>でご利用いただけます。';
   }
   status.innerHTML = html;
-  sub.style.display = (st.state === 'subscribed') ? 'none' : '';
+  sub.style.display = (st.state === 'subscribed' || st.state === 'gym') ? 'none' : '';
   manage.style.display = st.can_manage ? '' : 'none';
 }
 
@@ -3733,6 +3777,8 @@ function openBillingOverlay(fromSettings) {
   }
   // 申し込みが必要な人は閉じられない（解析が止まっているため）。設定から開いたときは閉じられる。
   document.getElementById('billing-later-btn').style.display = (fromSettings || !st.required) ? '' : 'none';
+  const gymBtn = document.getElementById('billing-gym-btn');
+  if (gymBtn) gymBtn.style.display = (_gymSignupOpen && !(st.gym && st.gym.removed)) ? '' : 'none';
   document.getElementById('billing-agree').checked = false;
   _billingAgreeChanged();
   _billingError('');
@@ -3786,6 +3832,96 @@ async function startBillingCheckout() {
     _billingError('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
   }
   btn.disabled = false; btn.textContent = '申し込む（お支払いページへ）';
+}
+
+// ═══════════════════════════════════════════
+//  リオールジム会員は無料（オーナー指示 2026-11-28）
+//  ジム会員コード・本名・ニックネームを1回入れると、その記録は無料（サーバーの billing_state が "gym"）。
+//  本名はオーナーが管理画面で会員かどうかを確かめるためだけに使う。受付が始まるまでは画面に出さない。
+// ═══════════════════════════════════════════
+let _gymSignupOpen = false;
+
+function renderGymCard() {
+  const card = document.getElementById('gym-card');
+  if (!card) return;
+  const g = (_billingState && _billingState.gym) || {};
+  if (!g.open && !g.member) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const status = document.getElementById('gym-card-status');
+  const btn = document.getElementById('gym-card-btn');
+  if (g.member) {
+    status.innerHTML = `✅ リオールジム会員として登録済みです（${esc(g.nickname || '')} さん）。<br>無料でご利用いただけます。`;
+    btn.style.display = 'none';
+  } else if (g.removed) {
+    status.innerHTML = 'ジム会員の登録を確認できませんでした。ご不明な点はジムのスタッフにお声かけください。';
+    btn.style.display = 'none';
+  } else {
+    status.innerHTML = 'リオールジムの会員の方は、<b>ジム会員コード</b>と<b>お名前</b>を登録すると無料でご利用いただけます。';
+    btn.style.display = '';
+  }
+}
+
+function openGymOverlay(opts) {
+  const ov = document.getElementById('gym-overlay');
+  if (!ov) return;
+  const fromAccount = !!(opts && opts.fromAccount);
+  const nick = document.getElementById('gym-nickname');
+  const p = getProfile() || {};
+  if (nick && !nick.value && p.name) nick.value = p.name;
+  document.getElementById('gym-account-btn').style.display = fromAccount ? '' : 'none';
+  _gymError('');
+  ov.style.display = 'flex';
+}
+
+function closeGymOverlay() {
+  const ov = document.getElementById('gym-overlay');
+  if (ov) ov.style.display = 'none';
+}
+
+function _gymError(msg) {
+  const el = document.getElementById('gym-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function submitGymRegister() {
+  const code = (document.getElementById('gym-code-input').value || '').trim();
+  const realName = (document.getElementById('gym-real-name').value || '').trim();
+  const nickname = (document.getElementById('gym-nickname').value || '').trim();
+  if (!code) { _gymError('ジム会員コードを入力してください'); return; }
+  if (!realName || !nickname) { _gymError('本名とニックネームを入力してください'); return; }
+  const btn = document.getElementById('gym-submit-btn');
+  btn.disabled = true; btn.textContent = '登録中…';
+  _gymError('');
+  try {
+    const r = await fetch('/api/gym/register', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, memberHeaders()),
+      body: JSON.stringify({ user_id: USER_ID, code, real_name: realName, nickname, preview: _billingPreview() }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      if (d.token) setMemberToken(d.token);
+      // アプリに表示する名前もニックネームにそろえる（サーバーには登録のときに保存済み）
+      try {
+        const prof = getProfile() || {};
+        prof.name = d.nickname || nickname;
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(prof));
+        localStorage.setItem('ab-diet-name-synced', prof.name);
+      } catch (e) {}
+      document.getElementById('gym-code-input').value = '';
+      closeGymOverlay();
+      closeBillingOverlay();
+      await checkBilling();
+      alert('✅ リオールジム会員として登録しました。無料でご利用いただけます。');
+      return;
+    }
+    _gymError(d.error || '登録できませんでした。');
+  } catch (e) {
+    _gymError('通信エラーが発生しました。電波の良いところでもう一度お試しください。');
+  } finally {
+    btn.disabled = false; btn.textContent = '登録する';
+  }
 }
 
 async function openBillingPortal() {

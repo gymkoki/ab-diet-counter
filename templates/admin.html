@@ -623,6 +623,24 @@
     <div id="billing-admin-subs" style="margin-top:14px"></div>
   </div>
 
+  <!-- リオールジム会員は無料（オーナー指示 2026-11-28：コード＋本名＋ニックネームで登録、本名を見て会員でない人を外す） -->
+  <div class="card" id="gym-admin-card" style="margin-bottom:20px">
+    <h2>🏋️ リオールジム会員（無料）</h2>
+    <div style="font-size:12px;color:#9CA3AF;margin-bottom:10px;line-height:1.6">
+      会員はアプリの設定から<b>ジム会員コード・本名・ニックネーム</b>を1回入れると、有料化後も無料で使えます。
+      下の一覧で<b>本名を見て、リオールジムの会員でない人は「外す」</b>を押してください（外した人は有料プランの対象になります）。
+      本名はこの一覧にだけ表示され、ほかの会員・レポート・AIには出ません。
+      受付は「受け付ける」をオンにしたとき、または有料化が始まったあと（会員のアプリに登録の欄が出ます）。
+    </div>
+    <div id="gym-admin-now" style="font-size:13px;color:#374151;line-height:1.9;margin-bottom:8px"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;margin-bottom:10px">
+      <label><input type="checkbox" id="gym-signup-open" onchange="saveGymSignupOpen(this.checked)"> 有料化の前から登録を受け付ける</label>
+      <span>ジム会員コード：<input id="gym-code" class="legal-in" style="width:110px"> <button class="apikey-save" style="width:auto;padding:6px 14px;font-size:12px" onclick="saveGymCode()">コードを変更</button></span>
+    </div>
+    <div id="gym-admin-status" style="font-size:13px;margin-bottom:6px"></div>
+    <div id="gym-admin-list"></div>
+  </div>
+
   <!-- クレジット残高の基準 -->
   <div class="card" style="margin-bottom:20px">
     <h2>💳 クレジット残高の基準</h2>
@@ -2386,6 +2404,70 @@
     await _postBillingSettings({ [key]: on });
   }
 
+  // リオールジム会員（無料）
+  async function loadGymMembers() {
+    const now = document.getElementById('gym-admin-now');
+    if (!now) return;
+    let d;
+    try { d = await (await fetch('/api/admin/gym-members')).json(); }
+    catch (e) { now.textContent = '読み込みに失敗しました'; return; }
+    now.innerHTML = `受付：${d.signup_open ? '<b style="color:#065F46">受付中</b>' : '<b style="color:#6B7280">受付前（会員の画面には出ていません）</b>'}`
+      + `　／　登録済みのジム会員：<b>${d.active}</b> 名`;
+    document.getElementById('gym-signup-open').checked = !!d.signup_open_setting;
+    const codeIn = document.getElementById('gym-code');
+    if (codeIn && document.activeElement !== codeIn) codeIn.value = d.code || '';
+    const list = document.getElementById('gym-admin-list');
+    const ms = d.members || [];
+    if (!ms.length) { list.innerHTML = '<div style="color:#9CA3AF;font-size:13px;text-align:center;padding:10px">まだ登録はありません</div>'; return; }
+    list.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+      + '<tr style="text-align:left;color:#6B7280"><th style="padding:6px">本名</th><th style="padding:6px">ニックネーム</th><th style="padding:6px">登録日</th><th style="padding:6px">状態</th><th></th></tr>'
+      + ms.map(m => {
+          const removed = m.status === 'removed';
+          return `<tr style="border-top:1px solid #F3F4F6;${removed ? 'color:#9CA3AF' : ''}">`
+            + `<td style="padding:6px;font-weight:800">${escapeHtml(m.real_name)}</td>`
+            + `<td style="padding:6px">${escapeHtml(m.nickname)}</td>`
+            + `<td style="padding:6px">${escapeHtml(String(m.created_at || '').slice(0, 10))}</td>`
+            + `<td style="padding:6px">${removed ? '外した（有料の対象）' : '✅ 無料'}</td>`
+            + `<td style="padding:6px;text-align:right"><button class="apikey-save" style="width:auto;padding:4px 12px;font-size:12px;${removed ? '' : 'background:#DC2626'}" `
+            + `data-uid="${escapeHtml(m.user_id)}" data-name="${escapeHtml(m.real_name)}" data-to="${removed ? 'active' : 'removed'}" onclick="setGymMember(this)">${removed ? '戻す' : '外す'}</button></td></tr>`;
+        }).join('') + '</table>';
+  }
+
+  async function setGymMember(btn) {
+    const to = btn.dataset.to, name = btn.dataset.name;
+    const msg = to === 'removed'
+      ? `${name} さんをジム会員（無料）から外します。\n有料化後は、月額プランへの申し込みが必要になります。よろしいですか？`
+      : `${name} さんをジム会員（無料）に戻します。よろしいですか？`;
+    if (!confirm(msg)) return;
+    const r = await fetch('/api/admin/gym-members/' + encodeURIComponent(btn.dataset.uid), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: to }),
+    });
+    document.getElementById('gym-admin-status').textContent = r.ok ? '保存しました' : '保存に失敗しました';
+    await loadGymMembers();
+  }
+
+  async function _postGymSettings(body) {
+    const r = await fetch('/api/admin/gym-members/settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    document.getElementById('gym-admin-status').textContent = r.ok ? '保存しました' : (d.error || '保存に失敗しました');
+    await loadGymMembers();
+  }
+
+  async function saveGymSignupOpen(on) {
+    if (on && !confirm('ジム会員の登録を受け付けます。\n会員のアプリの設定画面に「リオールジム会員の登録」が表示されるようになります。よろしいですか？')) {
+      document.getElementById('gym-signup-open').checked = false; return;
+    }
+    await _postGymSettings({ signup_open: on });
+  }
+
+  async function saveGymCode() {
+    const code = document.getElementById('gym-code').value.trim();
+    if (!confirm(`ジム会員コードを「${code}」に変更します。\n登録済みの会員はそのまま無料です。これから登録する人は新しいコードを使います。よろしいですか？`)) return;
+    await _postGymSettings({ code });
+  }
+
   async function saveLegalInfo() {
     const info = {};
     ['seller_name', 'manager_name', 'address', 'phone', 'email'].forEach(k => {
@@ -2720,7 +2802,7 @@
 
   async function refresh() {
     try {
-      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadWeightOutliers(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
+      const jobs = [loadOverview(), loadTrend(), loadUsers(), loadWeightInsights(), loadFeedback(), loadSurveyResults(), loadFeatureUsage(), loadAnalysisRanking(), loadWeightOutliers(), loadActionUsage(), loadSpotlight(), loadCoachMessages(), loadCoachRecipients(), loadAttentionFlags(), loadAchieverNutrition(), loadServerHealth(), loadCreditBase(), loadMemberGate(), loadSpecialMessage(), loadBillingAdmin(), loadGymMembers(), loadDietAnalysis(), loadRecordAnalysis(), loadDishAnalysis(), loadReportMail()];
       if (_cutDetailOpen) jobs.push(loadCutDetail());   // 減量メンバー詳細を開いていれば一緒に更新
       await Promise.all(jobs);
       const now = new Date();
