@@ -65,6 +65,9 @@
    表示の直前にサーバーで確保（`claim`）できた画面だけが出す**が約束。
    100ポイントの「キーラン君ステッカープレゼント」（`/api/meal-points/sticker`・`maybeShowSticker()`）も同じく1人1回だけ
    （100ポイント未満では確保できない・サーバーで確保できた画面だけが出す・ほかのお知らせが閉じるまで待つ）。
+9. **解析モデルの切り替えで解析が止まる**：Sonnet 5.5 に `thinking={"type":"disabled"}` を送ると 400 で全ての解析が失敗する。
+   AIを呼ぶ入口は `_analysis_model()` と `_thinking_off(model)`（または `create_and_parse` の置き換え）を通すこと。
+   管理画面で選べるモデルは `ANALYSIS_MODEL_CHOICES` だけ・比較テストは管理者専用で会員IDを画面に出さない。
 
 ### 指摘しなくてよいもの
 
