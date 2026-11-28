@@ -6619,6 +6619,7 @@ MODEL_COMPARE_PER_USER = 3          # 1人に偏らないように
 MODEL_COMPARE_STALE_SEC = 5 * 60    # 進み（updated_at）がこれより止まった「実行中」は中断とみなす（1枚は長くても約2分）
 MODEL_LABELS = {"claude-sonnet-5": "Sonnet 5", "claude-sonnet-5-5": "Sonnet 5.5"}
 _model_compare_lock = threading.Lock()
+_model_compare_grade_lock = threading.Lock()   # 判定の読み出し〜保存を一体に（続けて押しても前の判定が消えない）
 _model_compare_running = {"on": False}
 _MEAL_KEYS = ("food", "breakfast", "lunch", "dinner", "snack")
 
@@ -6828,17 +6829,18 @@ def admin_model_compare_grade():
         return jsonify({"error": "番号が正しくありません"}), 400
     if pick not in ("a", "b", "same", ""):
         return jsonify({"error": "判定が正しくありません"}), 400
-    run = _model_compare_load().get("started_at")
-    # 画面に出していた比較と、いまの比較が同じときだけ受け付ける（古い画面の判定を別の写真に付けない）
-    if body.get("run") != run:
-        return jsonify({"error": "比較テストが新しくなりました。画面を読み込み直してください。"}), 409
-    doc = _model_compare_load(MODEL_COMPARE_GRADES_KEY)
-    grades = doc.get("g") if doc.get("run") == run and isinstance(doc.get("g"), dict) else {}
-    if pick:
-        grades[str(i)] = pick
-    else:
-        grades.pop(str(i), None)
-    _set_setting(MODEL_COMPARE_GRADES_KEY, json.dumps({"run": run, "g": grades}))
+    with _model_compare_grade_lock:   # 本番は1ワーカー・複数スレッド（render.yaml）なので、このロックで足りる
+        run = _model_compare_load().get("started_at")
+        # 画面に出していた比較と、いまの比較が同じときだけ受け付ける（古い画面の判定を別の写真に付けない）
+        if body.get("run") != run:
+            return jsonify({"error": "比較テストが新しくなりました。画面を読み込み直してください。"}), 409
+        doc = _model_compare_load(MODEL_COMPARE_GRADES_KEY)
+        grades = doc.get("g") if doc.get("run") == run and isinstance(doc.get("g"), dict) else {}
+        if pick:
+            grades[str(i)] = pick
+        else:
+            grades.pop(str(i), None)
+        _set_setting(MODEL_COMPARE_GRADES_KEY, json.dumps({"run": run, "g": grades}))
     return jsonify({"ok": True, "grades": grades})
 
 

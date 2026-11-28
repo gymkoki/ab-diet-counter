@@ -240,3 +240,11 @@ def test_recent_progress_blocks_second_start(monkeypatch):
     with m.app.test_client() as c:
         assert c.post("/api/admin/model-compare/start", headers=ADMIN).status_code == 409
         assert c.get("/api/admin/model-compare", headers=ADMIN).get_json()["compare"]["status"] == "running"
+
+
+def test_grade_save_is_serialized():
+    """Codex の指摘（PR #273 2回目）：判定の読み出し〜保存をロックで一体にする（続けて押した判定が消えない）。"""
+    src = open(m.__file__, encoding="utf-8").read()
+    body = src[src.index("def admin_model_compare_grade"):src.index("def admin_analysis_model")]
+    lock = body.index("with _model_compare_grade_lock:")
+    assert lock < body.index("_model_compare_load(MODEL_COMPARE_GRADES_KEY)") < body.index("_set_setting(MODEL_COMPARE_GRADES_KEY")
