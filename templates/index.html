@@ -3742,6 +3742,14 @@ function renderBillingCard() {
   let html = '';
   if (st.state === 'gym') {
     html = '🏋️ <b>リオールジム会員</b>のため、無料でご利用いただけます。';
+    if (st.gym_subscription && !st.cancel_at_period_end) {
+      // 先に申し込んだ月額プランは自動では止まらない。請求が続かないよう解約を案内する
+      html += '<br><span style="color:#B4460F;font-weight:700">⚠️ 月額プランのお支払いが続いています。'
+        + '「お支払い・解約の管理」から解約してください'
+        + (st.current_period_end ? `（次回の更新日：${_fmtJpDate(st.current_period_end)}）` : '') + '。</span>';
+    } else if (st.gym_subscription && st.current_period_end) {
+      html += `<br>月額プランは解約済みです（${_fmtJpDate(st.current_period_end)}で終了）。`;
+    }
   } else if (st.state === 'subscribed') {
     html = '✅ <b>月額プラン（1,100円・税込）</b>をご利用中です。';
     if (st.cancel_at_period_end && st.current_period_end) {
@@ -3850,7 +3858,8 @@ function renderGymCard() {
   const status = document.getElementById('gym-card-status');
   const btn = document.getElementById('gym-card-btn');
   if (g.member) {
-    status.innerHTML = `✅ リオールジム会員として登録済みです（${esc(g.nickname || '')} さん）。<br>無料でご利用いただけます。`;
+    const nick = ((getProfile() || {}).name || '').trim();
+    status.innerHTML = `✅ リオールジム会員として登録済みです${nick ? `（${esc(nick)} さん）` : ''}。<br>無料でご利用いただけます。`;
     btn.style.display = 'none';
   } else if (g.removed) {
     status.innerHTML = 'ジム会員の登録を確認できませんでした。ご不明な点はジムのスタッフにお声かけください。';
@@ -3897,7 +3906,7 @@ async function submitGymRegister() {
   try {
     const r = await fetch('/api/gym/register', {
       method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, memberHeaders()),
-      body: JSON.stringify({ user_id: USER_ID, code, real_name: realName, nickname, preview: _billingPreview() }),
+      body: JSON.stringify({ user_id: USER_ID, code, real_name: realName, nickname }),
     });
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.ok) {

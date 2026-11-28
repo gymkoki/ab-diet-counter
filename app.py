@@ -9,6 +9,7 @@ import time
 import math
 import random
 import secrets
+import unicodedata
 import datetime
 import threading
 import traceback
@@ -11043,7 +11044,7 @@ def billing_state(uid, today=None, preview=False):
         "trial_days": BILLING_TRIAL_DAYS, "start_date": start.isoformat() if start else None,
         "required": False, "state": "off", "trial_ends": None,
         "current_period_end": None, "cancel_at_period_end": False, "can_manage": False,
-        "gym": _gym_info_safe(uid, preview=preview),
+        "gym": _gym_info_safe(uid),
     }
     if not (active or preorder):
         return base
@@ -11051,9 +11052,15 @@ def billing_state(uid, today=None, preview=False):
     row = _billing_row(uid) or {}
     if row.get("customer_id"):
         base["can_manage"] = True
-    # リオールジム会員（コード＋本名で登録し、オーナーが外していない人）は無料
-    if base["gym"].get("member"):
+    # リオールジム会員（コード＋本名で登録し、オーナーが外していない人）は無料。
+    # 照会に失敗したら例外のまま上へ返す（_billing_blocked は止めない側、画面は state=off に倒す）。
+    # 非会員と取り違えて解析を止めないため（Codex 指摘 2026-11-28）。
+    if _is_gym_member(uid):
         base["state"] = "gym"
+        if row.get("status") in BILLING_OK_STATUSES:
+            # 有料プランの契約が残っている（先に申し込んだ人）。無料と書くだけだと請求が続くので、解約を案内する
+            base.update(gym_subscription=True, current_period_end=row.get("current_period_end"),
+                        cancel_at_period_end=bool(row.get("cancel_at_period_end")))
         return base
     if row.get("status") in BILLING_OK_STATUSES:
         base.update(state="subscribed", current_period_end=row.get("current_period_end"),
@@ -11155,19 +11162,24 @@ def _is_gym_member(uid):
     return bool(row and row["status"] == "active")
 
 
-def _gym_info_safe(uid, preview=False):
-    """画面に渡すジム会員の状況。判定できないときは「受付なし・会員でない」。"""
+def _gym_info_safe(uid):
+    """画面に渡すジム会員の状況（表示用）。判定できないときは「受付なし・会員でない」。
+    /api/billing/status は持ち主の確認をしないので、名前（本名・ニックネーム）は入れない（Codex 指摘 2026-11-28）。"""
     try:
         row = _gym_row(uid)
         return {
-            "open": _gym_signup_open() or bool(preview and _billing_start_date() is not None),
+            "open": _gym_signup_open(),
             "member": bool(row and row["status"] == "active"),
             "removed": bool(row and row["status"] == "removed"),
-            "nickname": (row or {}).get("nickname") if row and row["status"] == "active" else None,
         }
     except Exception as e:
         app.logger.warning("gym member check failed: %s", e)
-        return {"open": False, "member": False, "removed": False, "nickname": None}
+        return {"open": False, "member": False, "removed": False}
+
+
+def _norm_code(v):
+    """コードの比較用。全角・半角をそろえ、バイト列にする（compare_digest は非ASCIIの文字列を比べられない）。"""
+    return unicodedata.normalize("NFKC", str(v or "")).strip().encode("utf-8")
 
 
 def _clean_name(v):
@@ -11185,7 +11197,8 @@ def api_gym_register():
     nickname = _clean_name(data.get("nickname"))
     ip = _client_ip()
 
-    if not (_gym_signup_open_safe() or (data.get("preview") and _billing_start_date() is not None)):
+    # 受付の条件は画面確認（preview）でも同じ。クライアントの指定で受付前に登録できないように（Codex 指摘 2026-11-28）
+    if not _gym_signup_open_safe():
         return jsonify({"error": "現在は受け付けていません。"}), 403
     locked = _unlock_locked_for(ip)
     if locked > 0:
@@ -11195,7 +11208,7 @@ def api_gym_register():
         return jsonify({"error": "端末を識別できませんでした。アプリを開き直してください。"}), 400
     if not real_name or not nickname:
         return jsonify({"error": "本名とニックネームを入力してください。"}), 400
-    if not code or not secrets.compare_digest(code, _gym_code()):
+    if not code or not secrets.compare_digest(_norm_code(code), _norm_code(_gym_code())):
         _record_unlock_fail(ip)
         left = max(0, MEMBER_UNLOCK_MAX_FAILS - len(_unlock_fails.get(ip, [])))
         return jsonify({"error": "ジム会員コードが違います。ジムのスタッフにご確認ください。", "attempts_left": left}), 401

@@ -182,8 +182,12 @@ def test_db_error_does_not_crash_status(billing_on, monkeypatch):
     def boom(uid):
         raise RuntimeError("db down")
     monkeypatch.setattr(m, "_gym_row", boom)
-    st = m.billing_state("u-any")
-    assert st["gym"] == {"open": False, "member": False, "removed": False, "nickname": None}
+    assert m._gym_info_safe("u-any") == {"open": False, "member": False, "removed": False}
+    # 照会に失敗しても、非会員と取り違えて解析を止めない（Codex 指摘 2026-11-28）
+    _record("u-any", datetime.date(2019, 12, 1))
+    assert m._billing_blocked("u-any") is None
+    with m.app.test_client() as c:
+        assert c.get("/api/billing/status?user_id=u-any").get_json()["required"] is False
 
 
 # ── ⑦ 管理画面 ─────────────────────────────────────────
@@ -200,8 +204,9 @@ def test_real_name_not_in_member_facing_status(opened):
     with m.app.test_client() as c:
         _register(c, real="鈴木 太郎", nick="たろう")
         d = c.get("/api/billing/status?user_id=u-gym").get_json()
+    # 持ち主を確かめない公開の状況APIには、本名もニックネームも入れない（Codex 指摘 2026-11-28）
     body = __import__("json").dumps(d, ensure_ascii=False)
-    assert "鈴木" not in body and d["gym"]["nickname"] == "たろう"
+    assert "鈴木" not in body and "たろう" not in body and d["gym"]["member"] is True
 
 
 def test_gym_members_are_backed_up():
@@ -216,3 +221,41 @@ def test_ui_and_policy_texts():
     assert "submitGymRegister" in html and "/api/gym/register" in html
     assert "loadGymMembers()" in admin and "/api/admin/gym-members" in admin
     assert "本名" in legal and "リオールジムの会員であることを確かめるため" in legal
+
+
+# ── Codex の指摘（2026-11-28）への対応 ────────────────────────
+def test_preview_flag_does_not_bypass_closed_signup(monkeypatch):
+    """受付オフのまま、クライアントが preview を付けても登録できない。"""
+    _reset()
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_dummy")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setattr(m, "BILLING_START", "2099-01-01")
+    with m.app.test_client() as c:
+        r = c.post("/api/gym/register", json={"user_id": "u-p", "code": m._gym_code(), "real_name": "a b",
+                                              "nickname": "c", "preview": True})
+        st = c.get("/api/billing/status?user_id=u-p&preview=1").get_json()
+    assert r.status_code == 403 and m._gym_row("u-p") is None
+    assert st["gym"]["open"] is False
+    _reset()
+
+
+def test_existing_subscription_is_still_shown_for_gym_member(billing_on):
+    """先に月額プランへ申し込んだ人がジム会員になったら、契約が続いていることを画面に出す（請求が続くため）。"""
+    _record("u-sub", datetime.date(2019, 12, 1))
+    m._upsert_billing("u-sub", customer_id="cus_1", subscription_id="sub_1", status="active",
+                      current_period_end="2026-12-20T00:00:00+09:00", cancel_at_period_end=0)
+    with m.app.test_client() as c:
+        _register(c, uid="u-sub")
+        st = c.get("/api/billing/status?user_id=u-sub").get_json()
+    assert st["state"] == "gym" and st["gym_subscription"] is True and st["can_manage"] is True
+    assert st["current_period_end"].startswith("2026-12-20")
+    html = open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8").read()
+    assert "月額プランのお支払いが続いています" in html
+
+
+@pytest.mark.parametrize("saved,typed", [("１２３", "123"), ("860", "８６０"), ("あいう", "あいう")])
+def test_code_comparison_handles_fullwidth_and_non_ascii(opened, saved, typed):
+    m._set_setting(m.GYM_CODE_KEY, saved)
+    with m.app.test_client() as c:
+        assert _register(c, code=typed).status_code == 200
+        assert _register(c, uid="u-other", code="ちがう").status_code == 401
